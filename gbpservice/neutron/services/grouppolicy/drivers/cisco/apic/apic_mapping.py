@@ -174,6 +174,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         return {'device': kwargs.get('device'),
                 'port_id': port_id,
                 'mac_address': port['mac_address'],
+                'app_profile_name': self.apic_manager.app_profile_name,
                 'ptg_id': ptg['id'],
                 'segment': segment,
                 'segmentation_id': segment.get('segmentation_id'),
