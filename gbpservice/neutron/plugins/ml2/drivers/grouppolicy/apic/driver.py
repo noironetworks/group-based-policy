@@ -13,7 +13,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.common import constants as n_constants
 from neutron.extensions import portbindings
 from neutron.openstack.common import log
 from neutron.plugins.ml2 import driver_api as api
@@ -68,10 +67,10 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
         return self._apic_gbp
 
     def create_port_postcommit(self, context):
-        # DHCP Ports are created implicitly by Neutron, need to inform GBP
-        if (context.current.get('device_owner') ==
-                n_constants.DEVICE_OWNER_DHCP):
-            self.apic_gbp.create_dhcp_policy_target_if_needed(
+        try:
+            context._plugin_context.pt_id
+        except AttributeError:
+            self.apic_gbp.create_policy_target_if_needed(
                 context._plugin_context, context.current)
 
     def update_port_postcommit(self, context):

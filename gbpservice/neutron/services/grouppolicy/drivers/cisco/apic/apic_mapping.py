@@ -191,9 +191,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         context, ptg['id'])),
                 'promiscuous_mode': is_port_promiscuous(port)}
 
-    def create_dhcp_policy_target_if_needed(self, plugin_context, port):
+    def create_policy_target_if_needed(self, plugin_context, port):
         session = plugin_context.session
-        if (self._port_is_owned(session, port['id'])):
+        if (self._port_is_owned(session, port['id']) or
+                self._port_id_to_pt(plugin_context, port['id'])):
             # Nothing to do
             return
         # Retrieve PTG
@@ -205,8 +206,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 # Create PolicyTarget
                 attrs = {'policy_target':
                          {'tenant_id': port['tenant_id'],
-                          'name': 'dhcp-%s' % ptg['id'],
-                          'description': _("Implicitly created DHCP policy "
+                          'name': 'pt-%s' % ptg['id'],
+                          'description': _("Implicitly created policy "
                                            "target"),
                           'policy_target_group_id': ptg['id'],
                           'port_id': port['id']}}
@@ -267,6 +268,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 context, context.current, rules, transaction=trs)
 
     def create_policy_target_postcommit(self, context):
+        context._plugin_context.pt_id = context.current['id']
         super(ApicMappingDriver, self).create_policy_target_postcommit(context)
         port = self._core_plugin.get_port(context._plugin_context,
                                           context.current['port_id'])
