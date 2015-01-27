@@ -139,24 +139,14 @@ class ApicMappingTestCase(
 
 class TestPolicyTarget(ApicMappingTestCase):
 
-    def test_policy_target_created_on_apic(self):
-        ptg = self.create_policy_target_group()['policy_target_group']
-        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
-        with self.port(subnet=subnet) as port:
-            self._bind_port_to_host(port['port']['id'], 'h1')
-            self.create_policy_target(policy_target_group_id=ptg['id'],
-                                      port_id=port['port']['id'])
-            self.assertTrue(self.driver.notifier.port_update.called)
-
     def test_policy_target_port_deleted_on_apic(self):
         ptg = self.create_policy_target_group()['policy_target_group']
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
-            pt = self.create_policy_target(
-                policy_target_group_id=ptg['id'], port_id=port['port']['id'])
+            pt = self._get_port_pt(port['port']['id'])[0]
             self.new_delete_request(
-                'policy_targets', pt['policy_target']['id'],
+                'policy_targets', pt['id'],
                 self.fmt).get_response(self.ext_api)
             self.assertTrue(self.driver.notifier.port_update.called)
 
@@ -165,12 +155,11 @@ class TestPolicyTarget(ApicMappingTestCase):
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
-            pt = self.create_policy_target(
-                policy_target_group_id=ptg['id'], port_id=port['port']['id'])
+            pt = self._get_port_pt(port['port']['id'])[0]
             res = self.new_delete_request('ports', port['port']['id'],
                                           self.fmt).get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-            self.delete_policy_target(pt['policy_target']['id'],
+            self.delete_policy_target(pt['id'],
                                       expected_res_status=204)
 
     def _bind_port_to_host(self, port_id, host):
@@ -195,9 +184,7 @@ class TestPolicyTarget(ApicMappingTestCase):
         with self.port(subnet=subnet) as port:
             # Create EP with bound port
             port = self._bind_port_to_host(port['port']['id'], 'h1')
-            pt1 = self.create_policy_target(
-                policy_target_group_id=ptg['id'],
-                port_id=port['port']['id'])['policy_target']
+            pt1 = self._get_port_pt(port['port']['id'])[0]
             # Explicit port won't be deleted with PT
             self.delete_policy_target(pt1['id'], expected_res_status=204)
             # Issue notification for the agent
@@ -213,6 +200,39 @@ class TestPolicyTarget(ApicMappingTestCase):
             device='tap%s' % pt1['port_id'], host='h1')
         self.assertEqual(pt1['port_id'], mapping['port_id'])
         self.assertEqual(ptg['id'], mapping['ptg_id'])
+
+    def test_network_port_bound_to_ptg(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        with self.port(subnet=subnet, device_owner='some-owner') as port:
+            # This will have created 2 ports. The one stored in port and an
+            # Implicit DHCP port. Verify that both exist and are associated
+            # to a PT
+            pts = self._list(
+                'policy_targets', query_params='policy_target_group_id=' +
+                                               ptg['id'])['policy_targets']
+            self.assertEqual(1, len(pts))
+            self.assertEqual(pts[0]['port_id'], port['port']['id'])
+
+    def test_explicit_port(self):
+        with self.network() as net:
+            with self.subnet(network=net) as sub:
+                with self.port(subnet=sub) as port:
+                    self._bind_port_to_host(port['port']['id'], 'h1')
+                    l2p = self.create_l2_policy(
+                        network_id=net['network']['id'])['l2_policy']
+                    ptg = self.create_policy_target_group(
+                        l2_policy_id=l2p['id'],
+                        subnets=[sub['subnet']['id']])['policy_target_group']
+                    self.create_policy_target(
+                        port_id=port['port']['id'],
+                        policy_target_group_id=ptg['id'])
+                    self.assertTrue(self.driver.notifier.port_update.called)
+
+    def _get_port_pt(self, port_id):
+        return self._list(
+            'policy_targets', query_params='port_id=' +
+                                           port_id)['policy_targets']
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
