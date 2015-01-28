@@ -45,13 +45,12 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
     def check_segment_for_agent(self, segment, agent):
         network_type = segment[api.NETWORK_TYPE]
         if network_type == ofcst.TYPE_OPFLEX:
-            opflex_mappings = agent['configurations'].get('opflex_networks',
-                                                          [])
+            opflex_mappings = agent['configurations'].get('opflex_networks')
             LOG.debug(_("Checking segment: %(segment)s "
                         "for physical network: %(mappings)s "),
                       {'segment': segment, 'mappings': opflex_mappings})
-            return (opflex_mappings is None or
-                    segment[api.PHYSICAL_NETWORK] in opflex_mappings)
+            return ((opflex_mappings is None) or
+                    (segment[api.PHYSICAL_NETWORK] in opflex_mappings))
         else:
             return False
 
