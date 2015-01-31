@@ -80,6 +80,7 @@ class SharedAttributeUpdateNotSupportedOnApic(gpexc.GroupPolicyBadRequest):
     message = _("Resource shared attribute update not supported on APIC "
                 "GBP driver for resource of type %(type)s")
 
+REVERSE_PREFIX = 'reverse-'
 
 class ApicMappingDriver(api.ResourceMappingDriver):
     """Apic Mapping driver for Group Policy plugin.
@@ -249,6 +250,16 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                                        context.current['id'])
             self.apic_manager.create_tenant_filter(policy_rule, owner=tenant,
                                                    **attrs)
+            # Also create reverse rule
+            policy_rule = self.name_mapper.policy_rule(
+                context, context.current['id'], prefix=REVERSE_PREFIX)
+            if port_min and port_max:
+                attrs.pop('dToPort')
+                attrs.pop('dFromPort')
+                attrs['sToPort'] = port_max
+                attrs['sFromPort'] = port_min
+                self.apic_manager.create_tenant_filter(
+                    policy_rule, owner=tenant, **attrs)
 
     def create_policy_rule_set_precommit(self, context):
         pass
@@ -348,6 +359,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         policy_rule = self.name_mapper.policy_rule(context,
                                                    context.current['id'])
         self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant)
+        # Delete policy reverse rule
+        policy_rule = self.name_mapper.policy_rule(
+            context, context.current['id'], prefix=REVERSE_PREFIX)
+        self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant)
 
     def delete_policy_rule_set_precommit(self, context):
         # Intercept Parent Call
@@ -417,8 +432,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         pass
 
     def update_policy_rule_precommit(self, context):
-        # TODO(ivar): add support for action update on policy rules
-        raise PolicyRuleUpdateNotSupportedOnApicDriver()
+        pass
+
+    def update_policy_rule_postcommit(self, context):
+        self.delete_policy_rule_postcommit(context)
+        self.create_policy_rule_postcommit(context)
 
     def update_policy_target_group_precommit(self, context):
         if set(context.original['subnets']) - set(context.current['subnets']):
@@ -691,6 +709,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             out_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_OUT]
             for rule in policy_rules:
                 policy_rule = self.name_mapper.policy_rule(context, rule['id'])
+                reverse_policy_rule = self.name_mapper.policy_rule(
+                    context, rule['id'], prefix=REVERSE_PREFIX)
                 rule_owner = self._tenant_by_sharing_policy(rule)
                 classifier = context._plugin.get_policy_classifier(
                     context._plugin_context, rule['policy_classifier_id'])
@@ -701,12 +721,24 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                             contract, contract, policy_rule, owner=tenant,
                             transaction=trs, unset=unset,
                             rule_owner=rule_owner)
+                        if classifier['port_range']:
+                            (self.apic_manager.
+                             manage_contract_subject_out_filter(
+                                 contract, contract, reverse_policy_rule,
+                                 owner=tenant, transaction=trs, unset=unset,
+                                 rule_owner=rule_owner))
                     if classifier['direction'] in out_dir:
                         # PRS and subject are the same thing in this case
                         self.apic_manager.manage_contract_subject_out_filter(
                             contract, contract, policy_rule, owner=tenant,
                             transaction=trs, unset=unset,
                             rule_owner=rule_owner)
+                        if classifier['port_range']:
+                            (self.apic_manager.
+                             manage_contract_subject_in_filter(
+                                 contract, contract, reverse_policy_rule,
+                                 owner=tenant, transaction=trs, unset=unset,
+                                 rule_owner=rule_owner))
 
     def _manage_ptg_policy_rule_sets(
             self, plugin_context, ptg, added_provided, added_consumed,
