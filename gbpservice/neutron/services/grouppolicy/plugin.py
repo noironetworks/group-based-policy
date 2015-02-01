@@ -521,10 +521,15 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return updated_l2_policy
 
     @log.log
-    def delete_l2_policy(self, context, l2_policy_id):
+    def delete_l2_policy(self, context, l2_policy_id, check_unused=False):
         session = context.session
         with session.begin(subtransactions=True):
             l2_policy = self.get_l2_policy(context, l2_policy_id)
+            if (check_unused and
+                (session.query(
+                 group_policy_mapping_db.PolicyTargetGroupMapping).
+                 filter_by(l2_policy_id=l2_policy_id).count())):
+                return False
             policy_context = p_context.L2PolicyContext(self, context,
                                                        l2_policy)
             self.policy_driver_manager.delete_l2_policy_precommit(

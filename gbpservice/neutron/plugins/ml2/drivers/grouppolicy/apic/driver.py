@@ -66,11 +66,8 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
         return self._apic_gbp
 
     def create_port_postcommit(self, context):
-        try:
-            context._plugin_context.pt_id
-        except AttributeError:
-            self.apic_gbp.create_policy_target_if_needed(
-                context._plugin_context, context.current)
+        self.apic_gbp.process_port_added(
+            context._plugin_context, context.current)
 
     def update_port_postcommit(self, context):
         self.apic_gbp.process_port_changed(context._plugin_context,
@@ -79,6 +76,14 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
     def update_subnet_postcommit(self, context):
         self.apic_gbp.process_subnet_changed(context._plugin_context,
                                              context.original, context.current)
+
+    def create_subnet_postcommit(self, context):
+        self.apic_gbp.process_subnet_added(context._plugin_context,
+                                           context.current)
+
+    def delete_subnet_postcommit(self, context):
+        self.apic_gbp.process_subnet_deleted(context._plugin_context,
+                                             context.current)
 
     def bind_port(self, context):
         super(APICMechanismGBPDriver, self).bind_port(context)
