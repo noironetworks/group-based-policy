@@ -114,6 +114,17 @@ class PolicyTargetGroupContext(object):
         """
         pass
 
+    @abc.abstractmethod
+    def add_subnets(self, subnet_ids):
+        """Add the subnets to the policy_target_group.
+
+        :param subnet_id: Subnets to which policy_target_group is mapped.
+
+        Add a neutron subnets to the set of subnets to which the
+        policy_target_group is mapped.
+        """
+        pass
+
 
 @six.add_metaclass(abc.ABCMeta)
 class L2PolicyContext(object):

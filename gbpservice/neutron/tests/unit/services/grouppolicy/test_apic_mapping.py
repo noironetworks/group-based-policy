@@ -18,6 +18,7 @@ import mock
 import netaddr
 import webob.exc
 
+from neutron.agent import securitygroups_rpc as sg_cfg
 from neutron.common import rpc as n_rpc
 from neutron import context
 from neutron.tests.unit.ml2.drivers.cisco.apic import (
@@ -27,6 +28,8 @@ from oslo.config import cfg
 
 sys.modules["apicapi"] = mock.Mock()
 
+from gbpservice.neutron.services.grouppolicy import (
+    group_policy_context as p_context)
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     apic_mapping as amap)
@@ -42,8 +45,8 @@ APIC_POLICY_RULE = 'policy_rule'
 APIC_EXTERNAL_RID = '1.0.0.1'
 
 
-def echo(context, string):
-    return string
+def echo(context, string, prefix=''):
+    return prefix + string
 
 
 class MockCallRecorder(mock.Mock):
@@ -65,9 +68,12 @@ class ApicMappingTestCase(
         mocked.ControllerMixin, mocked.ConfigMixin):
 
     def setUp(self):
+        cfg.CONF.register_opts(sg_cfg.security_group_opts, 'SECURITYGROUP')
         config.cfg.CONF.set_override('policy_drivers',
                                      ['implicit_policy', 'apic'],
                                      group='group_policy')
+        config.cfg.CONF.set_override('enable_security_group', False,
+                                     group='SECURITYGROUP')
         n_rpc.create_connection = mock.Mock()
         amap.ApicMappingDriver.get_apic_manager = mock.Mock()
         self.set_up_mocks()
@@ -144,9 +150,10 @@ class TestPolicyTarget(ApicMappingTestCase):
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
-            pt = self._get_port_pt(port['port']['id'])[0]
+            pt = self.create_policy_target(
+                policy_target_group_id=ptg['id'], port_id=port['port']['id'])
             self.new_delete_request(
-                'policy_targets', pt['id'],
+                'policy_targets', pt['policy_target']['id'],
                 self.fmt).get_response(self.ext_api)
             self.assertTrue(self.driver.notifier.port_update.called)
 
@@ -155,11 +162,12 @@ class TestPolicyTarget(ApicMappingTestCase):
         subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
         with self.port(subnet=subnet) as port:
             self._bind_port_to_host(port['port']['id'], 'h1')
-            pt = self._get_port_pt(port['port']['id'])[0]
+            pt = self.create_policy_target(
+                policy_target_group_id=ptg['id'], port_id=port['port']['id'])
             res = self.new_delete_request('ports', port['port']['id'],
                                           self.fmt).get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-            self.delete_policy_target(pt['id'],
+            self.delete_policy_target(pt['policy_target']['id'],
                                       expected_res_status=204)
 
     def _bind_port_to_host(self, port_id, host):
@@ -184,9 +192,11 @@ class TestPolicyTarget(ApicMappingTestCase):
         with self.port(subnet=subnet) as port:
             # Create EP with bound port
             port = self._bind_port_to_host(port['port']['id'], 'h1')
-            pt1 = self._get_port_pt(port['port']['id'])[0]
+            pt1 = self.create_policy_target(
+                policy_target_group_id=ptg['id'], port_id=port['port']['id'])
             # Explicit port won't be deleted with PT
-            self.delete_policy_target(pt1['id'], expected_res_status=204)
+            self.delete_policy_target(pt1['policy_target']['id'],
+                                      expected_res_status=204)
             # Issue notification for the agent
             self.assertTrue(self.driver.notifier.port_update.called)
 
@@ -199,20 +209,20 @@ class TestPolicyTarget(ApicMappingTestCase):
         mapping = self.driver.get_gbp_details(context.get_admin_context(),
             device='tap%s' % pt1['port_id'], host='h1')
         self.assertEqual(pt1['port_id'], mapping['port_id'])
-        self.assertEqual(ptg['id'], mapping['ptg_id'])
+        self.assertEqual(ptg['id'], mapping['endpoint_group_name'])
 
-    def test_network_port_bound_to_ptg(self):
-        ptg = self.create_policy_target_group()['policy_target_group']
-        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
-        with self.port(subnet=subnet, device_owner='some-owner') as port:
-            # This will have created 2 ports. The one stored in port and an
-            # Implicit DHCP port. Verify that both exist and are associated
-            # to a PT
-            pts = self._list(
-                'policy_targets', query_params='policy_target_group_id=' +
-                                               ptg['id'])['policy_targets']
-            self.assertEqual(1, len(pts))
-            self.assertEqual(pts[0]['port_id'], port['port']['id'])
+    def test_get_gbp_details_shadow(self):
+        l2p = self.create_l2_policy()['l2_policy']
+        network = self._get_object('networks', l2p['network_id'], self.api)
+        with self.subnet(network=network) as sub:
+            with self.port(subnet=sub) as port:
+                self._bind_port_to_host(port['port']['id'], 'h1')
+                mapping = self.driver.get_gbp_details(
+                    context.get_admin_context(),
+                    device='tap%s' % port['port']['id'], host='h1')
+                self.assertEqual(port['port']['id'], mapping['port_id'])
+                self.assertEqual(amap.SHADOW_PREFIX + l2p['id'],
+                                 mapping['endpoint_group_name'])
 
     def test_explicit_port(self):
         with self.network() as net:
@@ -222,17 +232,11 @@ class TestPolicyTarget(ApicMappingTestCase):
                     l2p = self.create_l2_policy(
                         network_id=net['network']['id'])['l2_policy']
                     ptg = self.create_policy_target_group(
-                        l2_policy_id=l2p['id'],
-                        subnets=[sub['subnet']['id']])['policy_target_group']
+                        l2_policy_id=l2p['id'])['policy_target_group']
                     self.create_policy_target(
                         port_id=port['port']['id'],
                         policy_target_group_id=ptg['id'])
                     self.assertTrue(self.driver.notifier.port_update.called)
-
-    def _get_port_pt(self, port_id):
-        return self._list(
-            'policy_targets', query_params='port_id=' +
-                                           port_id)['policy_targets']
 
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
@@ -242,9 +246,14 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
             name="ptg1", shared=shared)['policy_target_group']
         tenant = self.common_tenant if shared else ptg['tenant_id']
         mgr = self.driver.apic_manager
-        mgr.ensure_epg_created.assert_called_once_with(
-            tenant, ptg['id'], bd_name=ptg['l2_policy_id'],
-            bd_owner=tenant)
+        expected_calls = [
+            mock.call(tenant, ptg['id'], bd_name=ptg['l2_policy_id'],
+                      bd_owner=tenant),
+            mock.call(tenant, amap.SHADOW_PREFIX + ptg['l2_policy_id'],
+                      bd_name=ptg['l2_policy_id'], bd_owner=tenant,
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.ensure_epg_created.call_args_list)
 
     def test_policy_target_group_created_on_apic(self):
         self._test_policy_target_group_created_on_apic()
@@ -330,15 +339,20 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
         self._test_ptg_policy_rule_set_updated(False, shared=True)
 
     def _test_policy_target_group_deleted_on_apic(self, shared=False):
-        ptg = self.create_policy_target_group(name="ptg1",
-                                         shared=shared)['policy_target_group']
+        ptg = self.create_policy_target_group(
+            name="ptg1", shared=shared)['policy_target_group']
         req = self.new_delete_request('policy_target_groups',
                                       ptg['id'], self.fmt)
         req.get_response(self.ext_api)
         mgr = self.driver.apic_manager
         tenant = self.common_tenant if shared else ptg['tenant_id']
-        mgr.delete_epg_for_network.assert_called_once_with(
-            tenant, ptg['id'])
+
+        expected_calls = [
+            mock.call(tenant, ptg['id']),
+            mock.call(tenant, amap.SHADOW_PREFIX + ptg['l2_policy_id'],
+                      transaction=mock.ANY)]
+        self._check_call_list(expected_calls,
+                              mgr.delete_epg_for_network.call_args_list)
 
     def test_policy_target_group_deleted_on_apic(self):
         self._test_policy_target_group_deleted_on_apic()
@@ -410,16 +424,46 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
     def test_process_subnet_update_shared(self):
         self._test_process_subnet_update(shared=True)
 
+    def test_multiple_ptg_per_l2p(self):
+        l2p = self.create_l2_policy()['l2_policy']
+        # Create first PTG
+        ptg1 = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        ptg2 = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        self.assertEqual(ptg1['subnets'], ptg2['subnets'])
+
+    def test_force_add_subnet(self):
+        l2p = self.create_l2_policy()['l2_policy']
+        # Create first PTG
+        ptg1 = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        ptg2 = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        ctx = p_context.PolicyTargetGroupContext(
+            self.driver.gbp_plugin, context.get_admin_context(), ptg2)
+        # Emulate force add
+        self.driver._use_implicit_subnet(ctx, force_add=True)
+        # There now a new subnet, and it's added to both the PTGs
+        self.assertEqual(2, len(ctx.current['subnets']))
+        ptg1 = self.show_policy_target_group(ptg1['id'])['policy_target_group']
+        self.assertEqual(2, len(ptg1['subnets']))
+        ptg2 = self.show_policy_target_group(ptg2['id'])['policy_target_group']
+        self.assertEqual(2, len(ptg2['subnets']))
+        self.assertEqual(set(ptg1['subnets']), set(ptg2['subnets']))
+        self.assertNotEqual(ptg2['subnets'][0], ptg2['subnets'][1])
+
     def _create_explicit_subnet_ptg(self, cidr, shared=False):
         l2p = self.create_l2_policy(name="l2p", shared=shared)
         l2p_id = l2p['l2_policy']['id']
         network_id = l2p['l2_policy']['network_id']
         network = self._get_object('networks', network_id, self.api)
-        with self.subnet(network=network, cidr=cidr) as subnet:
-            subnet_id = subnet['subnet']['id']
+        with self.subnet(network=network, cidr=cidr):
+            # The subnet creation in the proper network causes the subnet ID
+            # to be added to the PTG
             return self.create_policy_target_group(
                 name="ptg1", l2_policy_id=l2p_id,
-                subnets=[subnet_id], shared=shared)['policy_target_group']
+                shared=shared)['policy_target_group']
 
 
 class TestL2Policy(ApicMappingTestCase):
@@ -430,7 +474,11 @@ class TestL2Policy(ApicMappingTestCase):
         tenant = self.common_tenant if shared else l2p['tenant_id']
         mgr = self.driver.apic_manager
         mgr.ensure_bd_created_on_apic.assert_called_once_with(
-            tenant, l2p['id'], ctx_owner=tenant, ctx_name=l2p['l3_policy_id'])
+            tenant, l2p['id'], ctx_owner=tenant, ctx_name=l2p['l3_policy_id'],
+            transaction=mock.ANY)
+        mgr.ensure_epg_created.assert_called_once_with(
+            tenant, amap.SHADOW_PREFIX + l2p['id'], bd_owner=tenant,
+            bd_name=l2p['id'], transaction=mock.ANY)
 
     def test_l2_policy_created_on_apic(self):
         self._test_l2_policy_created_on_apic()
@@ -445,13 +493,30 @@ class TestL2Policy(ApicMappingTestCase):
         tenant = self.common_tenant if shared else l2p['tenant_id']
         mgr = self.driver.apic_manager
         mgr.delete_bd_on_apic.assert_called_once_with(
-            tenant, l2p['id'])
+            tenant, l2p['id'], transaction=mock.ANY)
+        mgr.delete_epg_for_network(tenant, amap.SHADOW_PREFIX + l2p['id'],
+                                   transaction=mock.ANY)
 
     def test_l2_policy_deleted_on_apic(self):
         self._test_l2_policy_deleted_on_apic()
 
     def test_l2_policy_deleted_on_apic_shared(self):
         self._test_l2_policy_deleted_on_apic(shared=True)
+
+    def test_pre_existing_subnets_added(self):
+        with self.network() as net:
+            with self.subnet(network=net) as sub:
+                sub = sub['subnet']
+                l2p = self.create_l2_policy(
+                    network_id=net['network']['id'])['l2_policy']
+                mgr = self.driver.apic_manager
+                mgr.ensure_subnet_created_on_apic.assert_called_with(
+                    l2p['tenant_id'], l2p['id'],
+                    sub['gateway_ip'] + '/' + sub['cidr'].split('/')[1],
+                    transaction=mock.ANY)
+                ptg = self.create_policy_target_group(
+                    l2_policy_id=l2p['id'])['policy_target_group']
+                self.assertEqual(ptg['subnets'], [sub['id']])
 
 
 class TestL3Policy(ApicMappingTestCase):
@@ -839,26 +904,49 @@ class TestPolicyRuleSet(ApicMappingTestCase):
         rule_owner = self.common_tenant if shared else rules[0]['tenant_id']
         # Verify that the in-out rules are correctly enforced on the APIC
         mgr = self.driver.apic_manager
-        mgr.manage_contract_subject_in_filter.assert_called_once_with(
-            ctr['id'], ctr['id'], rules[in_d]['id'], owner=ctr['tenant_id'],
-            transaction='transaction', unset=False,
-            rule_owner=rule_owner)
-        mgr.manage_contract_subject_out_filter.assert_called_once_with(
-            ctr['id'], ctr['id'], rules[out]['id'], owner=ctr['tenant_id'],
-            transaction='transaction', unset=False,
-            rule_owner=rule_owner)
+        expected_calls = [
+            mock.call(ctr['id'], ctr['id'], rules[in_d]['id'],
+                      owner=ctr['tenant_id'], transaction='transaction',
+                      unset=False, rule_owner=rule_owner),
+            mock.call(ctr['id'], ctr['id'],
+                      amap.REVERSE_PREFIX + rules[out]['id'],
+                      owner=ctr['tenant_id'], transaction='transaction',
+                      unset=False, rule_owner=rule_owner)]
+        self._check_call_list(
+            expected_calls,
+            mgr.manage_contract_subject_in_filter.call_args_list)
+
+        expected_calls = [
+            mock.call(ctr['id'], ctr['id'], rules[out]['id'],
+                      owner=ctr['tenant_id'], transaction='transaction',
+                      unset=False, rule_owner=rule_owner),
+            mock.call(ctr['id'], ctr['id'],
+                      amap.REVERSE_PREFIX + rules[in_d]['id'],
+                      owner=ctr['tenant_id'], transaction='transaction',
+                      unset=False, rule_owner=rule_owner)]
+        self._check_call_list(
+            expected_calls,
+            mgr.manage_contract_subject_out_filter.call_args_list)
 
         # Create policy_rule_set with BI rule
         ctr = self.create_policy_rule_set(
             name="ctr", policy_rules=[rules[bi]['id']])['policy_rule_set']
 
-        mgr.manage_contract_subject_in_filter.assert_called_with(
+        mgr.manage_contract_subject_in_filter.call_happened_with(
             ctr['id'], ctr['id'], rules[bi]['id'], owner=ctr['tenant_id'],
             transaction='transaction', unset=False,
             rule_owner=rule_owner)
-        mgr.manage_contract_subject_out_filter.assert_called_with(
+        mgr.manage_contract_subject_out_filter.call_happened_with(
             ctr['id'], ctr['id'], rules[bi]['id'], owner=ctr['tenant_id'],
             transaction='transaction', unset=False,
+            rule_owner=rule_owner)
+        mgr.manage_contract_subject_in_filter.call_happened_with(
+            ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
+            owner=ctr['tenant_id'], transaction='transaction', unset=False,
+            rule_owner=rule_owner)
+        mgr.manage_contract_subject_out_filter.call_happened_with(
+            ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
+            owner=ctr['tenant_id'], transaction='transaction', unset=False,
             rule_owner=rule_owner)
 
     def test_policy_rule_set_created_with_rules(self):
@@ -968,9 +1056,14 @@ class TestPolicyRule(ApicMappingTestCase):
 
         tenant = self.common_tenant if shared else pr['tenant_id']
         mgr = self.driver.apic_manager
-        mgr.create_tenant_filter.assert_called_once_with(
-            pr['id'], owner=tenant, etherT='ip', prot='udp',
-            dToPort=88, dFromPort=88)
+        expected_calls = [
+            mock.call(pr['id'], owner=tenant, etherT='ip', prot='udp',
+                      dToPort=88, dFromPort=88, transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
+                      etherT='ip', prot='udp', sToPort=88, sFromPort=88,
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.create_tenant_filter.call_args_list)
 
     def test_policy_rule_created_on_apic(self):
         self._test_policy_rule_created_on_apic()
@@ -995,8 +1088,12 @@ class TestPolicyRule(ApicMappingTestCase):
 
         tenant = self.common_tenant if shared else pr['tenant_id']
         mgr = self.driver.apic_manager
-        mgr.delete_tenant_filter.assert_called_once_with(
-            pr['id'], owner=tenant)
+        expected_calls = [
+            mock.call(pr['id'], owner=tenant, transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.delete_tenant_filter.call_args_list)
 
     def test_policy_rule_deleted_on_apic(self):
         self._test_policy_rule_deleted_on_apic()

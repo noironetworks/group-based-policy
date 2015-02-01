@@ -183,7 +183,8 @@ class ImplicitPolicyDriver(api.PolicyDriver):
 
     def _cleanup_l2_policy(self, context, l2p_id):
         if self._l2_policy_is_owned(context._plugin_context.session, l2p_id):
-            context._plugin.delete_l2_policy(context._plugin_context, l2p_id)
+            context._plugin.delete_l2_policy(context._plugin_context, l2p_id,
+                                             check_unused=True)
 
     def _use_implicit_l3_policy(self, context):
         filter = {'tenant_id': [context.current['tenant_id']],
