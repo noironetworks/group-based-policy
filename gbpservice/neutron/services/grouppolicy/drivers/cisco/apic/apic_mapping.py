@@ -14,12 +14,13 @@ import netaddr
 
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
+from neutron.api.v2 import attributes
 from neutron.common import constants as n_constants
 from neutron.common import exceptions as n_exc
 from neutron.common import rpc as n_rpc
 from neutron.common import topics
+from neutron import context as nctx
 from neutron.extensions import portbindings
-from neutron.extensions import securitygroup as ext_sg
 from neutron import manager
 from neutron.openstack.common import log as logging
 from neutron.plugins.ml2.drivers.cisco.apic import apic_model
@@ -27,20 +28,16 @@ from neutron.plugins.ml2.drivers.cisco.apic import config
 from opflexagent import constants as ofcst
 from opflexagent import rpc
 from oslo.config import cfg
+from oslo_concurrency import lockutils
 
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpdb
+from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as api)
 
 LOG = logging.getLogger(__name__)
-
-
-class L2PolicyMultiplePolicyTargetGroupNotSupportedOnApicDriver(
-        gpexc.GroupPolicyBadRequest):
-    message = _("An L2 policy can't have multiple policy target groups on "
-                "APIC GBP driver.")
 
 
 class RedirectActionNotSupportedOnApicDriver(gpexc.GroupPolicyBadRequest):
@@ -80,7 +77,17 @@ class SharedAttributeUpdateNotSupportedOnApic(gpexc.GroupPolicyBadRequest):
     message = _("Resource shared attribute update not supported on APIC "
                 "GBP driver for resource of type %(type)s")
 
+
+class ExplicitSubnetAssociationNotSupported(gpexc.GroupPolicyBadRequest):
+    message = _("Explicit subnet association not supported by APIC driver.")
+
+
 REVERSE_PREFIX = 'reverse-'
+SHADOW_PREFIX = 'shadow-'
+PROMISCUOUS_SUFFIX = 'promiscuous'
+PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
+                     n_constants.DEVICE_OWNER_LOADBALANCER]
+
 
 class ApicMappingDriver(api.ResourceMappingDriver):
     """Apic Mapping driver for Group Policy plugin.
@@ -162,62 +169,45 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         port = port_context.current
         # retrieve PTG from a given Port
         ptg = self._port_id_to_ptg(context, port['id'])
-        if not ptg:
+        l2p = self._network_id_to_l2p(context, port['network_id'])
+        if not ptg and not l2p:
             return
-
         context._plugin = self.gbp_plugin
         context._plugin_context = context
 
+        l2_policy_id = l2p['id']
+        ptg_tenant = self._tenant_by_sharing_policy(ptg or l2p)
+        if ptg:
+            endpoint_group_name = self.name_mapper.policy_target_group(
+                context, ptg['id'])
+        else:
+            endpoint_group_name = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=SHADOW_PREFIX)
+
         def is_port_promiscuous(port):
-            return port['device_owner'] == n_constants.DEVICE_OWNER_DHCP
+            return (port['device_owner'] in PROMISCUOUS_TYPES or
+                    port['name'].endswith(PROMISCUOUS_SUFFIX))
 
         segment = port_context.bound_segment or {}
         return {'device': kwargs.get('device'),
                 'port_id': port_id,
                 'mac_address': port['mac_address'],
                 'app_profile_name': str(self.apic_manager.app_profile_name),
-                'ptg_id': ptg['id'],
                 'segment': segment,
                 'segmentation_id': segment.get('segmentation_id'),
                 'network_type': segment.get('network_type'),
-                'l2_policy_id': ptg['l2_policy_id'],
+                'l2_policy_id': l2_policy_id,
                 'tenant_id': port['tenant_id'],
                 'host': port[portbindings.HOST_ID],
-                'ptg_tentant': str(
-                    self.name_mapper.tenant(
-                        context, ptg['tenant_id'])
-                    if not ptg['shared'] else apic_manager.TENANT_COMMON),
-                'endpoint_group_name': str(
-                    self.name_mapper.policy_target_group(
-                        context, ptg['id'])),
+                'ptg_tentant': str(ptg_tenant),
+                'endpoint_group_name': str(endpoint_group_name),
                 'promiscuous_mode': is_port_promiscuous(port)}
 
-    def create_policy_target_if_needed(self, plugin_context, port):
-        session = plugin_context.session
-        if (self._port_is_owned(session, port['id']) or
-                self._port_id_to_pt(plugin_context, port['id'])):
-            # Nothing to do
-            return
-        # Retrieve PTG
-        fixed_ips = port['fixed_ips']
-        if fixed_ips:
-            port_subnet_id = fixed_ips[0]['subnet_id']
-            ptg = self._get_ptg_by_subnet(plugin_context, port_subnet_id)
-            if ptg:
-                # Create PolicyTarget
-                attrs = {'policy_target':
-                         {'tenant_id': port['tenant_id'],
-                          'name': 'pt-%s' % ptg['id'],
-                          'description': _("Implicitly created policy "
-                                           "target"),
-                          'policy_target_group_id': ptg['id'],
-                          'port_id': port['id']}}
-                self.gbp_plugin.create_policy_target(plugin_context, attrs)
-                sg_id = self._get_default_security_group(plugin_context,
-                                                         ptg['id'],
-                                                         port['tenant_id'])
-                data = {'port': {'security_groups': [sg_id]}}
-                self._core_plugin.update_port(plugin_context, port['id'], data)
+    def process_port_added(self, plugin_context, port):
+        l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
+        if l2p and port['device_owner'] == n_constants.AGENT_TYPE_DHCP:
+            # TODO(ivar): create DHCP relay on proper BD
+            pass
 
     def create_policy_action_precommit(self, context):
         # TODO(ivar): allow redirect for service chaining
@@ -248,18 +238,19 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             tenant = self._tenant_by_sharing_policy(context.current)
             policy_rule = self.name_mapper.policy_rule(context,
                                                        context.current['id'])
-            self.apic_manager.create_tenant_filter(policy_rule, owner=tenant,
-                                                   **attrs)
-            # Also create reverse rule
-            policy_rule = self.name_mapper.policy_rule(
-                context, context.current['id'], prefix=REVERSE_PREFIX)
-            if port_min and port_max:
-                attrs.pop('dToPort')
-                attrs.pop('dFromPort')
-                attrs['sToPort'] = port_max
-                attrs['sFromPort'] = port_min
+            with self.apic_manager.apic.transaction(None) as trs:
                 self.apic_manager.create_tenant_filter(
-                    policy_rule, owner=tenant, **attrs)
+                    policy_rule, owner=tenant, transaction=trs, **attrs)
+                # Also create reverse rule
+                policy_rule = self.name_mapper.policy_rule(
+                    context, context.current['id'], prefix=REVERSE_PREFIX)
+                if port_min and port_max:
+                    attrs.pop('dToPort')
+                    attrs.pop('dFromPort')
+                    attrs['sToPort'] = port_max
+                    attrs['sFromPort'] = port_min
+                    self.apic_manager.create_tenant_filter(
+                        policy_rule, owner=tenant, transaction=trs, **attrs)
 
     def create_policy_rule_set_precommit(self, context):
         pass
@@ -279,7 +270,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 context, context.current, rules, transaction=trs)
 
     def create_policy_target_postcommit(self, context):
-        context._plugin_context.pt_id = context.current['id']
         super(ApicMappingDriver, self).create_policy_target_postcommit(context)
         port = self._core_plugin.get_port(context._plugin_context,
                                           context.current['port_id'])
@@ -287,7 +277,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self._notify_port_update(context._plugin_context, port['id'])
 
     def create_policy_target_group_precommit(self, context):
-        pass
+        if context.current['subnets']:
+            raise ExplicitSubnetAssociationNotSupported()
 
     def create_policy_target_group_postcommit(self, context):
         super(ApicMappingDriver, self).create_policy_target_group_postcommit(
@@ -304,18 +295,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self.apic_manager.ensure_epg_created(tenant, epg,
                                                  bd_owner=bd_owner,
                                                  bd_name=l2_policy)
-            subnets = self._subnet_ids_to_objects(context._plugin_context,
-                                                  context.current['subnets'])
-            self._manage_ptg_subnets(context._plugin_context, context.current,
-                                     subnets, [], transaction=trs)
             self._manage_ptg_policy_rule_sets(
                 context._plugin_context, context.current,
                 context.current['provided_policy_rule_sets'],
                 context.current['consumed_policy_rule_sets'], [], [],
                 transaction=trs)
-        self._update_default_security_group(
-            context._plugin_context, context.current['id'],
-            context.current['tenant_id'], context.current['subnets'])
 
     def create_l2_policy_precommit(self, context):
         self._reject_non_shared_net_on_shared_l2p(context)
@@ -333,9 +317,23 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         l3_policy_object = context._plugin.get_l3_policy(
             context._plugin_context, context.current['l3_policy_id'])
         ctx_owner = self._tenant_by_sharing_policy(l3_policy_object)
-        self.apic_manager.ensure_bd_created_on_apic(tenant, l2_policy,
-                                                    ctx_owner=ctx_owner,
-                                                    ctx_name=l3_policy)
+        with self.apic_manager.apic.transaction(None) as trs:
+            self.apic_manager.ensure_bd_created_on_apic(
+                tenant, l2_policy, ctx_owner=ctx_owner, ctx_name=l3_policy,
+                transaction=trs)
+            # Create neutron port EPG
+            shadow_epg = self.name_mapper.l2_policy(
+                context, context.current['id'], prefix=SHADOW_PREFIX)
+            self.apic_manager.ensure_epg_created(
+                tenant, shadow_epg, bd_owner=tenant, bd_name=l2_policy,
+                transaction=trs)
+            # Add existing subnets
+            net_id = context.current['network_id']
+            subnets = self._core_plugin.get_subnets(context._plugin_context,
+                                                    {'network_id': [net_id]})
+            self._manage_l2p_subnets(
+                context._plugin_context, context.current['id'], subnets, [],
+                transaction=trs)
 
     def create_l3_policy_precommit(self, context):
         self._check_l3p_es(context)
@@ -358,11 +356,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         tenant = self._tenant_by_sharing_policy(context.current)
         policy_rule = self.name_mapper.policy_rule(context,
                                                    context.current['id'])
-        self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant)
-        # Delete policy reverse rule
-        policy_rule = self.name_mapper.policy_rule(
-            context, context.current['id'], prefix=REVERSE_PREFIX)
-        self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant)
+        with self.apic_manager.apic.transaction(None) as trs:
+            self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant,
+                                                   transaction=trs)
+            # Delete policy reverse rule
+            policy_rule = self.name_mapper.policy_rule(
+                context, context.current['id'], prefix=REVERSE_PREFIX)
+            self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant,
+                                                   transaction=trs)
 
     def delete_policy_rule_set_precommit(self, context):
         # Intercept Parent Call
@@ -389,13 +390,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self._notify_port_update(context._plugin_context, port['id'])
 
     def delete_policy_target_group_postcommit(self, context):
-        if context.current['subnets']:
-            subnets = self._subnet_ids_to_objects(context._plugin_context,
-                                                  context.current['subnets'])
-            self._manage_ptg_subnets(context._plugin_context, context.current,
-                                     [], subnets)
-        for subnet_id in context.current['subnets']:
-            self._cleanup_subnet(context._plugin_context, subnet_id, None)
         tenant = self._tenant_by_sharing_policy(context.current)
         ptg = self.name_mapper.policy_target_group(context,
                                                    context.current['id'])
@@ -407,7 +401,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         tenant = self._tenant_by_sharing_policy(context.current)
         l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
 
-        self.apic_manager.delete_bd_on_apic(tenant, l2_policy)
+        with self.apic_manager.apic.transaction(None) as trs:
+            self.apic_manager.delete_bd_on_apic(
+                tenant, l2_policy, transaction=trs)
+            # Delete neutron port EPG
+            shadow_epg = self.name_mapper.l2_policy(
+                context, context.current['id'], prefix=SHADOW_PREFIX)
+            self.apic_manager.delete_epg_for_network(
+                tenant, shadow_epg, transaction=trs)
 
     def delete_l3_policy_postcommit(self, context):
         tenant = self._tenant_by_sharing_policy(context.current)
@@ -439,8 +440,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.create_policy_rule_postcommit(context)
 
     def update_policy_target_group_precommit(self, context):
-        if set(context.original['subnets']) - set(context.current['subnets']):
-            raise gpexc.PolicyTargetGroupSubnetRemovalNotSupported()
+        if set(context.original['subnets']) != set(context.current['subnets']):
+            raise ExplicitSubnetAssociationNotSupported()
         self._reject_shared_update(context, 'policy_target_group')
 
     def update_policy_target_group_postcommit(self, context):
@@ -467,28 +468,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             set(orig_consumed_policy_rule_sets) - set(
                 curr_consumed_policy_rule_sets))
 
-        orig_subnets = context.original['subnets']
-        curr_subnets = context.current['subnets']
-        new_subnets = list(set(curr_subnets) - set(orig_subnets))
-        removed_subnets = list(set(orig_subnets) - set(curr_subnets))
-
-        with self.apic_manager.apic.transaction(None) as trs:
-            self._manage_ptg_policy_rule_sets(
-                context._plugin_context, context.current,
-                new_provided_policy_rule_sets, new_consumed_policy_rule_sets,
-                removed_provided_policy_rule_sets,
-                removed_consumed_policy_rule_sets, transaction=trs)
-
-            new_subnets = self._subnet_ids_to_objects(
-                context._plugin_context, new_subnets)
-            removed_subnets = self._subnet_ids_to_objects(
-                context._plugin_context, removed_subnets)
-
-            self._manage_ptg_subnets(context._plugin_context, context.current,
-                                     new_subnets, removed_subnets)
-        self._update_default_security_group(
-            context._plugin_context, context.current['id'],
-            context.current['tenant_id'], subnets=new_subnets)
+        self._manage_ptg_policy_rule_sets(
+            context._plugin_context, context.current,
+            new_provided_policy_rule_sets, new_consumed_policy_rule_sets,
+            removed_provided_policy_rule_sets,
+            removed_consumed_policy_rule_sets)
 
     def update_l3_policy_precommit(self, context):
         self._reject_shared_update(context, 'l3_policy')
@@ -669,10 +653,21 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def process_subnet_changed(self, context, old, new):
         if old['gateway_ip'] != new['gateway_ip']:
-            ptg = self._subnet_to_ptg(context, new['id'])
-            if ptg:
+            l2p = self._network_id_to_l2p(context, new['network_id'])
+            if l2p:
                 # Is GBP owned, reflect on APIC
-                self._manage_ptg_subnets(context, ptg, [new], [old])
+                self._manage_l2p_subnets(context, l2p['id'], [new], [old])
+
+    def process_subnet_added(self, context, subnet):
+        l2p = self._network_id_to_l2p(context, subnet['network_id'])
+        if l2p:
+            self._sync_epg_subnets(context, l2p)
+            self._manage_l2p_subnets(context, l2p['id'], [subnet], [])
+
+    def process_subnet_deleted(self, context, subnet):
+        l2p = self._network_id_to_l2p(context, subnet['network_id'])
+        if l2p:
+            self._manage_l2p_subnets(context, l2p['id'], [], [subnet])
 
     def process_port_changed(self, context, old, new):
         pass
@@ -799,16 +794,15 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                owner=mapped_tenant, provided=False,
                                transaction=trs)
 
-    def _manage_ptg_subnets(self, plugin_context, ptg, added_subnets,
+    def _manage_l2p_subnets(self, plugin_context, l2p_id, added_subnets,
                             removed_subnets, transaction=None):
         # TODO(ivar): change APICAPI to not expect a resource context
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
         l2_policy_object = self.gbp_plugin.get_l2_policy(
-            plugin_context, ptg['l2_policy_id'])
+            plugin_context, l2p_id)
         mapped_tenant = self._tenant_by_sharing_policy(l2_policy_object)
-        mapped_l2p = self.name_mapper.l2_policy(plugin_context,
-                                                ptg['l2_policy_id'])
+        mapped_l2p = self.name_mapper.l2_policy(plugin_context, l2p_id)
         subnets = [added_subnets, removed_subnets]
         methods = [self.apic_manager.ensure_subnet_created_on_apic,
                    self.apic_manager.ensure_subnet_deleted_on_apic]
@@ -817,24 +811,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 for s in subnets[x]:
                     methods[x](mapped_tenant, mapped_l2p, self._gateway_ip(s),
                                transaction=trs)
-
-    def _get_default_security_group(self, context, ptg_id, tenant_id):
-        # Default SG in APIC mapping is per tenant, and allows all the traffic
-        # since the contracts will be enforced by ACI and not via SG
-        filters = {'name': ['gbp_apic_default'], 'tenant_id': [tenant_id]}
-        default_group = self._core_plugin.get_security_groups(
-            context, filters)
-        if not default_group:
-            attrs = {'name': 'gbp_apic_default', 'tenant_id': tenant_id,
-                     'description': 'default apic sg'}
-            ret = self._create_sg(context, attrs)
-            for ethertype in ext_sg.sg_supported_ethertypes:
-                for direction in ['ingress', 'egress']:
-                    self._sg_rule(context, tenant_id, ret['id'], direction,
-                                  ethertype=ethertype)
-            return ret['id']
-        else:
-            return default_group[0]['id']
 
     def _update_default_security_group(self, plugin_context, ptg_id,
                                        tenant_id, subnets=None):
@@ -1051,3 +1027,87 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         return port[portbindings.VIF_TYPE] not in [
             portbindings.VIF_TYPE_UNBOUND,
             portbindings.VIF_TYPE_BINDING_FAILED]
+
+    def _use_implicit_subnet(self, context, force_add=False):
+        """Implicit subnet for APIC driver.
+
+        The first PTG of a given BD will allocate a new subnet from the L3P.
+        Any subsequent PTG in the same BD will use the same subnet.
+        More subnets will be allocated whenever the existing ones go out of
+        addresses.
+        """
+
+        l2p_id = context.current['l2_policy_id']
+        with lockutils.lock(l2p_id, external=True):
+            subs = self._get_l2p_subnets(context._plugin_context, l2p_id)
+            subs = set([x['id'] for x in subs])
+            if not subs or force_add:
+                sub = self._internal_use_implicit_subnet(context)
+                try:
+                    context.current['subnets'].append(sub['id'])
+                except AttributeError:
+                    context.current['subnets'] = [sub['id']]
+            else:
+                context.add_subnets(subs)
+
+    def _internal_use_implicit_subnet(self, context):
+        l2p_id = context.current['l2_policy_id']
+        l2p = context._plugin.get_l2_policy(context._plugin_context, l2p_id)
+        l3p_id = l2p['l3_policy_id']
+        l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
+        pool = netaddr.IPNetwork(l3p['ip_pool'])
+
+        l2ps = context._plugin.get_l2_policies(
+            context._plugin_context, filters={'l3_policy_id': [l3p['id']]})
+        ptgs = context._plugin.get_policy_target_groups(
+            context._plugin_context,
+            filters={'l2_policy_id': [x['id'] for x in l2ps]})
+        subnets = []
+        for ptg in ptgs:
+            subnets.extend(ptg['subnets'])
+        subnets = self._core_plugin.get_subnets(context._plugin_context,
+                                                filters={'id': subnets})
+        for cidr in pool.subnet(l3p['subnet_prefix_length']):
+            if not self._validate_subnet_overlap_for_l3p(subnets,
+                                                         cidr.__str__()):
+                continue
+            try:
+                attrs = {'tenant_id': context.current['tenant_id'],
+                         'name': 'ptg_' + context.current['name'],
+                         'network_id': l2p['network_id'],
+                         'ip_version': l3p['ip_version'],
+                         'cidr': cidr.__str__(),
+                         'enable_dhcp': True,
+                         'gateway_ip': attributes.ATTR_NOT_SPECIFIED,
+                         'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
+                         'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
+                         'host_routes': attributes.ATTR_NOT_SPECIFIED}
+                return self._create_subnet(context._plugin_context, attrs)
+            except n_exc.BadRequest:
+                # This is expected (CIDR overlap) until we have a
+                # proper subnet allocation algorithm. We ignore the
+                # exception and repeat with the next CIDR.
+                pass
+        raise gpexc.NoSubnetAvailable()
+
+    def _sync_epg_subnets(self, plugin_context, l2p):
+        l2p_subnets = [x['id'] for x in
+                       self._get_l2p_subnets(plugin_context, l2p['id'])]
+        epgs = self.gbp_plugin.get_policy_target_groups(
+            nctx.get_admin_context(), {'l2_policy_id': [l2p['id']]})
+        for sub in l2p_subnets:
+            # Add to EPG
+            for epg in epgs:
+                if sub not in epg['subnets']:
+                    try:
+                        (self.gbp_plugin.
+                         _add_subnet_to_policy_target_group(
+                             nctx.get_admin_context(), epg['id'], sub))
+                    except gpolicy.PolicyTargetGroupNotFound:
+                        # EPG deleted meanwhile
+                        pass
+
+    def _get_l2p_subnets(self, plugin_context, l2p_id):
+        l2p = self.gbp_plugin.get_l2_policy(plugin_context, l2p_id)
+        return self._core_plugin.get_subnets(
+            plugin_context, {'network_id': [l2p['network_id']]})
