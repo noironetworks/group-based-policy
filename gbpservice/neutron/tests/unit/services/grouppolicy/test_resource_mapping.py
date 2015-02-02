@@ -62,7 +62,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         policy_drivers = policy_drivers or ['implicit_policy',
                                             'resource_mapping']
         config.cfg.CONF.set_override('policy_drivers',
-                                     policy_drivers,
+                                     ['implicit_policy', 'resource_mapping'],
                                      group='group_policy')
         sc_cfg.cfg.CONF.set_override('servicechain_drivers',
                                      ['dummy'],
@@ -1456,9 +1456,10 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self._verify_prs_rules(policy_rule_set_id)
 
     def _create_servicechain_node(self, node_type="LOADBALANCER"):
+        config = "heat_template_version: 2013-05-23"
         data = {'servicechain_node': {'service_type': node_type,
                                       'tenant_id': self._tenant_id,
-                                      'config': "{}"}}
+                                      'config': config}}
         scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
         node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
         scn_id = node['servicechain_node']['id']
@@ -1599,9 +1600,10 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
                                            consumer_ptg_id, [scs_id])
 
+        config = "heat_template_version: 2013-05-23"
         data = {'servicechain_node': {'service_type': "FIREWALL",
                                       'tenant_id': self._tenant_id,
-                                      'config': "{}"}}
+                                      'config': config}}
         scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
         new_node = self.deserialize(
                     self.fmt, scn_req.get_response(self.ext_api))
@@ -1832,9 +1834,10 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         child_prs_id = child_prs['policy_rule_set']['id']
 
         self._verify_prs_rules(child_prs_id)
+        config = "heat_template_version: 2013-05-23"
         data = {'servicechain_node': {'service_type': "FIREWALL",
                                       'tenant_id': self._tenant_id,
-                                      'config': "{}"}}
+                                      'config': config}}
         parent_scn_req = self.new_create_request(SERVICECHAIN_NODES,
                                                  data, self.fmt)
         parent_sc_node = self.deserialize(
