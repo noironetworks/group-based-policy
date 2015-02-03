@@ -1155,6 +1155,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self._associate_service_filter(tenant, contract, 'arp',
                                            transaction=trs, **attrs)
 
+            # Create HTTP filter/subject
+            attrs = {'etherT': 'ip',
+                     'prot': 'tcp',
+                     'dToPort': 80,
+                     'dFromPort': 80}
+            self._associate_service_filter(tenant, contract, 'http',
+                                           transaction=trs, **attrs)
+
     def _associate_service_filter(self, tenant, contract, filter_name,
                                   transaction=None, **attrs):
         with self.apic_manager.apic.transaction(transaction) as trs:
