@@ -140,7 +140,9 @@ class ApicMappingTestCase(
                             msg='Call not found, expected:\n%s\nobserved:'
                                 '\n%s' % (str(call), str(observed)))
             observed.remove(call)
-        self.assertFalse(len(observed))
+        self.assertFalse(
+            len(observed),
+            msg='There are more calls than expected: %s' % str(observed))
 
 
 class TestPolicyTarget(ApicMappingTestCase):
@@ -264,22 +266,34 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
     def _test_ptg_policy_rule_set_created(self, provider=True, shared=False):
         cntr = self.create_policy_rule_set(name='c',
                                            shared=shared)['policy_rule_set']
-
+        l2p = self.create_l2_policy()['l2_policy']
+        mgr = self.driver.apic_manager
+        mgr.set_contract_for_epg.reset_mock()
         if provider:
             ptg = self.create_policy_target_group(
+                l2_policy_id=l2p['id'],
                 provided_policy_rule_sets={cntr['id']: 'scope'})[
                     'policy_target_group']
         else:
             ptg = self.create_policy_target_group(
+                l2_policy_id=l2p['id'],
                 consumed_policy_rule_sets={cntr['id']: 'scope'})[
                     'policy_target_group']
 
         # Verify that the apic call is issued
         ct_owner = self.common_tenant if shared else cntr['tenant_id']
-        mgr = self.driver.apic_manager
-        mgr.set_contract_for_epg.assert_called_with(
-            ptg['tenant_id'], ptg['id'], cntr['id'], transaction='transaction',
-            contract_owner=ct_owner, provider=provider)
+        expected_calls = [
+            mock.call(
+                ptg['tenant_id'], ptg['id'], cntr['id'],
+                transaction='transaction', contract_owner=ct_owner,
+                provider=provider),
+            mock.call(
+                ptg['tenant_id'], ptg['id'],
+                amap.SERVICE_PREFIX + ptg['l2_policy_id'],
+                transaction='transaction', contract_owner=ptg['tenant_id'],
+                provider=False)]
+        self._check_call_list(expected_calls,
+                              mgr.set_contract_for_epg.call_args_list)
 
     def _test_ptg_policy_rule_set_updated(self, provider=True, shared=False):
         p_or_c = {True: 'provided_policy_rule_sets',

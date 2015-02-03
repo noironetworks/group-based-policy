@@ -84,6 +84,7 @@ class ExplicitSubnetAssociationNotSupported(gpexc.GroupPolicyBadRequest):
 
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'shadow-'
+SERVICE_PREFIX = 'service-'
 PROMISCUOUS_SUFFIX = 'promiscuous'
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
@@ -270,7 +271,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 context, context.current, rules, transaction=trs)
 
     def create_policy_target_postcommit(self, context):
-        super(ApicMappingDriver, self).create_policy_target_postcommit(context)
+        if not context.current['port_id']:
+            self._use_implicit_port(context)
         port = self._core_plugin.get_port(context._plugin_context,
                                           context.current['port_id'])
         if self._is_port_bound(port):
@@ -301,6 +303,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 context.current['consumed_policy_rule_sets'], [], [],
                 transaction=trs)
 
+            l2p = context._plugin.get_l2_policy(
+                context._plugin_context, context.current['l2_policy_id'])
+            self._configure_epg_service_contract(context, context.current, l2p,
+                                                 epg, transaction=trs)
+
     def create_l2_policy_precommit(self, context):
         self._reject_non_shared_net_on_shared_l2p(context)
 
@@ -322,11 +329,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 tenant, l2_policy, ctx_owner=ctx_owner, ctx_name=l3_policy,
                 transaction=trs)
             # Create neutron port EPG
-            shadow_epg = self.name_mapper.l2_policy(
-                context, context.current['id'], prefix=SHADOW_PREFIX)
-            self.apic_manager.ensure_epg_created(
-                tenant, shadow_epg, bd_owner=tenant, bd_name=l2_policy,
-                transaction=trs)
+            self._configure_shadow_epg(context, context.current, l2_policy,
+                                       transaction=trs)
             # Add existing subnets
             net_id = context.current['network_id']
             subnets = self._core_plugin.get_subnets(context._plugin_context,
@@ -384,7 +388,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             LOG.warn(_("Port %s is missing") % context.current['port_id'])
             return
         # Delete Neutron's port
-        super(ApicMappingDriver, self).delete_policy_target_postcommit(context)
+        port_id = context.current['port_id']
+        self._cleanup_port(context._plugin_context, port_id)
         # Notify the agent. If the port has been deleted by the parent method
         # the notification will not be done
         self._notify_port_update(context._plugin_context, port['id'])
@@ -405,10 +410,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self.apic_manager.delete_bd_on_apic(
                 tenant, l2_policy, transaction=trs)
             # Delete neutron port EPG
-            shadow_epg = self.name_mapper.l2_policy(
-                context, context.current['id'], prefix=SHADOW_PREFIX)
-            self.apic_manager.delete_epg_for_network(
-                tenant, shadow_epg, transaction=trs)
+            self._delete_shadow_epg(context, context.current, transaction=trs)
 
     def delete_l3_policy_postcommit(self, context):
         tenant = self._tenant_by_sharing_policy(context.current)
@@ -1111,3 +1113,81 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         l2p = self.gbp_plugin.get_l2_policy(plugin_context, l2p_id)
         return self._core_plugin.get_subnets(
             plugin_context, {'network_id': [l2p['network_id']]})
+
+    def _configure_shadow_epg(self, context, l2p, bd_name, transaction=None):
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            tenant = self._tenant_by_sharing_policy(l2p)
+            shadow_epg = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=SHADOW_PREFIX)
+            self.apic_manager.ensure_epg_created(
+                tenant, shadow_epg, bd_owner=tenant, bd_name=bd_name,
+                transaction=trs)
+
+            # Create Service contract
+            contract = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=SERVICE_PREFIX)
+            self.apic_manager.create_contract(
+                contract, owner=tenant, transaction=trs)
+
+            # Shadow EPG provides this contract
+            self.apic_manager.set_contract_for_epg(
+                tenant, shadow_epg, contract, provider=True,
+                contract_owner=tenant, transaction=trs)
+
+            # Create DHCP filter/subject
+            attrs = {'etherT': 'ip',
+                     'prot': 'udp',
+                     'dToPort': 68,
+                     'dFromPort': 67}
+            self._associate_service_filter(tenant, contract, 'dhcp',
+                                           transaction=trs, **attrs)
+
+            # Create DNS filter/subject
+            attrs = {'etherT': 'ip',
+                     'prot': 'udp',
+                     'dToPort': 'dns',
+                     'dFromPort': 'dns'}
+            self._associate_service_filter(tenant, contract, 'dns',
+                                           transaction=trs, **attrs)
+
+            # Create ARP filter/subject
+            attrs = {'etherT': 'arp'}
+            self._associate_service_filter(tenant, contract, 'arp',
+                                           transaction=trs, **attrs)
+
+    def _associate_service_filter(self, tenant, contract, filter_name,
+                                  transaction=None, **attrs):
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            filter_name = '%s-%s' % (str(self.apic_manager.app_profile_name),
+                                     filter_name)
+            self.apic_manager.create_tenant_filter(
+                filter_name, owner=tenant, transaction=trs, **attrs)
+            self.apic_manager.manage_contract_subject_bi_filter(
+                contract, contract, filter_name, owner=tenant,
+                transaction=trs, rule_owner=tenant)
+
+
+    def _delete_shadow_epg(self, context, l2p, transaction=None):
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            tenant = self._tenant_by_sharing_policy(l2p)
+            shadow_epg = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=SHADOW_PREFIX)
+            self.apic_manager.delete_epg_for_network(
+                tenant, shadow_epg, transaction=trs)
+
+            # Delete Service Contract
+            contract = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=SERVICE_PREFIX)
+            self.apic_manager.delete_contract(
+                contract, owner=tenant, transaction=trs)
+
+    def _configure_epg_service_contract(self, context, ptg, l2p, epg_name,
+                                        transaction=None):
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            contract_owner = self._tenant_by_sharing_policy(l2p)
+            tenant = self._tenant_by_sharing_policy(ptg)
+            contract = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=SERVICE_PREFIX)
+            self.apic_manager.set_contract_for_epg(
+                tenant, epg_name, contract, provider=False,
+                contract_owner=contract_owner, transaction=trs)
