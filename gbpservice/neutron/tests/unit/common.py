@@ -65,19 +65,20 @@ def get_update_policy_target_group_attrs():
 
 @gbp_attributes
 def get_create_l2_policy_default_attrs():
-    return {'name': '', 'description': '', 'shared': False}
+    return {'name': '', 'description': '', 'shared': False,
+            'allow_broadcast': False}
 
 
 @gbp_attributes
 def get_create_l2_policy_attrs():
     return {'name': 'l2p1', 'tenant_id': _uuid(),
             'description': 'test L2 policy', 'l3_policy_id': _uuid(),
-            'shared': False}
+            'shared': False, 'allow_broadcast': True}
 
 
 @gbp_attributes
 def get_update_l2_policy_attrs():
-    return {'name': 'new_name'}
+    return {'name': 'new_name', 'allow_broadcast': True}
 
 
 @gbp_attributes
