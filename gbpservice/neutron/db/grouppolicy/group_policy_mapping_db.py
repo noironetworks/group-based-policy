@@ -237,7 +237,9 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                      description=l2p['description'],
                                      l3_policy_id=l2p['l3_policy_id'],
                                      network_id=l2p['network_id'],
-                                     shared=l2p.get('shared', False))
+                                     shared=l2p.get('shared', False),
+                                     allow_broadcast=l2p.get('allow_broadcast',
+                                                             False))
             context.session.add(l2p_db)
         return self._make_l2_policy_dict(l2p_db)
 

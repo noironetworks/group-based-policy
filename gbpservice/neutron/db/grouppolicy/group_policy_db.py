@@ -130,6 +130,7 @@ class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
                              sa.ForeignKey('gp_l3_policies.id'),
                              nullable=True)
     shared = sa.Column(sa.Boolean)
+    allow_broadcast = sa.Column(sa.Boolean)
 
 
 class ESToL3PAssociation(model_base.BASEV2):
@@ -814,7 +815,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'name': l2p['name'],
                'description': l2p['description'],
                'l3_policy_id': l2p['l3_policy_id'],
-               'shared': l2p.get('shared', False), }
+               'shared': l2p.get('shared', False),
+               'allow_broadcast': l2p.get('allow_broadcast', False)}
         res['policy_target_groups'] = [
             ptg['id'] for ptg in l2p['policy_target_groups']]
         return self._fields(res, fields)
@@ -1154,7 +1156,9 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                               tenant_id=tenant_id, name=l2p['name'],
                               description=l2p['description'],
                               l3_policy_id=l2p['l3_policy_id'],
-                              shared=l2p.get('shared', False))
+                              shared=l2p.get('shared', False),
+                              allow_broadcast=l2p.get('allow_broadcast',
+                                                      False))
             context.session.add(l2p_db)
         return self._make_l2_policy_dict(l2p_db)
 
