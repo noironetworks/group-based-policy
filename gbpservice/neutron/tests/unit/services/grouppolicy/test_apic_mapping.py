@@ -489,7 +489,7 @@ class TestL2Policy(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         mgr.ensure_bd_created_on_apic.assert_called_once_with(
             tenant, l2p['id'], ctx_owner=tenant, ctx_name=l2p['l3_policy_id'],
-            transaction=mock.ANY)
+            allow_broadcast=False, transaction=mock.ANY)
         mgr.ensure_epg_created.assert_called_once_with(
             tenant, amap.SHADOW_PREFIX + l2p['id'], bd_owner=tenant,
             bd_name=l2p['id'], transaction=mock.ANY)
@@ -531,6 +531,17 @@ class TestL2Policy(ApicMappingTestCase):
                 ptg = self.create_policy_target_group(
                     l2_policy_id=l2p['id'])['policy_target_group']
                 self.assertEqual(ptg['subnets'], [sub['id']])
+
+    def test_l2_policy_updated(self):
+        l2p = self.create_l2_policy()['l2_policy']
+        mgr = self.driver.apic_manager
+        mgr.ensure_bd_created_on_apic.reset_mock()
+        self.update_l2_policy(l2p['id'], allow_broadcast=True)
+        l2p = self.show_l2_policy(l2p['id'])['l2_policy']
+        self.assertTrue(l2p['allow_broadcast'])
+        mgr.ensure_bd_created_on_apic.assert_called_once_with(
+            l2p['tenant_id'], l2p['id'], ctx_name=None,
+            allow_broadcast=True)
 
 
 class TestL3Policy(ApicMappingTestCase):

@@ -314,6 +314,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def update_l2_policy_precommit(self, context):
         self._reject_non_shared_net_on_shared_l2p(context)
         self._reject_shared_update(context, 'l2_policy')
+        # TODO(ivar): check whether a transparent SC exists if allow_broadcast
+        # is modified
 
     def create_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).create_l2_policy_postcommit(context)
@@ -327,6 +329,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         with self.apic_manager.apic.transaction(None) as trs:
             self.apic_manager.ensure_bd_created_on_apic(
                 tenant, l2_policy, ctx_owner=ctx_owner, ctx_name=l3_policy,
+                allow_broadcast=context.current['allow_broadcast'],
                 transaction=trs)
             # Create neutron port EPG
             self._configure_shadow_epg(context, context.current, l2_policy,
@@ -338,6 +341,15 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self._manage_l2p_subnets(
                 context._plugin_context, context.current['id'], subnets, [],
                 transaction=trs)
+
+    def update_l2_policy_postcommit(self, context):
+        tenant = self._tenant_by_sharing_policy(context.current)
+        l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
+        if (context.current['allow_broadcast'] !=
+                context.original['allow_broadcast']):
+            self.apic_manager.ensure_bd_created_on_apic(
+                tenant, l2_policy, ctx_name=None,
+                allow_broadcast=context.current['allow_broadcast'])
 
     def create_l3_policy_precommit(self, context):
         self._check_l3p_es(context)
