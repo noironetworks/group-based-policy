@@ -419,11 +419,10 @@ RESOURCE_ATTRIBUTE_MAP = {
                       'default': False, 'convert_to': attr.convert_to_boolean,
                       'is_visible': True, 'required_by_policy': True,
                       'enforce_policy': True},
-        # TODO(Sumit): uncomment when supported in data path
-        # 'allow_broadcast': {'allow_post': True, 'allow_put': True,
-        #                    'default': True, 'is_visible': True,
-        #                    'convert_to': attr.convert_to_boolean,
-        #                    'required': False},
+        'allow_broadcast': {'allow_post': True, 'allow_put': True,
+                            'default': False, 'is_visible': True,
+                            'convert_to': attr.convert_to_boolean,
+                            'required': False},
     },
     L3_POLICIES: {
         'id': {'allow_post': False, 'allow_put': False,
