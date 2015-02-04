@@ -1152,7 +1152,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                      'dToPort': 68,
                      'dFromPort': 67}
             self._associate_service_filter(tenant, contract, 'dhcp',
-                                           transaction=trs, **attrs)
+                                           'dhcp', transaction=trs, **attrs)
 
             # Create DNS filter/subject
             attrs = {'etherT': 'ip',
@@ -1160,12 +1160,18 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                      'dToPort': 'dns',
                      'dFromPort': 'dns'}
             self._associate_service_filter(tenant, contract, 'dns',
-                                           transaction=trs, **attrs)
+                                           'dns', transaction=trs, **attrs)
+            attrs = {'etherT': 'ip',
+                     'prot': 'udp',
+                     'sToPort': 'dns',
+                     'sFromPort': 'dns'}
+            self._associate_service_filter(tenant, contract, 'dns',
+                                           'r-dns', transaction=trs, **attrs)
 
             # Create ARP filter/subject
             attrs = {'etherT': 'arp'}
             self._associate_service_filter(tenant, contract, 'arp',
-                                           transaction=trs, **attrs)
+                                           'arp', transaction=trs, **attrs)
 
             # Create HTTP filter/subject
             attrs = {'etherT': 'ip',
@@ -1173,15 +1179,22 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                      'dToPort': 80,
                      'dFromPort': 80}
             self._associate_service_filter(tenant, contract, 'http',
-                                           transaction=trs, **attrs)
+                                           'http', transaction=trs, **attrs)
+            attrs = {'etherT': 'ip',
+                     'prot': 'tcp',
+                     'sToPort': 80,
+                     'sFromPort': 80}
+            self._associate_service_filter(tenant, contract, 'http',
+                                           'r-http', transaction=trs, **attrs)
 
     def _associate_service_filter(self, tenant, contract, filter_name,
-                                  transaction=None, **attrs):
+                                  entry_name, transaction=None, **attrs):
         with self.apic_manager.apic.transaction(transaction) as trs:
             filter_name = '%s-%s' % (str(self.apic_manager.app_profile_name),
                                      filter_name)
             self.apic_manager.create_tenant_filter(
-                filter_name, owner=tenant, transaction=trs, **attrs)
+                filter_name, owner=tenant, entry=entry_name,
+                transaction=trs, **attrs)
             self.apic_manager.manage_contract_subject_bi_filter(
                 contract, contract, filter_name, owner=tenant,
                 transaction=trs, rule_owner=tenant)
