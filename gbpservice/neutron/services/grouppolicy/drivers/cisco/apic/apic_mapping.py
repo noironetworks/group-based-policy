@@ -1174,7 +1174,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 contract, contract, filter_name, owner=tenant,
                 transaction=trs, rule_owner=tenant)
 
-
     def _delete_shadow_epg(self, context, l2p, transaction=None):
         with self.apic_manager.apic.transaction(transaction) as trs:
             tenant = self._tenant_by_sharing_policy(l2p)
