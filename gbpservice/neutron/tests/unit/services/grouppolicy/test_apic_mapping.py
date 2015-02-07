@@ -165,6 +165,13 @@ class ApicMappingTestCase(
             policy_classifier_id=cls['id'], policy_actions=[action['id']],
             shared=shared)['policy_rule']
 
+    def _bind_port_to_host(self, port_id, host):
+        data = {'port': {'binding:host_id': host}}
+        # Create EP with bound port
+        req = self.new_update_request('ports', data, port_id,
+                                      self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
 
 class TestPolicyTarget(ApicMappingTestCase):
 
@@ -192,13 +199,6 @@ class TestPolicyTarget(ApicMappingTestCase):
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
             self.delete_policy_target(pt['policy_target']['id'],
                                       expected_res_status=204)
-
-    def _bind_port_to_host(self, port_id, host):
-        data = {'port': {'binding:host_id': host}}
-        # Create EP with bound port
-        req = self.new_update_request('ports', data, port_id,
-                                      self.fmt)
-        return self.deserialize(self.fmt, req.get_response(self.api))
 
     def test_delete_policy_target_notification_no_apic_network(self):
         ptg = self.create_policy_target_group(
@@ -1609,9 +1609,6 @@ class TestExternalPolicy(ApicMappingTestCase):
 
 class TestApicChains(ApicMappingTestCase):
 
-    def _verify_prs_rules(self, *args, **kwargs):
-        pass
-
     def _create_servicechain_spec(self, node_types=None):
         node_types = node_types or []
         if not node_types:
@@ -1638,9 +1635,8 @@ class TestApicChains(ApicMappingTestCase):
         return scn_id
 
     def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
-                                      consumer_ptg_id, scs_id_list):
+                                      policy_rule_set_id, scs_id_list):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
-        self.assertEqual(sc_instance['consumer_ptg_id'], consumer_ptg_id)
         self.assertEqual(scs_id_list, sc_instance['servicechain_specs'])
 
     def _create_tcp_redirect_rule(self, port_range, servicechain_spec_id):
@@ -1675,16 +1671,13 @@ class TestApicChains(ApicMappingTestCase):
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
         provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
-                                                            policy_rule_set_id)
-
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+            policy_rule_set_id)
+        sc_instances = self._list_service_chains()
         # We should have one service chain instance created now
         self.assertEqual(len(sc_instances['servicechain_instances']), 1)
         sc_instance = sc_instances['servicechain_instances'][0]
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
+                                           policy_rule_set_id, [scs_id])
 
         data = {'servicechain_node': {'service_type': "FIREWALL",
                                       'tenant_id': self._tenant_id,
@@ -1704,9 +1697,7 @@ class TestApicChains(ApicMappingTestCase):
         action = self.deserialize(self.fmt,
                                   req.get_response(self.ext_api))
 
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        new_sc_instances = self.deserialize(self.fmt, res)
+        new_sc_instances = self._list_service_chains()
         # We should have one service chain instance created now
         self.assertEqual(len(new_sc_instances['servicechain_instances']), 1)
         new_sc_instance = new_sc_instances['servicechain_instances'][0]
@@ -1714,12 +1705,11 @@ class TestApicChains(ApicMappingTestCase):
         self.assertEqual([new_scs_id], new_sc_instance['servicechain_specs'])
 
         req = self.new_delete_request(
-                'policy_target_groups', consumer_ptg_id)
+                'policy_target_groups', provider_ptg_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+
+        sc_instances = self._list_service_chains()
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
     def test_screen_prss_with_redirect(self):
@@ -1773,18 +1763,18 @@ class TestApicChains(ApicMappingTestCase):
 
         ptg1 = self.create_policy_target_group(
             provided_policy_rule_sets={prs1['id']: ''})['policy_target_group']
-        ptg2 = self.create_policy_target_group(
+        self.create_policy_target_group(
             consumed_policy_rule_sets={prs1['id']: ''})['policy_target_group']
         pr4['policy_rule_sets'] = [prs1['id'], prs3['id']]
         chains = self.driver._chains_by_rule(ctx, pr4)
         self.assertEqual(1, len(chains))
         self.assertEqual(ptg1['id'], chains[0].provider_ptg_id)
-        self.assertEqual(ptg2['id'], chains[0].consumer_ptg_id)
+        self.assertEqual(prs1['id'], chains[0].policy_rule_set_id)
 
         chains = self.driver._chains_by_rule(ctx, pr4, [prs1['id']])
         self.assertEqual(1, len(chains))
         self.assertEqual(ptg1['id'], chains[0].provider_ptg_id)
-        self.assertEqual(ptg2['id'], chains[0].consumer_ptg_id)
+        self.assertEqual(prs1['id'], chains[0].policy_rule_set_id)
 
         chains = self.driver._chains_by_rule(ctx, pr4, [prs3['id']])
         self.assertEqual(0, len(chains))
@@ -1797,45 +1787,36 @@ class TestApicChains(ApicMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self._verify_prs_rules(policy_rule_set_id)
         provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
                                                             policy_rule_set_id)
 
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+        sc_instances = self._list_service_chains()
         # We should have one service chain instance created now
         self.assertEqual(len(sc_instances['servicechain_instances']), 1)
         sc_instance = sc_instances['servicechain_instances'][0]
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
+                                           policy_rule_set_id, [scs_id])
 
         # Update classifier and verify instance is not recreated
         classifier = {'policy_classifier': {'port_range': "80"}}
         req = self.new_update_request('policy_classifiers',
                                       classifier, classifier_id)
-        classifier = self.deserialize(self.fmt,
-                                      req.get_response(self.ext_api))
+        self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+        sc_instances = self._list_service_chains()
         # We should have one service chain instance created now
         self.assertEqual(len(sc_instances['servicechain_instances']), 1)
         sc_instance_new = sc_instances['servicechain_instances'][0]
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
+                                           policy_rule_set_id, [scs_id])
         self.assertEqual(sc_instance, sc_instance_new)
 
         req = self.new_delete_request(
-                'policy_target_groups', consumer_ptg_id)
+                'policy_target_groups', provider_ptg_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+
+        sc_instances = self._list_service_chains()
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
     def test_redirect_multiple_ptgs_single_prs(self):
@@ -1847,32 +1828,26 @@ class TestApicChains(ApicMappingTestCase):
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
 
-        self._verify_prs_rules(policy_rule_set_id)
         #Create 2 provider and 2 consumer PTGs
         provider_ptg1 = self.create_policy_target_group(
             name="p_ptg1",
             provided_policy_rule_sets={policy_rule_set_id: None})
         provider_ptg1_id = provider_ptg1['policy_target_group']['id']
-        consumer_ptg1 = self.create_policy_target_group(
+        self.create_policy_target_group(
             name="c_ptg1",
             consumed_policy_rule_sets={policy_rule_set_id: None})
-        consumer_ptg1_id = consumer_ptg1['policy_target_group']['id']
 
         provider_ptg2 = self.create_policy_target_group(
             name="p_ptg2",
             provided_policy_rule_sets={policy_rule_set_id: None})
         provider_ptg2_id = provider_ptg2['policy_target_group']['id']
-        consumer_ptg2 = self.create_policy_target_group(
+        self.create_policy_target_group(
             name="c_ptg2",
             consumed_policy_rule_sets={policy_rule_set_id: None})
-        consumer_ptg2_id = consumer_ptg2['policy_target_group']['id']
 
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
-        # We should have 4 service chain instances created now
-        self.assertEqual(len(sc_instances['servicechain_instances']), 4)
+        sc_instances = self._list_service_chains()
+        # We should have 2 service chain instances (one per provider)
+        self.assertEqual(len(sc_instances['servicechain_instances']), 2)
         sc_instances = sc_instances['servicechain_instances']
         sc_instances_provider_ptg_ids = set()
         sc_instances_consumer_ptg_ids = set()
@@ -1880,34 +1855,17 @@ class TestApicChains(ApicMappingTestCase):
             sc_instances_provider_ptg_ids.add(sc_instance['provider_ptg_id'])
             sc_instances_consumer_ptg_ids.add(sc_instance['consumer_ptg_id'])
         expected_provider_ptg_ids = {provider_ptg1_id, provider_ptg2_id}
-        expected_consumer_ptg_ids = {consumer_ptg1_id, consumer_ptg2_id}
         self.assertEqual(expected_provider_ptg_ids,
                          sc_instances_provider_ptg_ids)
-        self.assertEqual(expected_consumer_ptg_ids,
-                         sc_instances_consumer_ptg_ids)
 
-        # Deleting one group should end up deleting the two service chain
-        # Instances associated to it
-        req = self.new_delete_request(
-            'policy_target_groups', consumer_ptg1_id)
-        res = req.get_response(self.ext_api)
-        self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
-        self.assertEqual(len(sc_instances['servicechain_instances']), 2)
-        sc_instances = sc_instances['servicechain_instances']
-        for sc_instance in sc_instances:
-            self.assertNotEqual(sc_instance['consumer_ptg_id'],
-                                consumer_ptg1_id)
-
+        # Deleting one provider should end up deleting the one service chain
+        # Instance associated to it
         req = self.new_delete_request(
             'policy_target_groups', provider_ptg1_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+
+        sc_instances = self._list_service_chains()
         self.assertEqual(len(sc_instances['servicechain_instances']), 1)
         sc_instance = sc_instances['servicechain_instances'][0]
         self.assertNotEqual(sc_instance['provider_ptg_id'], provider_ptg1_id)
@@ -1916,9 +1874,8 @@ class TestApicChains(ApicMappingTestCase):
             'policy_target_groups', provider_ptg2_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+
+        sc_instances = self._list_service_chains()
         # No more service chain instances when all the providers are deleted
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
@@ -1933,24 +1890,20 @@ class TestApicChains(ApicMappingTestCase):
         provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
                                                             policy_rule_set_id)
 
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_node_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+        sc_instances = self._list_service_chains()
         # We should have one service chain instance created now
         self.assertEqual(len(sc_instances['servicechain_instances']), 1)
         sc_instance = sc_instances['servicechain_instances'][0]
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
+                                           policy_rule_set_id, [scs_id])
 
         # Verify that PTG delete cleans up the chain instances
         req = self.new_delete_request(
-            'policy_target_groups', consumer_ptg_id)
+            'policy_target_groups', provider_ptg_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_node_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+
+        sc_instances = self._list_service_chains()
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
     def test_rule_update_updates_chain(self):
@@ -1960,18 +1913,14 @@ class TestApicChains(ApicMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self._verify_prs_rules(policy_rule_set_id)
         provider_ptg_id, consumer_ptg_id = self._create_provider_consumer_ptgs(
                                                             policy_rule_set_id)
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+        sc_instances = self._list_service_chains()
         # We should have one service chain instance created now
         self.assertEqual(len(sc_instances['servicechain_instances']), 1)
         sc_instance = sc_instances['servicechain_instances'][0]
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
+                                           policy_rule_set_id, [scs_id])
 
         # Update policy rule with new classifier and verify instance is
         # recreated
@@ -1983,18 +1932,13 @@ class TestApicChains(ApicMappingTestCase):
                                 'policy_classifier_id': classifier['id']}}
         req = self.new_update_request('policy_rules', policy_rule,
                                       policy_rule_id)
-        policy_rule = self.deserialize(self.fmt,
-                                       req.get_response(self.ext_api))
 
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+        sc_instances = self._list_service_chains()
         # We should have one service chain instance created now
         self.assertEqual(len(sc_instances['servicechain_instances']), 1)
         sc_instance_new = sc_instances['servicechain_instances'][0]
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id])
+                                           policy_rule_set_id, [scs_id])
         self.assertEqual(sc_instance, sc_instance_new)
 
         scs_id2 = self._create_servicechain_spec()
@@ -2003,23 +1947,20 @@ class TestApicChains(ApicMappingTestCase):
         self.update_policy_rule(policy_rule_id, policy_actions=[action['id']])
 
         # Verify SC instance changed
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+        sc_instances = self._list_service_chains()
         # We should have one service chain instance created now
         self.assertEqual(len(sc_instances['servicechain_instances']), 1)
         sc_instance_new = sc_instances['servicechain_instances'][0]
         self._assert_proper_chain_instance(sc_instance_new, provider_ptg_id,
-                                           consumer_ptg_id, [scs_id2])
+                                           policy_rule_set_id, [scs_id2])
         self.assertNotEqual(sc_instance, sc_instance_new)
 
         req = self.new_delete_request(
-                'policy_target_groups', consumer_ptg_id)
+                'policy_target_groups', provider_ptg_id)
         res = req.get_response(self.ext_api)
         self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
-        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_instance_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+
+        sc_instances = self._list_service_chains()
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
     def test_update_ptg_with_redirect_prs(self):
@@ -2030,14 +1971,9 @@ class TestApicChains(ApicMappingTestCase):
         policy_rule_set = self.create_policy_rule_set(
             name="c1", policy_rules=[policy_rule_id])
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
-        self._verify_prs_rules(policy_rule_set_id)
         provider_ptg, consumer_ptg = self._create_provider_consumer_ptgs()
 
-        self._verify_prs_rules(policy_rule_set_id)
-        # No service chain instances until we have provider and consumer prs
-        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_node_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+        sc_instances = self._list_service_chains()
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
 
         # We should have one service chain instance created when PTGs are
@@ -2053,14 +1989,11 @@ class TestApicChains(ApicMappingTestCase):
                             consumed_policy_rule_sets={policy_rule_set_id: ''},
                             expected_res_status=200)
 
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_node_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+        sc_instances = self._list_service_chains()
         self.assertEqual(len(sc_instances['servicechain_instances']), 1)
         sc_instance = sc_instances['servicechain_instances'][0]
         self._assert_proper_chain_instance(sc_instance, provider_ptg,
-                                           consumer_ptg, [scs_id])
+                                           policy_rule_set_id, [scs_id])
 
         # Verify that PTG update removing prs cleans up the chain instances
         self.update_policy_target_group(
@@ -2068,8 +2001,360 @@ class TestApicChains(ApicMappingTestCase):
                             provided_policy_rule_sets={},
                             consumed_policy_rule_sets={},
                             expected_res_status=200)
-        self._verify_prs_rules(policy_rule_set_id)
-        sc_node_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
-        res = sc_node_list_req.get_response(self.ext_api)
-        sc_instances = self.deserialize(self.fmt, res)
+
+        sc_instances = self._list_service_chains()
         self.assertEqual(len(sc_instances['servicechain_instances']), 0)
+
+    def test_chain_on_apic_create(self):
+        scs_id = self._create_servicechain_spec(
+            node_types=['FIREWALL_TRANSPARENT'])
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", scs_id)
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
+        # Create PTGs on same L2P
+        l2p = self.create_l2_policy()['l2_policy']
+        provider = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        consumer = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+
+        mgr = self.driver.apic_manager
+        mgr.reset_mock()
+        # Provide the redirect contract
+        self.update_policy_target_group(
+            consumer['id'],
+            consumed_policy_rule_sets={policy_rule_set['id']: ''})
+        self.assertFalse(mgr.ensure_bd_created_on_apic.called)
+        self.assertFalse(mgr.ensure_epg_created.called)
+
+        # Now form the chain
+        self.update_policy_target_group(
+            provider['id'],
+            provided_policy_rule_sets={policy_rule_set['id']: ''})
+
+        sc_instances = self._list_service_chains()
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+
+        expected = [
+            # Provider EPG provided PRS
+            mock.call(provider['tenant_id'], provider['id'],
+                      policy_rule_set['id'], provider=True,
+                      contract_owner=policy_rule_set['tenant_id'],
+                      transaction=mock.ANY),
+            # Consumer EPG consumed PRS
+            mock.call(consumer['tenant_id'], consumer['id'],
+                      policy_rule_set['id'], provider=False,
+                      contract_owner=policy_rule_set['tenant_id'],
+                      transaction=mock.ANY)]
+
+        self._verify_chain_set(provider, l2p, policy_rule_set,
+                               sc_instance, 1, pre_set_contract_calls=expected)
+
+        # New consumer doesn't trigger anything
+        new_consumer = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        mgr.reset_mock()
+        self.update_policy_target_group(
+            new_consumer['id'],
+            consumed_policy_rule_sets={policy_rule_set['id']: ''})
+
+        self.assertFalse(mgr.ensure_bd_created_on_apic.called)
+        self.assertFalse(mgr.ensure_epg_created.called)
+
+    def test_chain_on_apic_delete(self):
+        scs_id = self._create_servicechain_spec(
+            node_types=['FIREWALL_TRANSPARENT', 'FIREWALL_TRANSPARENT'])
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", scs_id)
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
+        # Create PTGs on same L2P
+        l2p = self.create_l2_policy()['l2_policy']
+        provider = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        consumer = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+
+        # Provide the redirect contract
+        self.update_policy_target_group(
+            provider['id'],
+            provided_policy_rule_sets={policy_rule_set['id']: ''})
+
+        # Now form the chain
+        self.update_policy_target_group(
+            consumer['id'],
+            consumed_policy_rule_sets={policy_rule_set['id']: ''})
+
+        sc_instances = self._list_service_chains()
+        # We should have one service chain instance created now
+        sc_instance = sc_instances['servicechain_instances'][0]
+
+        # Dissolve the chain by disassociation
+        mgr = self.driver.apic_manager
+        mgr.reset_mock()
+        self.update_policy_target_group(
+            provider['id'], provided_policy_rule_sets={})
+        # Provider EPG contract unset
+        expected = mock.call(provider['tenant_id'], provider['id'],
+                             policy_rule_set['id'], provider=True,
+                             contract_owner=policy_rule_set['tenant_id'],
+                             transaction=mock.ANY)
+        self._verify_chain_unset(
+            provider, l2p, policy_rule_set,
+            sc_instance, 2, pre_unset_contract_calls=[expected])
+
+    def test_service_ports_bound(self):
+        scs_id = self._create_servicechain_spec(
+            node_types=['LOADBALANCER', 'FIREWALL_TRANSPARENT', 'LOADBALANCER',
+                        'FIREWALL_TRANSPARENT'])
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", scs_id)
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
+        # Create PTGs on same L2P
+        l2p = self.create_l2_policy()['l2_policy']
+        provider = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        consumer = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+
+        # Provide the redirect contract
+        self.update_policy_target_group(
+            provider['id'],
+            provided_policy_rule_sets={policy_rule_set['id']: ''})
+
+        # Now form the chain
+        self.update_policy_target_group(
+            consumer['id'],
+            consumed_policy_rule_sets={policy_rule_set['id']: ''})
+
+        # Create LB pt
+        pt_lb_1 = self.create_policy_target(
+            policy_target_group_id=provider['id'],
+            name='chain_provider_1_notransparent')['policy_target']
+        pt_lb_2 = self.create_policy_target(
+            policy_target_group_id=provider['id'],
+            name='chain_provider_3_notransparent')['policy_target']
+        # Create PTs for FW1
+        pt_s_fw_1 = self.create_policy_target(
+            policy_target_group_id=provider['id'],
+            name='chain_provider_2_transparent')['policy_target']
+        pt_d_fw_1 = self.create_policy_target(
+            policy_target_group_id=provider['id'],
+            name='chain_consumer_2_transparent')['policy_target']
+        pt_s_fw_2 = self.create_policy_target(
+            policy_target_group_id=provider['id'],
+            name='chain_provider_4_transparent')['policy_target']
+        pt_d_fw_2 = self.create_policy_target(
+            policy_target_group_id=provider['id'],
+            name='chain_consumer_4_transparent')['policy_target']
+        pts = [pt_lb_1, pt_lb_2, pt_s_fw_1, pt_d_fw_1, pt_s_fw_2, pt_d_fw_2]
+        # Bind all ports
+        for pt in pts:
+            self._bind_port_to_host(pt['port_id'], 'h1')
+
+        # Verify that all the ports are chained correctly.
+        sc_instances = self._list_service_chains()
+        sc_instance = sc_instances['servicechain_instances'][0]
+        sc_instance_id = sc_instance['id']
+
+        # Verify first LB
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % pt_lb_1['port_id'], host='h1')
+        self.assertEqual('0-' + sc_instance_id,
+                         mapping['endpoint_group_name'])
+
+        # Verify second LB
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % pt_lb_2['port_id'], host='h1')
+        self.assertEqual('1-' + sc_instance_id, mapping['endpoint_group_name'])
+
+        # Verify First FW
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % pt_s_fw_1['port_id'], host='h1')
+        self.assertEqual('0-' + sc_instance_id,
+                         mapping['endpoint_group_name'])
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % pt_d_fw_1['port_id'], host='h1')
+        self.assertEqual('1-' + sc_instance_id,
+                         mapping['endpoint_group_name'])
+
+        # Verify Second FW
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % pt_s_fw_2['port_id'], host='h1')
+        self.assertEqual('1-' + sc_instance_id,
+                         mapping['endpoint_group_name'])
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % pt_d_fw_2['port_id'], host='h1')
+        self.assertEqual('2-' + sc_instance_id,
+                         mapping['endpoint_group_name'])
+
+    def test_service_ports_bound_notransparent(self):
+        scs_id = self._create_servicechain_spec(
+            node_types=['LOADBALANCER', 'LOADBALANCER'])
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", scs_id)
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
+        # Create PTGs on same L2P
+        l2p = self.create_l2_policy()['l2_policy']
+        provider = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        consumer = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+
+        # Provide the redirect contract
+        self.update_policy_target_group(
+            provider['id'],
+            provided_policy_rule_sets={policy_rule_set['id']: ''})
+
+        # Now form the chain
+        self.update_policy_target_group(
+            consumer['id'],
+            consumed_policy_rule_sets={policy_rule_set['id']: ''})
+
+        # Create LB pt
+        pt_lb_1 = self.create_policy_target(
+            policy_target_group_id=provider['id'],
+            name='chain_provider_1_notransparent')['policy_target']
+        pt_lb_2 = self.create_policy_target(
+            policy_target_group_id=provider['id'],
+            name='chain_provider_2_notransparent')['policy_target']
+
+        pts = [pt_lb_1, pt_lb_2]
+        for pt in pts:
+            self._bind_port_to_host(pt['port_id'], 'h1')
+
+        # Verify first LB
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % pt_lb_1['port_id'], host='h1')
+        self.assertEqual(provider['id'],
+                         mapping['endpoint_group_name'])
+
+        # Verify second LB
+        mapping = self.driver.get_gbp_details(
+            context.get_admin_context(),
+            device='tap%s' % pt_lb_2['port_id'], host='h1')
+        self.assertEqual(provider['id'], mapping['endpoint_group_name'])
+
+    def _verify_chain_set(self, provider, l2p, policy_rule_set, sc_instance,
+                          n_tnodes, pre_bd_create_calls=None,
+                          pre_epg_create_calls=None,
+                          pre_set_contract_calls=None):
+        # One shadow BD created
+        mgr = self.driver.apic_manager
+        expected_calls = pre_bd_create_calls or []
+        for x in xrange(n_tnodes):
+            expected_calls.append(mock.call(
+                l2p['tenant_id'], str(x) + '-' + sc_instance['id'],
+                ctx_owner=l2p['tenant_id'], ctx_name=l2p['l3_policy_id'],
+                allow_broadcast=True, transaction=mock.ANY))
+
+        expected_calls = pre_epg_create_calls or []
+
+        # Shadow EPG created on shadow BD
+        for x in xrange(n_tnodes):
+            expected_calls.append(
+                mock.call(l2p['tenant_id'], '0-' + sc_instance['id'],
+                          bd_owner=l2p['tenant_id'],
+                          bd_name=str(x) + '-' + sc_instance['id'],
+                          transaction=mock.ANY))
+        if n_tnodes > 0:
+            # Provider moved to 0th shadow BD
+            expected_calls.append(
+                mock.call(provider['tenant_id'], provider['id'],
+                          bd_owner=l2p['tenant_id'],
+                          bd_name='0-' + sc_instance['id']))
+            # Shadow EPG created in original BD
+            expected_calls.append(
+                mock.call(l2p['tenant_id'],
+                          str(n_tnodes) + '-' + sc_instance['id'],
+                          bd_owner=l2p['tenant_id'], bd_name=l2p['id'],
+                          transaction=mock.ANY))
+        self._check_call_list(
+            expected_calls, mgr.ensure_epg_created.call_args_list)
+
+        expected_calls = pre_set_contract_calls or []
+
+        if n_tnodes > 0:
+            # cons-side Shadow EPG provides PRS
+            expected_calls.append(
+                mock.call(l2p['tenant_id'],
+                          str(n_tnodes) + '-' + sc_instance['id'],
+                          policy_rule_set['id'], provider=True,
+                          contract_owner=policy_rule_set['tenant_id'],
+                          transaction=mock.ANY))
+            # 0th shadow consumes ANY
+            expected_calls.append(
+                mock.call(l2p['tenant_id'], '0-' + sc_instance['id'],
+                          'any-' + sc_instance['id'], provider=False,
+                          contract_owner=l2p['tenant_id']))
+            # Provider provides ANY
+            expected_calls.append(
+                mock.call(l2p['tenant_id'], provider['id'],
+                          'any-' + sc_instance['id'], provider=True,
+                          contract_owner=l2p['tenant_id']))
+
+        self._check_call_list(
+            expected_calls, mgr.set_contract_for_epg.call_args_list)
+
+    def _verify_chain_unset(self, provider, l2p, policy_rule_set, sc_instance,
+                            n_tnodes, pre_bd_delete_calls=None,
+                            pre_epg_deleted_calls=None,
+                            pre_unset_contract_calls=None):
+        # shadow BDs deleted
+        mgr = self.driver.apic_manager
+        expected_calls = pre_bd_delete_calls or []
+        for x in xrange(n_tnodes):
+            expected_calls.append(
+                mock.call(l2p['tenant_id'], str(x) + '-' + sc_instance['id'],
+                transaction=mock.ANY))
+        self._check_call_list(
+            expected_calls, mgr.delete_bd_on_apic.call_args_list)
+
+        # Shadow EPGs deleted
+        expected_calls = pre_epg_deleted_calls or []
+        for x in xrange(n_tnodes):
+            expected_calls.append(
+                mock.call(l2p['tenant_id'], str(x) + '-' + sc_instance['id'],
+                          transaction=mock.ANY))
+        if n_tnodes > 0:
+            expected_calls.append(
+                mock.call(l2p['tenant_id'],
+                          str(n_tnodes) + '-' + sc_instance['id'],
+                          transaction=mock.ANY))
+
+        self._check_call_list(
+            expected_calls, mgr.delete_epg_for_network.call_args_list)
+
+        # Provider moved to original BD
+        if n_tnodes > 0:
+            mgr.ensure_epg_created.assert_called_once_with(
+                provider['tenant_id'], provider['id'],
+                bd_owner=l2p['tenant_id'], bd_name=l2p['id'])
+
+        # Contracts unset
+        expected_calls = pre_unset_contract_calls or []
+        if n_tnodes > 0:
+            expected_calls.append(
+                mock.call(l2p['tenant_id'], provider['id'],
+                          'any-' + sc_instance['id'], provider=True,
+                          contract_owner=l2p['tenant_id']))
+
+        self._check_call_list(
+            expected_calls, mgr.unset_contract_for_epg.call_args_list)
+
+    def _list_service_chains(self):
+        sc_instance_list_req = self.new_list_request(SERVICECHAIN_INSTANCES)
+        res = sc_instance_list_req.get_response(self.ext_api)
+        return self.deserialize(self.fmt, res)
