@@ -92,6 +92,7 @@ SHADOW_PREFIX = 'shadow-'
 SERVICE_PREFIX = 'service-'
 ANY_PREFIX = 'any-'
 PROMISCUOUS_SUFFIX = 'promiscuous'
+APIC_OWNED = 'apic_owned_'
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
 ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
@@ -1307,14 +1308,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         with lockutils.lock(l2p_id, external=True):
             subs = self._get_l2p_subnets(context._plugin_context, l2p_id)
             subs = set([x['id'] for x in subs])
+            added = None
             if not subs or force_add:
-                sub = self._internal_use_implicit_subnet(context)
-                try:
-                    context.current['subnets'].append(sub['id'])
-                except AttributeError:
-                    context.current['subnets'] = [sub['id']]
-            else:
-                context.add_subnets(subs)
+                added = self._internal_use_implicit_subnet(context)
+                subs.add(added['id'])
+            context.add_subnets(subs - set(context.current['subnets']))
+            if added:
+                self.process_subnet_added(context._plugin_context, added)
 
     def _internal_use_implicit_subnet(self, context):
         l2p_id = context.current['l2_policy_id']
@@ -1339,7 +1339,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 continue
             try:
                 attrs = {'tenant_id': context.current['tenant_id'],
-                         'name': 'ptg_' + context.current['name'],
+                         'name': APIC_OWNED + l2p['name'],
                          'network_id': l2p['network_id'],
                          'ip_version': l3p['ip_version'],
                          'cidr': cidr.__str__(),
