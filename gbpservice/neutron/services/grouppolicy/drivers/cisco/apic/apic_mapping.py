@@ -1672,7 +1672,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         except schain.ServiceChainInstanceNotFound:
             LOG.warn(_("Service chain instance not found."))
         with context._plugin_context.session.begin(subtransactions=True):
-            context._plugin_context.session.delete(chain)
+            try:
+                context._plugin_context.session.delete(chain)
+            except Exception as e:
+                LOG.warn(e.message)
 
     def _screen_prss_with_redirect(self, context, to_screen=None):
         session = context._plugin_context.session
