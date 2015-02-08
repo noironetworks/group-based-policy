@@ -78,8 +78,9 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
                                              context.original, context.current)
 
     def create_subnet_postcommit(self, context):
-        self.apic_gbp.process_subnet_added(context._plugin_context,
-                                           context.current)
+        if not context.current['name'].startswith(amap.APIC_OWNED):
+            self.apic_gbp.process_subnet_added(context._plugin_context,
+                                               context.current)
 
     def delete_subnet_postcommit(self, context):
         self.apic_gbp.process_subnet_deleted(context._plugin_context,
