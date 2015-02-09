@@ -1640,6 +1640,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     self.apic_manager.set_contract_for_epg(
                         tenant, str(n) + '-' + sc_instance_id, c,
                         provider=True, contract_owner=c_owner, transaction=trs)
+                    # consumer-side shadow EPG consumes service contract
+                    c = self.name_mapper.l2_policy(
+                        context, l2p['id'], prefix=SERVICE_PREFIX)
+                    self.apic_manager.set_contract_for_epg(
+                        tenant, str(n) + '-' + sc_instance_id, c,
+                        provider=False, contract_owner=tenant,
+                        transaction=trs)
 
             # Attach Provider to the 0th shadow BD
             provider_name = self.name_mapper.policy_target_group(context,
