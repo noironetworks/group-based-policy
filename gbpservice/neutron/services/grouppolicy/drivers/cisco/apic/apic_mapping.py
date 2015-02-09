@@ -87,6 +87,12 @@ class HierarchicalContractsNotSupported(gpexc.GroupPolicyBadRequest):
     message = _("Hierarchical contracts not supported by APIC driver.")
 
 
+class PTGAlreadyProvidingOrConsumingPRS(gpexc.GroupPolicyBadRequest):
+    message = _("PTG %(ptg_id)s is already providing or consuming one PRS. "
+                "A PTG providing a PRS with redirect action cannot provide or"
+                "consume anything else.")
+
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'shadow-'
 SERVICE_PREFIX = 'service-'
@@ -431,6 +437,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def create_policy_target_group_precommit(self, context):
         if context.current['subnets']:
             raise ExplicitSubnetAssociationNotSupported()
+        self._validate_ptg_prss(context, context.current)
 
     def create_policy_target_group_postcommit(self, context):
         if not context.current['subnets']:
@@ -614,6 +621,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self._reject_multiple_redirects_in_prs(context)
         if context.current['child_policy_rule_sets']:
             raise HierarchicalContractsNotSupported()
+        # If a redirect action is added (from 0 to one) we have to validate
+        # the providing and consuming PTGs
+        old_red_count = self._multiple_pr_redirect_action_number(
+            context._plugin_context.session, context.original['policy_rules'])
+        new_red_count = self._multiple_pr_redirect_action_number(
+            context._plugin_context.session, context.current['policy_rules'])
+        if new_red_count > old_red_count:
+            self._validate_new_prs_redirect(context, context.current)
 
     def update_policy_rule_set_postcommit(self, context):
         # Update policy_rule_set rules
@@ -633,8 +648,16 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def update_policy_rule_precommit(self, context):
         self._reject_multiple_redirects_in_rule(context)
-        # If redirect action is added, check that there's no contract that
-        # already has a redirect action
+        old_redirect = self._get_redirect_action(context, context.original)
+        new_redirect = self._get_redirect_action(context, context.current)
+        if not old_redirect and new_redirect:
+            # If redirect action is added, check that there's no contract that
+            # already has a redirect action
+            for prs in context._plugin.get_policy_rule_sets(
+                    context._plugin_context,
+                    {'id': context.current['policy_rule_sets']}):
+                # Make sure the PRS can have a new redirect action
+                self._validate_new_prs_redirect(context, prs)
 
     def update_policy_rule_postcommit(self, context):
         self._update_policy_rule_on_apic(context)
@@ -647,6 +670,22 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             if new_redirect and new_redirect.get('action_value'):
                 self._hadle_redirect_rule(context, context.current)
 
+    def update_policy_action_postcommit(self, context):
+        if context.current['action_type'] == g_const.GP_ACTION_REDIRECT:
+            if (context.original['action_value'] !=
+                    context.current['action_value']):
+                rules = context._plugin.get_policy_rules(
+                    context._plugin_context,
+                    {'id': context.current['policy_rules']})
+                # Clean old chains
+                if context.original['action_value']:
+                    for rule in rules:
+                        self._cleanup_redirect_rule(context, rule)
+                # Instantiate new chains
+                if context.current['action_value']:
+                    for rule in rules:
+                        self._hadle_redirect_rule(context, rule)
+
     def _update_policy_rule_on_apic(self, context, transaction=None):
         with self.apic_manager.apic.transaction(transaction) as trs:
             self._delete_policy_rule_from_apic(context, transaction=trs)
@@ -657,6 +696,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if set(context.original['subnets']) != set(context.current['subnets']):
             raise ExplicitSubnetAssociationNotSupported()
         self._reject_shared_update(context, 'policy_target_group')
+        self._validate_ptg_prss(context, context.current)
 
     def update_policy_target_group_postcommit(self, context):
         # TODO(ivar): refactor parent to avoid code duplication
@@ -1678,6 +1718,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 LOG.warn(e.message)
 
     def _screen_prss_with_redirect(self, context, to_screen=None):
+        if to_screen is not None and len(to_screen) == 0:
+            # No result will be found in this case
+            return []
         session = context._plugin_context.session
         with session.begin(subtransactions=True):
             query = session.query(
@@ -1701,6 +1744,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def _chains_by_rule(self, context, policy_rule, policy_rule_sets=None):
         policy_rule_sets = (policy_rule_sets if policy_rule_sets is not None
                             else policy_rule['policy_rule_sets'])
+        if len(policy_rule_sets) == 0:
+            # No result will be found in this case
+            return []
         session = context._plugin_context.session
         with session.begin(subtransactions=True):
             result = (session.query(
@@ -1743,3 +1789,51 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     ApicPtgServiceChainInstanceMapping.
                     servicechain_instance_id == sc_id)
             return query.all()
+
+    def _validate_ptg_prss(self, context, ptg):
+        # If the PTG is providing a redirect PRS, it can't provide and consume
+        # anything else
+        if self._prss_redirect_rules(context._plugin_context.session,
+                                     ptg['provided_policy_rule_sets']):
+            if (len(ptg['provided_policy_rule_sets']) > 1 or
+                    len(ptg['consumed_policy_rule_sets']) > 0):
+                raise PTGAlreadyProvidingOrConsumingPRS(ptg_id=ptg['id'])
+
+    def _validate_new_prs_redirect(self, context, prs):
+        if self._prss_redirect_rules(context._plugin_context.session,
+                                     [prs['id']]) > 1:
+            raise gpexc.MultipleRedirectActionsNotSupportedForPRS()
+        for ptg in context._plugin.get_policy_target_groups(
+                context._plugin_context,
+                {'id': prs['providing_policy_target_groups']}):
+            if (len(ptg['provided_policy_rule_sets']) > 1 or
+                    len(ptg['consumed_policy_rule_sets'])):
+                raise PTGAlreadyProvidingOrConsumingPRS(ptg_id=ptg['id'])
+
+    def _prss_redirect_rules(self, session, prs_ids):
+        if len(prs_ids) == 0:
+            # No result will be found in this case
+            return 0
+        query = (session.query(gpdb.gpdb.PolicyAction).
+                 join(gpdb.gpdb.PolicyRuleActionAssociation).
+                 join(gpdb.gpdb.PolicyRule).
+                 join(gpdb.gpdb.PRSToPRAssociation).
+                 filter(
+                 gpdb.gpdb.PRSToPRAssociation.policy_rule_set_id.in_(prs_ids)).
+                 filter(gpdb.gpdb.PolicyAction.action_type ==
+                        g_const.GP_ACTION_REDIRECT))
+        return query.count()
+
+    def _multiple_pr_redirect_action_number(self, session, pr_ids):
+        # Given a set of rules, gives the total number of redirect actions
+        # found
+        if len(pr_ids) == 0:
+            # No result will be found in this case
+            return 0
+        return (session.query(gpdb.gpdb.PolicyAction).
+                join(gpdb.gpdb.PolicyRuleActionAssociation).
+                filter(
+                gpdb.gpdb.PolicyRuleActionAssociation.policy_rule_id.in_(
+                    pr_ids)).
+                filter(gpdb.gpdb.PolicyAction.action_type ==
+                       g_const.GP_ACTION_REDIRECT)).count()
