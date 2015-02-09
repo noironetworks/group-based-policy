@@ -1701,7 +1701,7 @@ class TestApicChains(ApicMappingTestCase):
         # We should have one service chain instance created now
         self.assertEqual(len(new_sc_instances['servicechain_instances']), 1)
         new_sc_instance = new_sc_instances['servicechain_instances'][0]
-        self.assertEqual(sc_instance['id'], new_sc_instance['id'])
+        self.assertNotEqual(sc_instance['id'], new_sc_instance['id'])
         self.assertEqual([new_scs_id], new_sc_instance['servicechain_specs'])
 
         req = self.new_delete_request(
@@ -2246,6 +2246,89 @@ class TestApicChains(ApicMappingTestCase):
             context.get_admin_context(),
             device='tap%s' % pt_lb_2['port_id'], host='h1')
         self.assertEqual(provider['id'], mapping['endpoint_group_name'])
+
+    def test_new_action_rejected_by_ptg(self):
+        ptg1 = self.create_policy_target_group()['policy_target_group']
+        ptg2 = self.create_policy_target_group()['policy_target_group']
+        ptg3 = self.create_policy_target_group()['policy_target_group']
+        simple_rule = self._create_simple_policy_rule()
+        prs = self.create_policy_rule_set()['policy_rule_set']
+        prs2 = self.create_policy_rule_set(
+            policy_rules=[simple_rule['id']])['policy_rule_set']
+
+        self.update_policy_target_group(
+            ptg1['id'], provided_policy_rule_sets={prs['id']: ''})
+        self.update_policy_target_group(
+            ptg2['id'], provided_policy_rule_sets={prs['id']: ''})
+        # PTG 3 also consumes a contract
+        self.update_policy_target_group(
+            ptg3['id'], provided_policy_rule_sets={prs['id']: ''})
+        self.update_policy_target_group(
+            ptg3['id'], consumed_policy_rule_sets={prs2['id']: ''})
+
+        # Adding a normal rule to PRS works normally
+        self.update_policy_rule_set(prs['id'],
+                                    policy_rules=[simple_rule['id']])
+        # Adding a redirect rule to PRS breaks because of PTG3
+        redirect = self._create_simple_policy_rule(action_type='redirect')
+        res = self.update_policy_rule_set(
+            prs['id'], policy_rules=[simple_rule['id'], redirect['id']],
+            expected_res_status=400)
+        self.assertEqual('PTGAlreadyProvidingOrConsumingPRS',
+                         res['NeutronError']['type'])
+
+        # Adding a redirect action to the existing rule also breaks
+        action = self.create_policy_action(
+            action_type='redirect')['policy_action']
+
+        res = self.update_policy_rule(
+            simple_rule['id'], policy_actions=[action['id']],
+            expected_res_status=400)
+        self.assertEqual('PTGAlreadyProvidingOrConsumingPRS',
+                         res['NeutronError']['type'])
+
+        # Removing the consumer from PTG 3, redirect update will be possible
+        self.update_policy_target_group(
+            ptg3['id'], consumed_policy_rule_sets={})
+        self.update_policy_rule_set(
+            prs['id'], policy_rules=[simple_rule['id'], redirect['id']],
+            expected_res_status=200)
+
+        # Also changing the action
+        self.update_policy_rule_set(
+            prs['id'], policy_rules=[simple_rule['id']],
+            expected_res_status=200)
+        self.update_policy_rule(
+            simple_rule['id'], policy_actions=[action['id']],
+            expected_res_status=200)
+
+    def test_ptg_only_participate_one_prs_when_redirect(self):
+        ptg1 = self.create_policy_target_group()['policy_target_group']
+        redirect_rule = self._create_simple_policy_rule(action_type='redirect')
+        prs_r = self.create_policy_rule_set(
+            policy_rules=[redirect_rule['id']])['policy_rule_set']
+        prs = self.create_policy_rule_set()['policy_rule_set']
+
+        # Creating PTG with provided redirect and multiple PRS fails
+        res = self.create_policy_target_group(
+            provided_policy_rule_sets={prs_r['id']: ''},
+            consumed_policy_rule_sets={prs['id']: ''},
+            expected_res_status=400)
+        self.assertEqual('PTGAlreadyProvidingOrConsumingPRS',
+                         res['NeutronError']['type'])
+
+        # When the redirect PTG is not provided, it'll be fine
+        self.create_policy_target_group(
+            consumed_policy_rule_sets={prs_r['id']: ''},
+            provided_policy_rule_sets={prs['id']: ''},
+            expected_res_status=201)
+
+        res = self.update_policy_target_group(ptg1['id'],
+            provided_policy_rule_sets={prs_r['id']: ''},
+            consumed_policy_rule_sets={prs['id']: ''},
+            expected_res_status=400)
+        self.assertEqual('PTGAlreadyProvidingOrConsumingPRS',
+                         res['NeutronError']['type'])
 
     def _verify_chain_set(self, provider, l2p, policy_rule_set, sc_instance,
                           n_tnodes, pre_bd_create_calls=None,
