@@ -2377,6 +2377,13 @@ class TestApicChains(ApicMappingTestCase):
                           policy_rule_set['id'], provider=True,
                           contract_owner=policy_rule_set['tenant_id'],
                           transaction=mock.ANY))
+            # cons-side Shadow EPG consumes service contract
+            expected_calls.append(
+                mock.call(l2p['tenant_id'],
+                          str(n_tnodes) + '-' + sc_instance['id'],
+                          amap.SERVICE_PREFIX + l2p['id'], provider=False,
+                          contract_owner=l2p['tenant_id'],
+                          transaction=mock.ANY))
             # 0th shadow consumes ANY
             expected_calls.append(
                 mock.call(l2p['tenant_id'], '0-' + sc_instance['id'],
