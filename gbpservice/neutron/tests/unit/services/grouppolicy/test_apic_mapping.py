@@ -306,12 +306,12 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
         expected_calls = [
             mock.call(
                 ptg['tenant_id'], ptg['id'], cntr['id'],
-                transaction='transaction', contract_owner=ct_owner,
+                transaction=mock.ANY, contract_owner=ct_owner,
                 provider=provider),
             mock.call(
                 ptg['tenant_id'], ptg['id'],
                 amap.SERVICE_PREFIX + ptg['l2_policy_id'],
-                transaction='transaction', contract_owner=ptg['tenant_id'],
+                transaction=mock.ANY, contract_owner=ptg['tenant_id'],
                 provider=False)]
         self._check_call_list(expected_calls,
                               mgr.set_contract_for_epg.call_args_list)
@@ -342,12 +342,12 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
         ct_owner = self.common_tenant if shared else cntr['tenant_id']
         mgr.set_contract_for_epg.assert_called_with(
             ptg['tenant_id'], ptg['id'], new_cntr['id'],
-            contract_owner=ct_owner, transaction='transaction',
+            contract_owner=ct_owner, transaction=mock.ANY,
             provider=provider)
         mgr.unset_contract_for_epg.assert_called_with(
             ptg['tenant_id'], ptg['id'], cntr['id'],
             contract_owner=ct_owner,
-            transaction='transaction', provider=provider)
+            transaction=mock.ANY, provider=provider)
 
     def test_ptg_policy_rule_set_provider_created(self):
         self._test_ptg_policy_rule_set_created()
@@ -403,7 +403,7 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
         tenant = self.common_tenant if shared else ptg['tenant_id']
         mgr.ensure_subnet_created_on_apic.assert_called_once_with(
             tenant, ptg['l2_policy_id'], '10.0.0.1/24',
-            transaction='transaction')
+            transaction=mock.ANY)
 
     def test_policy_target_group_subnet_created_on_apic(self):
         self._test_policy_target_group_subnet_created_on_apic()
@@ -427,7 +427,7 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
             tenant = self.common_tenant if shared else ptg['tenant_id']
             mgr.ensure_subnet_created_on_apic.assert_called_with(
                 tenant, ptg['l2_policy_id'], '10.0.1.1/24',
-                transaction='transaction')
+                transaction=mock.ANY)
 
     def test_policy_target_group_subnet_added(self):
         self._test_policy_target_group_subnet_added()
@@ -448,10 +448,10 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
         tenant = self.common_tenant if shared else ptg['tenant_id']
         mgr.ensure_subnet_created_on_apic.assert_called_once_with(
             tenant, ptg['l2_policy_id'], '10.0.0.254/24',
-            transaction='transaction')
+            transaction=mock.ANY)
         mgr.ensure_subnet_deleted_on_apic.assert_called_with(
             tenant, ptg['l2_policy_id'], '10.0.0.1/24',
-            transaction='transaction')
+            transaction=mock.ANY)
 
     def test_process_subnet_update(self):
         self._test_process_subnet_update()
@@ -931,7 +931,7 @@ class TestPolicyRuleSet(ApicMappingTestCase):
         tenant = self.common_tenant if shared else ct['tenant_id']
         mgr = self.driver.apic_manager
         mgr.create_contract.assert_called_once_with(
-            ct['id'], owner=tenant, transaction='transaction')
+            ct['id'], owner=tenant, transaction=mock.ANY)
 
     def test_policy_rule_set_created_on_apic(self):
         self._test_policy_rule_set_created_on_apic()
@@ -952,11 +952,11 @@ class TestPolicyRuleSet(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         expected_calls = [
             mock.call(ctr['id'], ctr['id'], rules[in_d]['id'],
-                      owner=ctr['tenant_id'], transaction='transaction',
+                      owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner),
             mock.call(ctr['id'], ctr['id'],
                       amap.REVERSE_PREFIX + rules[out]['id'],
-                      owner=ctr['tenant_id'], transaction='transaction',
+                      owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner)]
         self._check_call_list(
             expected_calls,
@@ -964,11 +964,11 @@ class TestPolicyRuleSet(ApicMappingTestCase):
 
         expected_calls = [
             mock.call(ctr['id'], ctr['id'], rules[out]['id'],
-                      owner=ctr['tenant_id'], transaction='transaction',
+                      owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner),
             mock.call(ctr['id'], ctr['id'],
                       amap.REVERSE_PREFIX + rules[in_d]['id'],
-                      owner=ctr['tenant_id'], transaction='transaction',
+                      owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner)]
         self._check_call_list(
             expected_calls,
@@ -980,19 +980,19 @@ class TestPolicyRuleSet(ApicMappingTestCase):
 
         mgr.manage_contract_subject_in_filter.call_happened_with(
             ctr['id'], ctr['id'], rules[bi]['id'], owner=ctr['tenant_id'],
-            transaction='transaction', unset=False,
+            transaction=mock.ANY, unset=False,
             rule_owner=rule_owner)
         mgr.manage_contract_subject_out_filter.call_happened_with(
             ctr['id'], ctr['id'], rules[bi]['id'], owner=ctr['tenant_id'],
-            transaction='transaction', unset=False,
+            transaction=mock.ANY, unset=False,
             rule_owner=rule_owner)
         mgr.manage_contract_subject_in_filter.call_happened_with(
             ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
-            owner=ctr['tenant_id'], transaction='transaction', unset=False,
+            owner=ctr['tenant_id'], transaction=mock.ANY, unset=False,
             rule_owner=rule_owner)
         mgr.manage_contract_subject_out_filter.call_happened_with(
             ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
-            owner=ctr['tenant_id'], transaction='transaction', unset=False,
+            owner=ctr['tenant_id'], transaction=mock.ANY, unset=False,
             rule_owner=rule_owner)
 
     def test_policy_rule_set_created_with_rules(self):
@@ -2247,6 +2247,107 @@ class TestApicChains(ApicMappingTestCase):
             device='tap%s' % pt_lb_2['port_id'], host='h1')
         self.assertEqual(provider['id'], mapping['endpoint_group_name'])
 
+    def test_chain_provider_prs_sync_with_shadow(self):
+        scs_id = self._create_servicechain_spec(
+            node_types=['FIREWALL_TRANSPARENT', 'LOADBALANCER',
+                        'FIREWALL_TRANSPARENT'])
+        _, _, policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", scs_id)
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id])['policy_rule_set']
+        prs1 = self.create_policy_rule_set()['policy_rule_set']
+        prs2 = self.create_policy_rule_set()['policy_rule_set']
+        prs3 = self.create_policy_rule_set()['policy_rule_set']
+        prs4 = self.create_policy_rule_set()['policy_rule_set']
+        # Create PTGs on same L2P
+        l2p = self.create_l2_policy()['l2_policy']
+        provider = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        mgr = self.driver.apic_manager
+        mgr.reset_mock()
+
+        # Provide the redirect contract
+        self.update_policy_target_group(
+            provider['id'],
+            provided_policy_rule_sets={policy_rule_set['id']: '',
+                                       prs1['id']: ''},
+            consumed_policy_rule_sets={prs2['id']: ''})
+
+        sc_instances = self._list_service_chains()
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+
+        expected = [
+            # Provider EPG provided PRS
+            mock.call(provider['tenant_id'], provider['id'],
+                      policy_rule_set['id'], provider=True,
+                      contract_owner=policy_rule_set['tenant_id'],
+                      transaction=mock.ANY),
+            mock.call(provider['tenant_id'], provider['id'],
+                      prs1['id'], provider=True,
+                      contract_owner=prs1['tenant_id'],
+                      transaction=mock.ANY),
+            mock.call(provider['tenant_id'], provider['id'],
+                      prs2['id'], provider=False,
+                      contract_owner=prs2['tenant_id'],
+                      transaction=mock.ANY)]
+
+        self._verify_chain_set(provider, l2p, policy_rule_set, sc_instance, 2,
+                               pre_set_contract_calls=expected)
+        mgr.reset_mock()
+
+        # Add and remove some PRS to original (not the chain)
+        self.update_policy_target_group(
+            provider['id'],
+            provided_policy_rule_sets={policy_rule_set['id']: '',
+                                       prs3['id']: ''},
+            consumed_policy_rule_sets={prs4['id']: ''})
+
+        expected = [
+            # Added provider: prs3
+            # Added consumer: prs4
+            mock.call(provider['tenant_id'], provider['id'],
+                      prs3['id'], provider=True,
+                      contract_owner=prs1['tenant_id'],
+                      transaction=mock.ANY),
+            mock.call(provider['tenant_id'], provider['id'],
+                      prs4['id'], provider=False,
+                      contract_owner=prs2['tenant_id'],
+                      transaction=mock.ANY),
+            mock.call(l2p['tenant_id'], '2-' + sc_instance['id'],
+                      prs3['id'], provider=True,
+                      contract_owner=prs1['tenant_id'],
+                      transaction=mock.ANY),
+            mock.call(l2p['tenant_id'], '2-' + sc_instance['id'],
+                      prs4['id'], provider=False,
+                      contract_owner=prs2['tenant_id'],
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected, mgr.set_contract_for_epg.call_args_list)
+
+        expected = [
+            # Removed provider: prs1
+            # Removed consumer: prs2
+            mock.call(provider['tenant_id'], provider['id'],
+                      prs1['id'], provider=True,
+                      contract_owner=prs1['tenant_id'],
+                      transaction=mock.ANY),
+            mock.call(provider['tenant_id'], provider['id'],
+                      prs2['id'], provider=False,
+                      contract_owner=prs2['tenant_id'],
+                      transaction=mock.ANY),
+            mock.call(l2p['tenant_id'], '2-' + sc_instance['id'],
+                      prs1['id'], provider=True,
+                      contract_owner=prs1['tenant_id'],
+                      transaction=mock.ANY),
+            mock.call(l2p['tenant_id'], '2-' + sc_instance['id'],
+                      prs2['id'], provider=False,
+                      contract_owner=prs2['tenant_id'],
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected, mgr.unset_contract_for_epg.call_args_list)
+
     def _test_new_action_rejected_by_ptg(self):
         ptg1 = self.create_policy_target_group()['policy_target_group']
         ptg2 = self.create_policy_target_group()['policy_target_group']
@@ -2348,7 +2449,7 @@ class TestApicChains(ApicMappingTestCase):
         # Shadow EPG created on shadow BD
         for x in xrange(n_tnodes):
             expected_calls.append(
-                mock.call(l2p['tenant_id'], '0-' + sc_instance['id'],
+                mock.call(l2p['tenant_id'], str(x) + '-' + sc_instance['id'],
                           bd_owner=l2p['tenant_id'],
                           bd_name=str(x) + '-' + sc_instance['id'],
                           transaction=mock.ANY))
@@ -2370,13 +2471,6 @@ class TestApicChains(ApicMappingTestCase):
         expected_calls = pre_set_contract_calls or []
 
         if n_tnodes > 0:
-            # cons-side Shadow EPG provides PRS
-            expected_calls.append(
-                mock.call(l2p['tenant_id'],
-                          str(n_tnodes) + '-' + sc_instance['id'],
-                          policy_rule_set['id'], provider=True,
-                          contract_owner=policy_rule_set['tenant_id'],
-                          transaction=mock.ANY))
             # cons-side Shadow EPG consumes service contract
             expected_calls.append(
                 mock.call(l2p['tenant_id'],
@@ -2384,6 +2478,22 @@ class TestApicChains(ApicMappingTestCase):
                           amap.SERVICE_PREFIX + l2p['id'], provider=False,
                           contract_owner=l2p['tenant_id'],
                           transaction=mock.ANY))
+            provider_obj = self.show_policy_target_group(
+                provider['id'])['policy_target_group']
+
+            for c in provider_obj['provided_policy_rule_sets']:
+                expected_calls.append(
+                    mock.call(l2p['tenant_id'],
+                          str(n_tnodes) + '-' + sc_instance['id'],
+                          c, provider=True, contract_owner=l2p['tenant_id'],
+                          transaction=mock.ANY))
+            for c in provider_obj['consumed_policy_rule_sets']:
+                expected_calls.append(
+                    mock.call(l2p['tenant_id'],
+                          str(n_tnodes) + '-' + sc_instance['id'],
+                          c, provider=False, contract_owner=l2p['tenant_id'],
+                          transaction=mock.ANY))
+
             # 0th shadow consumes ANY
             expected_calls.append(
                 mock.call(l2p['tenant_id'], '0-' + sc_instance['id'],

@@ -1040,8 +1040,20 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if removed_provided:
             self._cleanup_service_chains(context, removed_provided)
         # Create new servicechain instances in case of update
+        created = False
         if added_provided:
-            self._handle_service_chains(context, added_provided)
+            created = self._handle_service_chains(context, added_provided)
+        inst_id, tsc_len = self._get_ptg_transparent_chain_length(
+            ptg_context, ptg_context.current['id'])
+        ptg_params = []
+        if not created and inst_id and tsc_len:
+            # When a chain is instantiated, the corresponding shadow EPG
+            # must provide and consume the same contracts as the original one
+            l2p = context._plugin.get_l2_policy(
+                context._plugin_context, ptg_context.current['l2_policy_id'])
+            shadow_tenant = self._tenant_by_sharing_policy(l2p)
+            shadow_ptg = str(tsc_len) + '-' + inst_id
+            ptg_params.append((shadow_tenant, shadow_ptg))
 
         # TODO(ivar): change APICAPI to not expect a resource context
         plugin_context._plugin = self.gbp_plugin
@@ -1049,27 +1061,30 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         mapped_tenant = self._tenant_by_sharing_policy(ptg)
         mapped_ptg = self.name_mapper.policy_target_group(
             plugin_context, ptg['id'])
+        ptg_params.append((mapped_tenant, mapped_ptg))
         provided = [added_provided, removed_provided]
         consumed = [added_consumed, removed_consumed]
         methods = [self.apic_manager.set_contract_for_epg,
                    self.apic_manager.unset_contract_for_epg]
-        with self.apic_manager.apic.transaction(transaction) as trs:
-            for x in xrange(len(provided)):
-                for c in self.gbp_plugin.get_policy_rule_sets(
-                        plugin_context, filters={'id': provided[x]}):
-                    c_owner = self._tenant_by_sharing_policy(c)
-                    c = self.name_mapper.policy_rule_set(plugin_context,
-                                                         c['id'])
-                    methods[x](mapped_tenant, mapped_ptg, c, provider=True,
-                               contract_owner=c_owner, transaction=trs)
-            for x in xrange(len(consumed)):
-                for c in self.gbp_plugin.get_policy_rule_sets(
-                        plugin_context, filters={'id': consumed[x]}):
-                    c_owner = self._tenant_by_sharing_policy(c)
-                    c = self.name_mapper.policy_rule_set(plugin_context,
-                                                         c['id'])
-                    methods[x](mapped_tenant, mapped_ptg, c, provider=False,
-                               contract_owner=c_owner, transaction=trs)
+
+        for x in xrange(len(provided)):
+            for c in self.gbp_plugin.get_policy_rule_sets(
+                    plugin_context, filters={'id': provided[x]}):
+                c_owner = self._tenant_by_sharing_policy(c)
+                c = self.name_mapper.policy_rule_set(plugin_context,
+                                                     c['id'])
+                for params in ptg_params:
+                    methods[x](params[0], params[1], c, provider=True,
+                               contract_owner=c_owner, transaction=None)
+        for x in xrange(len(consumed)):
+            for c in self.gbp_plugin.get_policy_rule_sets(
+                    plugin_context, filters={'id': consumed[x]}):
+                c_owner = self._tenant_by_sharing_policy(c)
+                c = self.name_mapper.policy_rule_set(plugin_context,
+                                                     c['id'])
+                for params in ptg_params:
+                    methods[x](params[0], params[1], c, provider=False,
+                               contract_owner=c_owner, transaction=None)
 
     def _manage_ep_policy_rule_sets(
             self, plugin_context, es, ep, added_provided, added_consumed,
@@ -1441,9 +1456,19 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             attrs = {'etherT': 'ip',
                      'prot': 'udp',
                      'dToPort': 68,
-                     'dFromPort': 67}
+                     'dFromPort': 68,
+                     'sToPort': 67,
+                     'sFromPort': 67}
             self._associate_service_filter(tenant, contract, 'dhcp',
                                            'dhcp', transaction=trs, **attrs)
+            attrs = {'etherT': 'ip',
+                     'prot': 'udp',
+                     'dToPort': 67,
+                     'dFromPort': 67,
+                     'sToPort': 68,
+                     'sFromPort': 68}
+            self._associate_service_filter(tenant, contract, 'dhcp',
+                                           'r-dhcp', transaction=trs, **attrs)
 
             # Create DNS filter/subject
             attrs = {'etherT': 'ip',
@@ -1582,9 +1607,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             policy_action = info['pa']
             policy_rule = info['pr']
             if policy_action['action_value']:
+                # Instance SC
                 self._chain_ptg_pair(
                     ptg_context, policy_action, policy_rule,
                     ptg_context.current['id'], info['prs'])
+                return True
+        return False
 
     def _chain_ptg_pair(self, context, action, rule, provider_id, prs):
         instances = self._get_ptg_servicechain_instance_mappings(
@@ -1634,12 +1662,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         tenant, str(n) + '-' + sc_instance_id, bd_owner=tenant,
                         bd_name=l2_policy_name, transaction=trs)
 
-                    c_owner = self._tenant_by_sharing_policy(prs)
-                    c = self.name_mapper.policy_rule_set(context, prs['id'])
-                    # consumer-side shadow EPG provides the contract
-                    self.apic_manager.set_contract_for_epg(
-                        tenant, str(n) + '-' + sc_instance_id, c,
-                        provider=True, contract_owner=c_owner, transaction=trs)
                     # consumer-side shadow EPG consumes service contract
                     c = self.name_mapper.l2_policy(
                         context, l2p['id'], prefix=SERVICE_PREFIX)
@@ -1647,6 +1669,29 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         tenant, str(n) + '-' + sc_instance_id, c,
                         provider=False, contract_owner=tenant,
                         transaction=trs)
+                    # consumer-side shadow EPG consumes and
+                    # provides everything that the real provider does.
+                    for prs in context._plugin.get_policy_rule_sets(
+                            context._plugin_context,
+                            {'id': provider_ptg['provided_policy_rule_sets']}):
+                        c = self.name_mapper.policy_rule_set(context,
+                                                             prs['id'])
+                        owner = self._tenant_by_sharing_policy(prs)
+                        self.apic_manager.set_contract_for_epg(
+                            tenant, str(n) + '-' + sc_instance_id, c,
+                            provider=True, contract_owner=owner,
+                            transaction=trs)
+                    # Consumed
+                    for prs in context._plugin.get_policy_rule_sets(
+                            context._plugin_context,
+                            {'id': provider_ptg['consumed_policy_rule_sets']}):
+                        c = self.name_mapper.policy_rule_set(context,
+                                                             prs['id'])
+                        owner = self._tenant_by_sharing_policy(prs)
+                        self.apic_manager.set_contract_for_epg(
+                            tenant, str(n) + '-' + sc_instance_id, c,
+                            provider=False, contract_owner=owner,
+                            transaction=trs)
 
             # Attach Provider to the 0th shadow BD
             provider_name = self.name_mapper.policy_target_group(context,
@@ -1844,3 +1889,22 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     pr_ids)).
                 filter(gpdb.gpdb.PolicyAction.action_type ==
                        g_const.GP_ACTION_REDIRECT)).count()
+
+    def _get_ptg_transparent_chain_length(self, context, ptg_id):
+        sc_instance_id = self._get_ptg_servicechain_instance_mappings(
+            context._plugin_context.session, provider_ptg_id=ptg_id)
+        if not sc_instance_id:
+            return None, 0
+        else:
+            sc_instance_id = sc_instance_id[0].servicechain_instance_id
+        instance = self.sc_plugin.get_servicechain_instance(
+            context._plugin_context, sc_instance_id)
+        specs = self.sc_plugin.get_servicechain_specs(
+            context._plugin_context,
+            {'id': instance['servicechain_specs']})
+        n = 0
+        for node in self.sc_plugin.get_servicechain_nodes(
+                context._plugin_context, {'id': specs[0]['nodes']}):
+            if node['service_type'] in GOTHROUGH_SERVICES:
+                n += 1
+        return sc_instance_id, n
