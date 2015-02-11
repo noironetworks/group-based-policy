@@ -2350,15 +2350,17 @@ class TestApicChains(ApicMappingTestCase):
         self._check_call_list(
             expected, mgr.unset_contract_for_epg.call_args_list)
 
-    def _test_new_action_rejected_by_ptg(self):
+    def test_new_action_rejected_by_ptg(self):
         ptg1 = self.create_policy_target_group()['policy_target_group']
         ptg2 = self.create_policy_target_group()['policy_target_group']
         ptg3 = self.create_policy_target_group()['policy_target_group']
         simple_rule = self._create_simple_policy_rule()
+        simple_rule_2 = self._create_simple_policy_rule()
         prs = self.create_policy_rule_set()['policy_rule_set']
         prs2 = self.create_policy_rule_set(
             policy_rules=[simple_rule['id']])['policy_rule_set']
-
+        prs3 = self.create_policy_rule_set(
+            policy_rules=[simple_rule_2['id']])['policy_rule_set']
         self.update_policy_target_group(
             ptg1['id'], provided_policy_rule_sets={prs['id']: ''})
         self.update_policy_target_group(
@@ -2372,66 +2374,181 @@ class TestApicChains(ApicMappingTestCase):
         # Adding a normal rule to PRS works normally
         self.update_policy_rule_set(prs['id'],
                                     policy_rules=[simple_rule['id']])
-        # Adding a redirect rule to PRS breaks because of PTG3
         redirect = self._create_simple_policy_rule(action_type='redirect')
-        res = self.update_policy_rule_set(
+        self.update_policy_rule_set(
             prs['id'], policy_rules=[simple_rule['id'], redirect['id']],
+            expected_res_status=200)
+
+        redirect = self._create_simple_policy_rule(action_type='redirect')
+        self.update_policy_rule_set(
+            prs3['id'], policy_rules=[simple_rule['id'], redirect['id']],
+            expected_res_status=200)
+        res = self.update_policy_target_group(
+            ptg2['id'], provided_policy_rule_sets={prs['id']: '',
+                                                   prs3['id']: ''},
             expected_res_status=400)
-        self.assertEqual('PTGAlreadyProvidingOrConsumingPRS',
+        self.assertEqual('PTGAlreadyProvidingRedirectPRS',
                          res['NeutronError']['type'])
 
-        # Adding a redirect action to the existing rule also breaks
         action = self.create_policy_action(
             action_type='redirect')['policy_action']
 
-        res = self.update_policy_rule(
-            simple_rule['id'], policy_actions=[action['id']],
-            expected_res_status=400)
-        self.assertEqual('PTGAlreadyProvidingOrConsumingPRS',
-                         res['NeutronError']['type'])
-
-        # Removing the consumer from PTG 3, redirect update will be possible
-        self.update_policy_target_group(
-            ptg3['id'], consumed_policy_rule_sets={})
-        self.update_policy_rule_set(
-            prs['id'], policy_rules=[simple_rule['id'], redirect['id']],
-            expected_res_status=200)
-
-        # Also changing the action
         self.update_policy_rule_set(
             prs['id'], policy_rules=[simple_rule['id']],
             expected_res_status=200)
+        self.update_policy_rule_set(
+            prs3['id'], policy_rules=[simple_rule['id']],
+            expected_res_status=200)
+        # Adding redirect action to the consumed PRS is fine
         self.update_policy_rule(
             simple_rule['id'], policy_actions=[action['id']],
             expected_res_status=200)
 
-    def _test_ptg_only_participate_one_prs_when_redirect(self):
-        ptg1 = self.create_policy_target_group()['policy_target_group']
+    def test_ptg_only_participate_one_prs_when_redirect(self):
         redirect_rule = self._create_simple_policy_rule(action_type='redirect')
+        simple_rule = self._create_simple_policy_rule()
         prs_r = self.create_policy_rule_set(
             policy_rules=[redirect_rule['id']])['policy_rule_set']
-        prs = self.create_policy_rule_set()['policy_rule_set']
+        prs = self.create_policy_rule_set(
+            policy_rules=[simple_rule['id']])['policy_rule_set']
 
         # Creating PTG with provided redirect and multiple PRS fails
-        res = self.create_policy_target_group(
-            provided_policy_rule_sets={prs_r['id']: ''},
-            consumed_policy_rule_sets={prs['id']: ''},
-            expected_res_status=400)
-        self.assertEqual('PTGAlreadyProvidingOrConsumingPRS',
-                         res['NeutronError']['type'])
-
-        # When the redirect PTG is not provided, it'll be fine
         self.create_policy_target_group(
-            consumed_policy_rule_sets={prs_r['id']: ''},
-            provided_policy_rule_sets={prs['id']: ''},
+            provided_policy_rule_sets={prs_r['id']: '', prs['id']: ''},
+            consumed_policy_rule_sets={prs['id']: ''},
             expected_res_status=201)
 
-        res = self.update_policy_target_group(ptg1['id'],
-            provided_policy_rule_sets={prs_r['id']: ''},
-            consumed_policy_rule_sets={prs['id']: ''},
+        action = self.create_policy_action(
+            action_type='redirect')['policy_action']
+        res = self.update_policy_rule(
+            simple_rule['id'],
+            policy_actions=simple_rule['policy_actions'] + [action['id']],
             expected_res_status=400)
-        self.assertEqual('PTGAlreadyProvidingOrConsumingPRS',
+        self.assertEqual('PTGAlreadyProvidingRedirectPRS',
                          res['NeutronError']['type'])
+
+    def test_three_tier_sc(self):
+        app_db_scs_id = self._create_servicechain_spec(
+            node_types=['FIREWALL_TRANSPARENT', 'IDS'])
+        web_app_scs_id = self._create_servicechain_spec(
+            node_types=['FIREWALL_TRANSPARENT', 'LOADBALANCER'])
+        internet_web_scs_id = self._create_servicechain_spec(
+            node_types=['LOADBALANCER'])
+        _, _, app_db_policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", app_db_scs_id)
+        _, _, web_app_policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", web_app_scs_id)
+        _, _, internet_web_policy_rule_id = self._create_tcp_redirect_rule(
+            "20:90", internet_web_scs_id)
+        app_db_policy_rule_set = self.create_policy_rule_set(
+            policy_rules=[app_db_policy_rule_id])['policy_rule_set']
+        web_app_policy_rule_set = self.create_policy_rule_set(
+            policy_rules=[web_app_policy_rule_id])['policy_rule_set']
+        internet_web_policy_rule_set = self.create_policy_rule_set(
+            policy_rules=[internet_web_policy_rule_id])['policy_rule_set']
+        # Create DB and APP PTGs on same L2P
+        l2p = self.create_l2_policy()['l2_policy']
+        db = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        app = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+
+        # Create WEB on a different L2P
+        web_l2p = self.create_l2_policy()['l2_policy']
+        web = self.create_policy_target_group(
+            l2_policy_id=web_l2p['id'])['policy_target_group']
+
+        mgr = self.driver.apic_manager
+        mgr.reset_mock()
+        self.update_policy_target_group(
+            app['id'],
+            consumed_policy_rule_sets={app_db_policy_rule_set['id']: ''})
+        self.update_policy_target_group(
+            db['id'],
+            provided_policy_rule_sets={app_db_policy_rule_set['id']: ''})
+
+        sc_instances = self._list_service_chains()
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+        seen = {sc_instance['id']}
+
+        expected = [
+            # Provider EPG provided PRS
+            mock.call(db['tenant_id'], db['id'],
+                      app_db_policy_rule_set['id'], provider=True,
+                      contract_owner=app_db_policy_rule_set['tenant_id'],
+                      transaction=mock.ANY),
+            # Consumer EPG consumed PRS
+            mock.call(app['tenant_id'], app['id'],
+                      app_db_policy_rule_set['id'], provider=False,
+                      contract_owner=app_db_policy_rule_set['tenant_id'],
+                      transaction=mock.ANY)]
+
+        self._verify_chain_set(db, l2p, app_db_policy_rule_set,
+                               sc_instance, 2, pre_set_contract_calls=expected)
+        mgr.reset_mock()
+        self.update_policy_target_group(
+            app['id'],
+            consumed_policy_rule_sets={app_db_policy_rule_set['id']: ''},
+            provided_policy_rule_sets={web_app_policy_rule_set['id']: ''})
+        self.update_policy_target_group(
+            web['id'],
+            consumed_policy_rule_sets={web_app_policy_rule_set['id']: ''})
+
+        expected = [
+            # Provider EPG provided PRS
+            mock.call(app['tenant_id'], app['id'],
+                      web_app_policy_rule_set['id'], provider=True,
+                      contract_owner=web_app_policy_rule_set['tenant_id'],
+                      transaction=mock.ANY),
+            # Consumer EPG consumed PRS
+            mock.call(web['tenant_id'], web['id'],
+                      web_app_policy_rule_set['id'], provider=False,
+                      contract_owner=web_app_policy_rule_set['tenant_id'],
+                      transaction=mock.ANY)]
+
+        sc_instances = self._list_service_chains()
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 2)
+        sc_instance = [x for x in sc_instances['servicechain_instances']
+                       if x['id'] not in seen][0]
+        seen.add(sc_instance['id'])
+
+        self._verify_chain_set(app, l2p, web_app_policy_rule_set,
+                               sc_instance, 1, pre_set_contract_calls=expected)
+
+        es = self.create_external_segment(
+            name='supported', cidr='192.168.0.0/24',
+            external_routes=[], expected_res_status=201)['external_segment']
+
+        ep = self.create_external_policy(
+            external_segments=[es['id']],
+            expected_res_status=201)['external_policy']
+        mgr.reset_mock()
+        self.update_policy_target_group(
+            web['id'],
+            consumed_policy_rule_sets={web_app_policy_rule_set['id']: ''},
+            provided_policy_rule_sets={internet_web_policy_rule_set['id']: ''})
+        self.update_external_policy(
+            ep['id'],
+            consumed_policy_rule_sets={internet_web_policy_rule_set['id']: ''})
+        expected = [
+            # Provider EPG provided PRS
+            mock.call(web['tenant_id'], web['id'],
+                      internet_web_policy_rule_set['id'], provider=True,
+                      contract_owner=internet_web_policy_rule_set['tenant_id'],
+                      transaction=mock.ANY)]
+
+        sc_instances = self._list_service_chains()
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 3)
+        sc_instance = [x for x in sc_instances['servicechain_instances']
+                       if x['id'] not in seen][0]
+        seen.add(sc_instance['id'])
+
+        self._verify_chain_set(app, web_l2p, internet_web_policy_rule_set,
+                               sc_instance, 0, pre_set_contract_calls=expected)
 
     def _verify_chain_set(self, provider, l2p, policy_rule_set, sc_instance,
                           n_tnodes, pre_bd_create_calls=None,
