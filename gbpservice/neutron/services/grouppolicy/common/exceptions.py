@@ -156,7 +156,8 @@ class MultipleESPerEPNotSupported(GroupPolicyBadRequest):
                 "supported.")
 
 
-class ESIdRequiredWhenCreatingEP(GroupPolicyBadRequest):
+class ESIdRequiredWhenCreatingEP(GroupPolicyBadRequest,
+                                 GroupPolicyDriverError):
     message = _("External Segment ID is required when creating ExternalPolicy")
 
 

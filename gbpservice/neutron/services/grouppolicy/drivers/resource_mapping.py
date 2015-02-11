@@ -888,14 +888,11 @@ class ResourceMappingDriver(api.PolicyDriver):
         # see bug #1398156
         if len(context.current['external_segments']) > 1:
             raise exc.MultipleESPerEPNotSupported()
-        # REVISIT(ivar): Remove when ES update is supported for EP
-        if not context.current['external_segments']:
-            raise exc.ESIdRequiredWhenCreatingEP()
         # REVISIT(ivar): bug #1398156 only one EP is allowed per tenant
         ep_number = context._plugin.get_external_policies_count(
             context._plugin_context,
             filters={'tenant_id': [context.current['tenant_id']]})
-        if ep_number - 1:
+        if ep_number > 1:
             raise exc.OnlyOneEPPerTenantAllowed()
 
     def create_external_policy_postcommit(self, context):
@@ -903,6 +900,9 @@ class ResourceMappingDriver(api.PolicyDriver):
         # The rules will be calculated as the symmetric difference between
         # the union of all the Tenant's L3P supernets and the union of all the
         # ES routes.
+        # REVISIT(ivar): Remove when ES update is supported for EP
+        if not context.current['external_segments']:
+            raise exc.ESIdRequiredWhenCreatingEP()
         ep = context.current
         if ep['external_segments']:
             if (ep['provided_policy_rule_sets'] or
@@ -915,9 +915,10 @@ class ResourceMappingDriver(api.PolicyDriver):
                     ep['consumed_policy_rule_sets'])
 
     def update_external_policy_precommit(self, context):
-        if (context.current['external_segments'] !=
-                context.original['external_segments']):
-            raise exc.ESUpdateNotSupportedForEP()
+        if context.original['external_segments']:
+            if (set(context.current['external_segments']) !=
+                    set(context.original['external_segments'])):
+                raise exc.ESUpdateNotSupportedForEP()
 
     def update_external_policy_postcommit(self, context):
         # REVISIT(ivar): Concurrency issue, the cidr_list could be different

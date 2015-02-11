@@ -2324,6 +2324,14 @@ class TestExternalSegment(ResourceMappingTestCase):
                 l3p = self.create_l3_policy()['l3_policy']
                 self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
 
+                ep = self.create_external_policy()['external_policy']
+                self.assertEqual(es['id'], ep['external_segments'][0])
+
+                prs = self.create_policy_rule_set()['policy_rule_set']
+                ep = self.update_external_policy(
+                    ep['id'], provided_policy_rule_sets={prs['id']: ''},
+                    expected_res_status=200)
+
 
 class TestExternalPolicy(ResourceMappingTestCase):
 
