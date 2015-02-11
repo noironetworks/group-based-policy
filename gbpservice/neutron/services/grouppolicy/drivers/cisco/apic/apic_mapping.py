@@ -1503,6 +1503,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self._associate_service_filter(tenant, contract, 'http',
                                            'r-http', transaction=trs, **attrs)
 
+            attrs = {'etherT': 'ip',
+                     'prot': 'icmp'}
+            self._associate_service_filter(tenant, contract, 'icmp',
+                                           'icmp', transaction=trs, **attrs)
+
     def _create_any_contract(self, l2p, chain_id, transaction=None):
         tenant = self._tenant_by_sharing_policy(l2p)
         contract = ANY_PREFIX + chain_id
