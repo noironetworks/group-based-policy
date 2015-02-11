@@ -1626,9 +1626,10 @@ class TestApicChains(ApicMappingTestCase):
         return scs_id
 
     def _create_servicechain_node(self, node_type="LOADBALANCER"):
+        config = "heat_template_version: 2013-05-23"
         data = {'servicechain_node': {'service_type': node_type,
                                       'tenant_id': self._tenant_id,
-                                      'config': "{}"}}
+                                      'config': config}}
         scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
         node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
         scn_id = node['servicechain_node']['id']
@@ -1679,9 +1680,10 @@ class TestApicChains(ApicMappingTestCase):
         self._assert_proper_chain_instance(sc_instance, provider_ptg_id,
                                            policy_rule_set_id, [scs_id])
 
-        data = {'servicechain_node': {'service_type': "FIREWALL",
-                                      'tenant_id': self._tenant_id,
-                                      'config': "{}"}}
+        data = {'servicechain_node': {
+            'service_type': "FIREWALL",
+            'tenant_id': self._tenant_id,
+            'config': "heat_template_version: 2013-05-23"}}
         scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
         new_node = self.deserialize(
                     self.fmt, scn_req.get_response(self.ext_api))
