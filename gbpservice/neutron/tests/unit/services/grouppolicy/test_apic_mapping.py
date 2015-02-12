@@ -154,13 +154,14 @@ class ApicMappingTestCase(
 
     def _create_simple_policy_rule(self, direction='bi', protocol='tcp',
                                    port_range=80, shared=False,
-                                   action_type='allow'):
+                                   action_type='allow', action_value=None):
         cls = self.create_policy_classifier(
             direction=direction, protocol=protocol,
             port_range=port_range, shared=shared)['policy_classifier']
 
         action = self.create_policy_action(
-            action_type=action_type, shared=shared)['policy_action']
+            action_type=action_type, shared=shared,
+            action_value=action_value)['policy_action']
         return self.create_policy_rule(
             policy_classifier_id=cls['id'], policy_actions=[action['id']],
             shared=shared)['policy_rule']
@@ -2066,6 +2067,78 @@ class TestApicChains(ApicMappingTestCase):
         self.assertFalse(mgr.ensure_bd_created_on_apic.called)
         self.assertFalse(mgr.ensure_epg_created.called)
 
+    def test_chain_on_apic_create_shared(self):
+        scs_id = self._create_servicechain_spec(
+            node_types=['FIREWALL_TRANSPARENT'])
+        policy_rule_id = self._create_simple_policy_rule(
+            action_type='redirect', shared=True, action_value=scs_id)['id']
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id],
+            shared=True)['policy_rule_set']
+        # Create PTGs on same L2P
+        l2p = self.create_l2_policy(shared=True,
+                                    tenant_id='admin')['l2_policy']
+        provider = self.create_policy_target_group(
+            l2_policy_id=l2p['id'], shared=True)['policy_target_group']
+        consumer = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+
+        mgr = self.driver.apic_manager
+        mgr.reset_mock()
+        # Provide the redirect contract
+        self.update_policy_target_group(
+            consumer['id'],
+            consumed_policy_rule_sets={policy_rule_set['id']: ''})
+        self.assertFalse(mgr.ensure_bd_created_on_apic.called)
+        self.assertFalse(mgr.ensure_epg_created.called)
+
+        # Now form the chain
+        self.update_policy_target_group(
+            provider['id'],
+            provided_policy_rule_sets={policy_rule_set['id']: ''})
+
+        sc_instances = self._list_service_chains()
+        # We should have one service chain instance created now
+        self.assertEqual(len(sc_instances['servicechain_instances']), 1)
+        sc_instance = sc_instances['servicechain_instances'][0]
+
+        expected = [
+            # Provider EPG provided PRS
+            mock.call('common', provider['id'],
+                      policy_rule_set['id'], provider=True,
+                      contract_owner='common',
+                      transaction=mock.ANY),
+            # Consumer EPG consumed PRS
+            mock.call(consumer['tenant_id'], consumer['id'],
+                      policy_rule_set['id'], provider=False,
+                      contract_owner='common',
+                      transaction=mock.ANY)]
+
+        self._verify_chain_set(provider, l2p, policy_rule_set,
+                               sc_instance, 1, pre_set_contract_calls=expected)
+
+        # New consumer doesn't trigger anything
+        new_consumer = self.create_policy_target_group(
+            l2_policy_id=l2p['id'])['policy_target_group']
+        mgr.reset_mock()
+        self.update_policy_target_group(
+            new_consumer['id'],
+            consumed_policy_rule_sets={policy_rule_set['id']: ''})
+
+        self.assertFalse(mgr.ensure_bd_created_on_apic.called)
+        self.assertFalse(mgr.ensure_epg_created.called)
+        mgr.reset_mock()
+        self.update_policy_target_group(
+            provider['id'], provided_policy_rule_sets={})
+        # Provider EPG contract unset
+        expected = mock.call('common', provider['id'],
+                             policy_rule_set['id'], provider=True,
+                             contract_owner='common',
+                             transaction=mock.ANY)
+        self._verify_chain_unset(
+            provider, l2p, policy_rule_set,
+            sc_instance, 1, pre_unset_contract_calls=[expected])
+
     def test_chain_on_apic_delete(self):
         scs_id = self._create_servicechain_spec(
             node_types=['FIREWALL_TRANSPARENT', 'FIREWALL_TRANSPARENT'])
@@ -2555,12 +2628,15 @@ class TestApicChains(ApicMappingTestCase):
                           pre_epg_create_calls=None,
                           pre_set_contract_calls=None):
         # One shadow BD created
+        l2p_tenant_id = l2p['tenant_id'] if not l2p['shared'] else 'common'
+        provider_tenant_id = (provider['tenant_id'] if not provider['shared']
+                              else 'common')
         mgr = self.driver.apic_manager
         expected_calls = pre_bd_create_calls or []
         for x in xrange(n_tnodes):
             expected_calls.append(mock.call(
-                l2p['tenant_id'], str(x) + '-' + sc_instance['id'],
-                ctx_owner=l2p['tenant_id'], ctx_name=l2p['l3_policy_id'],
+                l2p_tenant_id, str(x) + '-' + sc_instance['id'],
+                ctx_owner=l2p_tenant_id, ctx_name=l2p['l3_policy_id'],
                 allow_broadcast=True, transaction=mock.ANY))
 
         expected_calls = pre_epg_create_calls or []
@@ -2568,21 +2644,21 @@ class TestApicChains(ApicMappingTestCase):
         # Shadow EPG created on shadow BD
         for x in xrange(n_tnodes):
             expected_calls.append(
-                mock.call(l2p['tenant_id'], str(x) + '-' + sc_instance['id'],
-                          bd_owner=l2p['tenant_id'],
+                mock.call(l2p_tenant_id, str(x) + '-' + sc_instance['id'],
+                          bd_owner=l2p_tenant_id,
                           bd_name=str(x) + '-' + sc_instance['id'],
                           transaction=mock.ANY))
         if n_tnodes > 0:
             # Provider moved to 0th shadow BD
             expected_calls.append(
-                mock.call(provider['tenant_id'], provider['id'],
-                          bd_owner=l2p['tenant_id'],
+                mock.call(provider_tenant_id, provider['id'],
+                          bd_owner=l2p_tenant_id,
                           bd_name='0-' + sc_instance['id']))
             # Shadow EPG created in original BD
             expected_calls.append(
-                mock.call(l2p['tenant_id'],
+                mock.call(l2p_tenant_id,
                           str(n_tnodes) + '-' + sc_instance['id'],
-                          bd_owner=l2p['tenant_id'], bd_name=l2p['id'],
+                          bd_owner=l2p_tenant_id, bd_name=l2p['id'],
                           transaction=mock.ANY))
         self._check_call_list(
             expected_calls, mgr.ensure_epg_created.call_args_list)
@@ -2592,37 +2668,41 @@ class TestApicChains(ApicMappingTestCase):
         if n_tnodes > 0:
             # cons-side Shadow EPG consumes service contract
             expected_calls.append(
-                mock.call(l2p['tenant_id'],
+                mock.call(l2p_tenant_id,
                           str(n_tnodes) + '-' + sc_instance['id'],
                           amap.SERVICE_PREFIX + l2p['id'], provider=False,
-                          contract_owner=l2p['tenant_id'],
+                          contract_owner=l2p_tenant_id,
                           transaction=mock.ANY))
             provider_obj = self.show_policy_target_group(
                 provider['id'])['policy_target_group']
 
             for c in provider_obj['provided_policy_rule_sets']:
+                c = self.show_policy_rule_set(c)['policy_rule_set']
+                t = c['tenant_id'] if not c['shared'] else 'common'
                 expected_calls.append(
-                    mock.call(l2p['tenant_id'],
-                          str(n_tnodes) + '-' + sc_instance['id'],
-                          c, provider=True, contract_owner=l2p['tenant_id'],
-                          transaction=mock.ANY))
+                    mock.call(l2p_tenant_id,
+                              str(n_tnodes) + '-' + sc_instance['id'],
+                              c['id'], provider=True, contract_owner=t,
+                              transaction=mock.ANY))
             for c in provider_obj['consumed_policy_rule_sets']:
+                c = self.show_policy_rule_set(c)['policy_rule_set']
+                t = c['tenant_id'] if not c['shared'] else 'common'
                 expected_calls.append(
-                    mock.call(l2p['tenant_id'],
-                          str(n_tnodes) + '-' + sc_instance['id'],
-                          c, provider=False, contract_owner=l2p['tenant_id'],
-                          transaction=mock.ANY))
+                    mock.call(l2p_tenant_id,
+                              str(n_tnodes) + '-' + sc_instance['id'],
+                              c['id'], provider=False, contract_owner=t,
+                              transaction=mock.ANY))
 
             # 0th shadow consumes ANY
             expected_calls.append(
-                mock.call(l2p['tenant_id'], '0-' + sc_instance['id'],
+                mock.call(l2p_tenant_id, '0-' + sc_instance['id'],
                           'any-' + sc_instance['id'], provider=False,
-                          contract_owner=l2p['tenant_id']))
+                          contract_owner=l2p_tenant_id))
             # Provider provides ANY
             expected_calls.append(
-                mock.call(l2p['tenant_id'], provider['id'],
+                mock.call(provider_tenant_id, provider['id'],
                           'any-' + sc_instance['id'], provider=True,
-                          contract_owner=l2p['tenant_id']))
+                          contract_owner=l2p_tenant_id))
 
         self._check_call_list(
             expected_calls, mgr.set_contract_for_epg.call_args_list)
@@ -2631,12 +2711,15 @@ class TestApicChains(ApicMappingTestCase):
                             n_tnodes, pre_bd_delete_calls=None,
                             pre_epg_deleted_calls=None,
                             pre_unset_contract_calls=None):
+        l2p_tenant_id = l2p['tenant_id'] if not l2p['shared'] else 'common'
+        provider_tenant_id = (provider['tenant_id'] if not provider['shared']
+                              else 'common')
         # shadow BDs deleted
         mgr = self.driver.apic_manager
         expected_calls = pre_bd_delete_calls or []
         for x in xrange(n_tnodes):
             expected_calls.append(
-                mock.call(l2p['tenant_id'], str(x) + '-' + sc_instance['id'],
+                mock.call(l2p_tenant_id, str(x) + '-' + sc_instance['id'],
                 transaction=mock.ANY))
         self._check_call_list(
             expected_calls, mgr.delete_bd_on_apic.call_args_list)
@@ -2645,11 +2728,11 @@ class TestApicChains(ApicMappingTestCase):
         expected_calls = pre_epg_deleted_calls or []
         for x in xrange(n_tnodes):
             expected_calls.append(
-                mock.call(l2p['tenant_id'], str(x) + '-' + sc_instance['id'],
+                mock.call(l2p_tenant_id, str(x) + '-' + sc_instance['id'],
                           transaction=mock.ANY))
         if n_tnodes > 0:
             expected_calls.append(
-                mock.call(l2p['tenant_id'],
+                mock.call(l2p_tenant_id,
                           str(n_tnodes) + '-' + sc_instance['id'],
                           transaction=mock.ANY))
 
@@ -2659,16 +2742,16 @@ class TestApicChains(ApicMappingTestCase):
         # Provider moved to original BD
         if n_tnodes > 0:
             mgr.ensure_epg_created.assert_called_once_with(
-                provider['tenant_id'], provider['id'],
-                bd_owner=l2p['tenant_id'], bd_name=l2p['id'])
+                provider_tenant_id, provider['id'],
+                bd_owner=l2p_tenant_id, bd_name=l2p['id'])
 
         # Contracts unset
         expected_calls = pre_unset_contract_calls or []
         if n_tnodes > 0:
             expected_calls.append(
-                mock.call(l2p['tenant_id'], provider['id'],
+                mock.call(provider_tenant_id, provider['id'],
                           'any-' + sc_instance['id'], provider=True,
-                          contract_owner=l2p['tenant_id']))
+                          contract_owner=l2p_tenant_id))
 
         self._check_call_list(
             expected_calls, mgr.unset_contract_for_epg.call_args_list)
