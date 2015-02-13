@@ -136,9 +136,6 @@ class L2Policy(model_base.BASEV2, models_v2.HasId, models_v2.HasTenant):
 class ESToL3PAssociation(model_base.BASEV2):
     """Many to many consuming relation between ESs and L3Ps."""
     __tablename__ = 'gp_es_to_l3p_associations'
-    __table_args__ = (
-        sa.UniqueConstraint('external_segment_id', 'allocated_address'),
-    )
     l3_policy_id = sa.Column(sa.String(36), sa.ForeignKey('gp_l3_policies.id'),
                              primary_key=True)
     external_segment_id = sa.Column(

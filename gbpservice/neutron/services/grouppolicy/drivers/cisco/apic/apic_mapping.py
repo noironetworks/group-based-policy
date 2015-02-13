@@ -12,6 +12,7 @@
 
 import netaddr
 import sqlalchemy as sa
+from sqlalchemy.orm import exc as orm_exc
 
 from apicapi import apic_manager
 from keystoneclient.v2_0 import client as keyclient
@@ -1764,7 +1765,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 self.apic_manager.delete_contract(any_contract, owner=tenant)
             self._delete_servicechain_instance(
                 context, chain.servicechain_instance_id)
-        except schain.ServiceChainInstanceNotFound:
+        except (schain.ServiceChainInstanceNotFound,
+                orm_exc.ObjectDeletedError):
             LOG.warn(_("Service chain instance not found."))
         with context._plugin_context.session.begin(subtransactions=True):
             try:

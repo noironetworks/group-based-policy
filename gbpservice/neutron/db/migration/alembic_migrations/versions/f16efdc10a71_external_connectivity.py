@@ -135,7 +135,6 @@ def upgrade():
                   primary_key=True),
         sa.PrimaryKeyConstraint(
             'l3_policy_id', 'external_segment_id', 'allocated_address'),
-        #sa.UniqueConstraint('external_segment_id', 'allocated_address'),
     )
 
 
