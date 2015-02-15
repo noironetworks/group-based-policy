@@ -1654,6 +1654,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         self.apic_manager.ensure_bd_created_on_apic(
                             tenant, ordered_sc, ctx_owner=ctx_owner,
                             ctx_name=l3_policy_name, allow_broadcast=True,
+                            unicast_route=False,
                             transaction=trs)
                         # Create one shadow EPG for each
                         self.apic_manager.ensure_epg_created(

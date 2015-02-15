@@ -2637,7 +2637,11 @@ class TestApicChains(ApicMappingTestCase):
             expected_calls.append(mock.call(
                 l2p_tenant_id, str(x) + '-' + sc_instance['id'],
                 ctx_owner=l2p_tenant_id, ctx_name=l2p['l3_policy_id'],
-                allow_broadcast=True, transaction=mock.ANY))
+                allow_broadcast=True, unicast_route=False,
+                transaction=mock.ANY))
+
+        self._check_call_list(
+            expected_calls, mgr.ensure_bd_created_on_apic.call_args_list)
 
         expected_calls = pre_epg_create_calls or []
 
