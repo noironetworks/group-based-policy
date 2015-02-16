@@ -1610,15 +1610,18 @@ class TestExternalPolicy(ApicMappingTestCase):
 
 class TestApicChains(ApicMappingTestCase):
 
-    def _create_servicechain_spec(self, node_types=None):
+    def _create_servicechain_spec(self, node_types=None, shared=False):
         node_types = node_types or []
         if not node_types:
             node_types = ['LOADBALANCER']
         node_ids = []
         for node_type in node_types:
-            node_ids.append(self._create_servicechain_node(node_type))
-        data = {'servicechain_spec': {'tenant_id': self._tenant_id,
-                                      'nodes': node_ids}}
+            node_ids.append(self._create_servicechain_node(node_type,
+                                                           shared=shared))
+        data = {'servicechain_spec': {'tenant_id': self._tenant_id if not
+                                      shared else 'another-tenant',
+                                      'nodes': node_ids,
+                                      'shared': shared}}
         scs_req = self.new_create_request(
             SERVICECHAIN_SPECS, data, self.fmt)
         spec = self.deserialize(
@@ -1626,11 +1629,14 @@ class TestApicChains(ApicMappingTestCase):
         scs_id = spec['servicechain_spec']['id']
         return scs_id
 
-    def _create_servicechain_node(self, node_type="LOADBALANCER"):
+    def _create_servicechain_node(self, node_type="LOADBALANCER",
+                                  shared=False):
         config = "heat_template_version: 2013-05-23"
         data = {'servicechain_node': {'service_type': node_type,
-                                      'tenant_id': self._tenant_id,
-                                      'config': config}}
+                                      'tenant_id': self._tenant_id if not
+                                      shared else 'another-tenant',
+                                      'config': config,
+                                      'shared': shared}}
         scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
         node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
         scn_id = node['servicechain_node']['id']
@@ -2502,7 +2508,7 @@ class TestApicChains(ApicMappingTestCase):
 
     def test_three_tier_sc(self):
         app_db_scs_id = self._create_servicechain_spec(
-            node_types=['FIREWALL_TRANSPARENT', 'IDS'])
+            node_types=['FIREWALL_TRANSPARENT', 'IDS'], shared=True)
         web_app_scs_id = self._create_servicechain_spec(
             node_types=['FIREWALL_TRANSPARENT', 'LOADBALANCER'])
         internet_web_scs_id = self._create_servicechain_spec(

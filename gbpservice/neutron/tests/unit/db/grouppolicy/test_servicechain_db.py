@@ -58,24 +58,25 @@ class ServiceChainDBTestBase(object):
 
     def _get_test_servicechain_node_attrs(self, name='scn1',
         description='test scn', service_type=constants.FIREWALL,
-        config='{"heat_template_version": "2013-05-23"}'):
+        config='{"heat_template_version": "2013-05-23"}', shared=False):
 
         attrs = {'name': name, 'description': description,
                  'service_type': service_type,
                  'config': config,
-                 'tenant_id': self._tenant_id}
+                 'tenant_id': self._tenant_id,
+                 'shared': shared}
 
         return attrs
 
     def _get_test_servicechain_spec_attrs(self, name='scs1',
                                           description='test scs',
-                                          nodes=None):
+                                          nodes=None, shared=False):
         node_ids = []
         if nodes:
             node_ids = [node_id for node_id in nodes]
         attrs = {'name': name, 'description': description,
                  'tenant_id': self._tenant_id,
-                 'nodes': node_ids}
+                 'nodes': node_ids, 'shared': shared}
 
         return attrs
 
@@ -99,7 +100,7 @@ class ServiceChainDBTestBase(object):
     def create_servicechain_node(self, service_type=constants.FIREWALL,
                                  config="heat_template_version: 2013-05-23",
                                  expected_res_status=None, **kwargs):
-        defaults = {'name': 'scn1', 'description': 'test scn'}
+        defaults = {'name': 'scn1', 'description': 'test scn', 'shared': False}
         defaults.update(kwargs)
 
         data = {'servicechain_node': {'service_type': service_type,
@@ -121,7 +122,7 @@ class ServiceChainDBTestBase(object):
 
     def create_servicechain_spec(self, nodes=None, expected_res_status=None,
                                  **kwargs):
-        defaults = {'name': 'scs1', 'description': 'test scs'}
+        defaults = {'name': 'scs1', 'description': 'test scs', 'shared': False}
         defaults.update(kwargs)
 
         data = {'servicechain_spec': {'tenant_id': self._tenant_id,
