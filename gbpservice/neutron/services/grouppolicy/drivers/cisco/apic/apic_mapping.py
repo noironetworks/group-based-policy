@@ -1404,7 +1404,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                          'allocation_pools': attributes.ATTR_NOT_SPECIFIED,
                          'dns_nameservers': attributes.ATTR_NOT_SPECIFIED,
                          'host_routes': attributes.ATTR_NOT_SPECIFIED}
-                return self._create_subnet(context._plugin_context, attrs)
+                subnet = self._create_subnet(context._plugin_context, attrs)
+                self._set_subnet_internal_route(context, subnet, l3p)
+                return subnet
             except n_exc.BadRequest:
                 # This is expected (CIDR overlap) until we have a
                 # proper subnet allocation algorithm. We ignore the

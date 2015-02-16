@@ -489,6 +489,16 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
         self.assertEqual(set(ptg1['subnets']), set(ptg2['subnets']))
         self.assertNotEqual(ptg2['subnets'][0], ptg2['subnets'][1])
 
+    def test_internal_route_added_to_subnet(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        l2p = self.show_l2_policy(ptg['l2_policy_id'])['l2_policy']
+        l3p = self.show_l3_policy(l2p['l3_policy_id'])['l3_policy']
+        subnet = self._get_object(
+            'subnets', ptg['subnets'][0], self.api)['subnet']
+        self.assertEqual([{'destination': l3p['ip_pool'],
+                           'nexthop': subnet['gateway_ip']}],
+                         subnet['host_routes'])
+
     def _create_explicit_subnet_ptg(self, cidr, shared=False):
         l2p = self.create_l2_policy(name="l2p", shared=shared)
         l2p_id = l2p['l2_policy']['id']
