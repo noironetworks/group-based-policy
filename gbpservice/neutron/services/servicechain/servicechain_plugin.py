@@ -62,7 +62,7 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
             context, obj, self.get_servicechain_specs, 'id',
             obj['servicechain_specs'])
 
-    def _validate_servicechain_spec_unhare(self, context, obj):
+    def _validate_servicechain_spec_unshare(self, context, obj):
         pass
 
     def __init__(self):
