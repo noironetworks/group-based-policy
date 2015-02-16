@@ -309,6 +309,10 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
                         "Some rules still exist:\n%s" % str(existing))
         return expected
 
+    def _get_object(self, type, id, api):
+        req = self.new_show_request(type, id, self.fmt)
+        return self.deserialize(self.fmt, req.get_response(api))
+
 
 class TestPolicyTarget(ResourceMappingTestCase):
 
@@ -476,7 +480,12 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         self.assertIsNotNone(subnets)
         self.assertEqual(len(subnets), 1)
         subnet_id = subnets[0]
-
+        subnet = self._get_object('subnets', subnet_id, self.api)['subnet']
+        l3p = self.show_l3_policy(
+            l2p['l2_policy']['l3_policy_id'])['l3_policy']
+        self.assertEqual([{'destination': l3p['ip_pool'],
+                           'nexthop': subnet['gateway_ip']}],
+                         subnet['host_routes'])
         # TODO(rkukura): Verify implicit subnet belongs to L2 policy's
         # network, is within L3 policy's ip_pool, and was added as
         # router interface.

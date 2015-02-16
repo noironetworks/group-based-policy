@@ -1136,6 +1136,7 @@ class ResourceMappingDriver(api.PolicyDriver):
                          'host_routes': attributes.ATTR_NOT_SPECIFIED}
                 subnet = self._create_subnet(context._plugin_context, attrs)
                 subnet_id = subnet['id']
+                self._set_subnet_internal_route(context, subnet, l3p)
                 try:
                     if l3p['routers']:
                         router_id = l3p['routers'][0]
@@ -1159,6 +1160,16 @@ class ResourceMappingDriver(api.PolicyDriver):
                 # exception and repeat with the next CIDR.
                 pass
         raise exc.NoSubnetAvailable()
+
+    def _set_subnet_internal_route(self, context, subnet, l3p):
+        if subnet['gateway_ip']:
+            internal_route = {'destination': l3p['ip_pool'],
+                              'nexthop': subnet['gateway_ip']}
+            if internal_route not in subnet['host_routes']:
+                subnet['host_routes'].append(internal_route)
+                self._update_subnet(
+                    context._plugin_context, subnet['id'],
+                    {'host_routes': subnet['host_routes']})
 
     def _validate_subnet_overlap_for_l3p(self, subnets, subnet_cidr):
         new_subnet_ipset = netaddr.IPSet([subnet_cidr])
