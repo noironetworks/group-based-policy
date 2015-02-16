@@ -23,10 +23,10 @@ from gbpservice.neutron.services.servicechain.drivers import simplechain_driver
 
 
 appliance_driver_opts = [
-    cfg.StrOpt('management_ptg_name',
-               default='Management PTG',
+    cfg.StrOpt('svc_management_ptg_name',
+               default='Service_Management_Tier',
                help=_("Name of the PTG that is associated with the "
-                      "management network")),
+                      "service management network")),
 ]
 
 cfg.CONF.register_opts(appliance_driver_opts, "appliance_driver")
@@ -37,7 +37,7 @@ SERVICE_PT = "service"
 PROVIDER_PT_NAME = "chain_provider_%s_%s"
 CONSUMER_PT_NAME = "chain_consumer_%s_%s"
 SC_METADATA = '{"sc_instance":"%s", "order":"%s", "provider_ptg":"%s"}'
-MANAGEMENT_PTG_NAME = cfg.CONF.appliance_driver.management_ptg_name
+SVC_MGMT_PTG_NAME = cfg.CONF.appliance_driver.svc_management_ptg_name
 
 LOG = logging.getLogger(__name__)
 
@@ -71,8 +71,8 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         provider_ptg_id = sc_instance.get('provider_ptg_id')
         consumer_ptg_id = sc_instance.get('consumer_ptg_id')
         sc_instance_id = sc_instance['id']
-        filters = {'name': [MANAGEMENT_PTG_NAME]}
-        management_ptgs = self._grouppolicy_plugin.get_policy_target_groups(
+        filters = {'name': [SVC_MGMT_PTG_NAME]}
+        svc_mgmt_ptgs = self._grouppolicy_plugin.get_policy_target_groups(
             context._plugin_context, filters)
         pt_type = TRANSPARENT_PT
 
@@ -108,8 +108,8 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
         if 'service_chain_metadata' in config_param_names:
             config_param_values['service_chain_metadata'] = (
                 SC_METADATA % (sc_instance_id, order, provider_ptg_id))
-        if 'management_ptg' in config_param_names:
-            config_param_values['management_ptg'] = management_ptgs[0]['id']
+        if 'svc_mgmt_ptg' in config_param_names:
+            config_param_values['svc_mgmt_ptg'] = svc_mgmt_ptgs[0]['id']
 
         node_params = (stack_template.get('Parameters')
                        or stack_template.get('parameters'))
