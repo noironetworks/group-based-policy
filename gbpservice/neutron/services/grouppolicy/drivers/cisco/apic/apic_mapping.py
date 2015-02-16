@@ -385,11 +385,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             port_min, port_max = (
                 gpdb.GroupPolicyMappingDbPlugin._get_min_max_ports_from_range(
                     classifier['port_range']))
-            attrs = {'etherT': 'ip',
-                     'prot': classifier['protocol'].lower()}
-            if port_min and port_max:
-                attrs['dToPort'] = port_max
-                attrs['dFromPort'] = port_min
+            attrs = {'etherT': 'unspecified'}
+            if classifier['protocol']:
+                attrs['etherT'] = 'ip'
+                attrs['prot'] = classifier['protocol'].lower()
+                if port_min and port_max:
+                    attrs['dToPort'] = port_max
+                    attrs['dFromPort'] = port_min
             tenant = self._tenant_by_sharing_policy(context.current)
             policy_rule = self.name_mapper.policy_rule(context,
                                                        context.current['id'])
@@ -399,7 +401,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 # Also create reverse rule
                 policy_rule = self.name_mapper.policy_rule(
                     context, context.current['id'], prefix=REVERSE_PREFIX)
-                if port_min and port_max:
+                if attrs.get('dToPort') and attrs.get('dFromPort'):
                     attrs.pop('dToPort')
                     attrs.pop('dFromPort')
                     attrs['sToPort'] = port_max

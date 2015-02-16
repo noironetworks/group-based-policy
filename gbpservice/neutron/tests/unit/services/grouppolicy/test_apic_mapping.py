@@ -1111,6 +1111,13 @@ class TestPolicyRule(ApicMappingTestCase):
                       transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.create_tenant_filter.call_args_list)
+        mgr.reset_mock()
+        pr = self._create_simple_policy_rule('bi', None, None, shared=shared)
+        expected_calls = [
+            mock.call(pr['id'], owner=tenant, etherT='unspecified',
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.create_tenant_filter.call_args_list)
 
     def test_policy_rule_created_on_apic(self):
         self._test_policy_rule_created_on_apic()
