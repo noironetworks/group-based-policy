@@ -550,8 +550,16 @@ class TestL2Policy(ApicMappingTestCase):
         mgr = self.driver.apic_manager
         mgr.delete_bd_on_apic.assert_called_once_with(
             tenant, l2p['id'], transaction=mock.ANY)
-        mgr.delete_epg_for_network(tenant, amap.SHADOW_PREFIX + l2p['id'],
-                                   transaction=mock.ANY)
+        mgr.delete_epg_for_network.assert_called_once_with(
+            tenant, amap.SHADOW_PREFIX + l2p['id'],
+            transaction=mock.ANY)
+        expected_calls = [
+            mock.call(amap.IMPLICIT_PREFIX + l2p['id'], owner=tenant,
+                      transaction=mock.ANY),
+            mock.call(amap.SERVICE_PREFIX + l2p['id'], owner=tenant,
+                      transaction=mock.ANY)]
+        self._check_call_list(expected_calls,
+                              mgr.delete_contract.call_args_list)
 
     def test_l2_policy_deleted_on_apic(self):
         self._test_l2_policy_deleted_on_apic()

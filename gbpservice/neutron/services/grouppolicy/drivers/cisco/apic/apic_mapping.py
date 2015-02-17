@@ -608,6 +608,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 tenant, l2_policy, transaction=trs)
             # Delete neutron port EPG
             self._delete_shadow_epg(context, context.current, transaction=trs)
+            self._delete_implicit_contract(context, context.current,
+                                           transaction=trs)
 
     def delete_l3_policy_postcommit(self, context):
         tenant = self._tenant_by_sharing_policy(context.current)
@@ -1580,6 +1582,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             # Delete Service Contract
             contract = self.name_mapper.l2_policy(
                 context, l2p['id'], prefix=SERVICE_PREFIX)
+            self.apic_manager.delete_contract(
+                contract, owner=tenant, transaction=trs)
+
+    def _delete_implicit_contract(self, context, l2p, transaction=None):
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            tenant = self._tenant_by_sharing_policy(l2p)
+            contract = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=IMPLICIT_PREFIX)
             self.apic_manager.delete_contract(
                 contract, owner=tenant, transaction=trs)
 
