@@ -495,6 +495,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             # Create neutron port EPG
             self._configure_shadow_epg(context, context.current, l2_policy,
                                        transaction=trs)
+            self._configure_implicit_contract(context, context.current,
+                                              transaction=trs)
             # Add existing subnets
             net_id = context.current['network_id']
             subnets = self._core_plugin.get_subnets(context._plugin_context,
