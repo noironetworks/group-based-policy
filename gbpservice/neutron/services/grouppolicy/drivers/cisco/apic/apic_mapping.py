@@ -1096,6 +1096,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def _manage_ep_policy_rule_sets(
             self, plugin_context, es, ep, added_provided, added_consumed,
             removed_provided, removed_consumed, transaction=None):
+
+        ext_info = self.apic_manager.ext_net_dict.get(es['name'])
+        if not ext_info:
+            LOG.warn(_("External Segment %s is not managed by APIC "
+                     "mapping driver.") % es['id'])
+            return
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
         mapped_tenant = self._tenant_by_sharing_policy(es)
