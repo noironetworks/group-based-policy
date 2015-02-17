@@ -313,6 +313,16 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
                 ptg['tenant_id'], ptg['id'],
                 amap.SERVICE_PREFIX + ptg['l2_policy_id'],
                 transaction=mock.ANY, contract_owner=ptg['tenant_id'],
+                provider=False),
+            mock.call(
+                ptg['tenant_id'], ptg['id'],
+                amap.IMPLICIT_PREFIX + ptg['l2_policy_id'],
+                transaction=mock.ANY, contract_owner=ptg['tenant_id'],
+                provider=True),
+            mock.call(
+                ptg['tenant_id'], ptg['id'],
+                amap.IMPLICIT_PREFIX + ptg['l2_policy_id'],
+                transaction=mock.ANY, contract_owner=ptg['tenant_id'],
                 provider=False)]
         self._check_call_list(expected_calls,
                               mgr.set_contract_for_epg.call_args_list)
@@ -2698,6 +2708,18 @@ class TestApicChains(ApicMappingTestCase):
                 mock.call(l2p_tenant_id,
                           str(n_tnodes) + '-' + sc_instance['id'],
                           amap.SERVICE_PREFIX + l2p['id'], provider=False,
+                          contract_owner=l2p_tenant_id,
+                          transaction=mock.ANY))
+            expected_calls.append(
+                mock.call(l2p_tenant_id,
+                          str(n_tnodes) + '-' + sc_instance['id'],
+                          amap.IMPLICIT_PREFIX + l2p['id'], provider=True,
+                          contract_owner=l2p_tenant_id,
+                          transaction=mock.ANY))
+            expected_calls.append(
+                mock.call(l2p_tenant_id,
+                          str(n_tnodes) + '-' + sc_instance['id'],
+                          amap.IMPLICIT_PREFIX + l2p['id'], provider=False,
                           contract_owner=l2p_tenant_id,
                           transaction=mock.ANY))
             provider_obj = self.show_policy_target_group(

@@ -95,6 +95,7 @@ class PTGAlreadyProvidingRedirectPRS(gpexc.GroupPolicyBadRequest):
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'shadow-'
 SERVICE_PREFIX = 'service-'
+IMPLICIT_PREFIX = 'implicit-'
 ANY_PREFIX = 'any-'
 PROMISCUOUS_SUFFIX = 'promiscuous'
 APIC_OWNED = 'apic_owned_'
@@ -459,8 +460,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
             l2p = context._plugin.get_l2_policy(
                 context._plugin_context, context.current['l2_policy_id'])
-            self._configure_epg_service_contract(context, context.current, l2p,
-                                                 epg, transaction=trs)
+            self._configure_epg_service_contract(
+                context, context.current, l2p, epg, transaction=trs)
+            self._configure_epg_implicit_contract(
+                context, context.current, l2p, epg, transaction=trs)
+
         self._manage_ptg_policy_rule_sets(
                 context, context.current['provided_policy_rule_sets'],
                 context.current['consumed_policy_rule_sets'], [], [])
@@ -1435,6 +1439,38 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         return self._core_plugin.get_subnets(
             plugin_context, {'network_id': [l2p['network_id']]})
 
+    def _configure_implicit_contract(self, context, l2p, transaction=None):
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            tenant = self._tenant_by_sharing_policy(l2p)
+            # Create Service contract
+            contract = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=IMPLICIT_PREFIX)
+            self.apic_manager.create_contract(
+                contract, owner=tenant, transaction=trs)
+
+            # Create DHCP filter/subject
+            attrs = {'etherT': 'ip',
+                     'prot': 'udp',
+                     'dToPort': 68,
+                     'dFromPort': 68,
+                     'sToPort': 67,
+                     'sFromPort': 67}
+            self._associate_service_filter(tenant, contract, 'dhcp',
+                                           'dhcp', transaction=trs, **attrs)
+            attrs = {'etherT': 'ip',
+                     'prot': 'udp',
+                     'dToPort': 67,
+                     'dFromPort': 67,
+                     'sToPort': 68,
+                     'sFromPort': 68}
+            self._associate_service_filter(tenant, contract, 'dhcp',
+                                           'r-dhcp', transaction=trs, **attrs)
+
+            # Create ARP filter/subject
+            attrs = {'etherT': 'arp'}
+            self._associate_service_filter(tenant, contract, 'arp',
+                                           'arp', transaction=trs, **attrs)
+
     def _configure_shadow_epg(self, context, l2p, bd_name, transaction=None):
         with self.apic_manager.apic.transaction(transaction) as trs:
             tenant = self._tenant_by_sharing_policy(l2p)
@@ -1455,24 +1491,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 tenant, shadow_epg, contract, provider=True,
                 contract_owner=tenant, transaction=trs)
 
-            # Create DHCP filter/subject
-            attrs = {'etherT': 'ip',
-                     'prot': 'udp',
-                     'dToPort': 68,
-                     'dFromPort': 68,
-                     'sToPort': 67,
-                     'sFromPort': 67}
-            self._associate_service_filter(tenant, contract, 'dhcp',
-                                           'dhcp', transaction=trs, **attrs)
-            attrs = {'etherT': 'ip',
-                     'prot': 'udp',
-                     'dToPort': 67,
-                     'dFromPort': 67,
-                     'sToPort': 68,
-                     'sFromPort': 68}
-            self._associate_service_filter(tenant, contract, 'dhcp',
-                                           'r-dhcp', transaction=trs, **attrs)
-
             # Create DNS filter/subject
             attrs = {'etherT': 'ip',
                      'prot': 'udp',
@@ -1486,11 +1504,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                      'sFromPort': 'dns'}
             self._associate_service_filter(tenant, contract, 'dns',
                                            'r-dns', transaction=trs, **attrs)
-
-            # Create ARP filter/subject
-            attrs = {'etherT': 'arp'}
-            self._associate_service_filter(tenant, contract, 'arp',
-                                           'arp', transaction=trs, **attrs)
 
             # Create HTTP filter/subject
             attrs = {'etherT': 'ip',
@@ -1510,6 +1523,16 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                      'prot': 'icmp'}
             self._associate_service_filter(tenant, contract, 'icmp',
                                            'icmp', transaction=trs, **attrs)
+
+            contract = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=IMPLICIT_PREFIX)
+            # Shadow EPG provides and consumes implicit contract
+            self.apic_manager.set_contract_for_epg(
+                tenant, shadow_epg, contract, provider=False,
+                contract_owner=tenant, transaction=trs)
+            self.apic_manager.set_contract_for_epg(
+                tenant, shadow_epg, contract, provider=True,
+                contract_owner=tenant, transaction=trs)
 
     def _create_any_contract(self, l2p, chain_id, transaction=None):
         tenant = self._tenant_by_sharing_policy(l2p)
@@ -1556,6 +1579,20 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 context, l2p['id'], prefix=SERVICE_PREFIX)
             self.apic_manager.set_contract_for_epg(
                 tenant, epg_name, contract, provider=False,
+                contract_owner=contract_owner, transaction=trs)
+
+    def _configure_epg_implicit_contract(self, context, ptg, l2p, epg_name,
+                                         transaction=None):
+        with self.apic_manager.apic.transaction(transaction) as trs:
+            contract_owner = self._tenant_by_sharing_policy(l2p)
+            tenant = self._tenant_by_sharing_policy(ptg)
+            contract = self.name_mapper.l2_policy(
+                context, l2p['id'], prefix=IMPLICIT_PREFIX)
+            self.apic_manager.set_contract_for_epg(
+                tenant, epg_name, contract, provider=False,
+                contract_owner=contract_owner, transaction=trs)
+            self.apic_manager.set_contract_for_epg(
+                tenant, epg_name, contract, provider=True,
                 contract_owner=contract_owner, transaction=trs)
 
     def _get_ptgs_servicechain(self, session, provider_ptg_id, prs_id=None):
@@ -1678,6 +1715,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         tenant, str(n) + '-' + sc_instance_id, c,
                         provider=False, contract_owner=tenant,
                         transaction=trs)
+                    c = self.name_mapper.l2_policy(
+                        context, l2p['id'], prefix=IMPLICIT_PREFIX)
+                    self.apic_manager.set_contract_for_epg(
+                        tenant, str(n) + '-' + sc_instance_id, c,
+                        provider=False, contract_owner=tenant, transaction=trs)
+                    self.apic_manager.set_contract_for_epg(
+                        tenant, str(n) + '-' + sc_instance_id, c,
+                        provider=True, contract_owner=tenant, transaction=trs)
                     # consumer-side shadow EPG consumes and
                     # provides everything that the real provider does.
                     for prs in context._plugin.get_policy_rule_sets(
