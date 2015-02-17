@@ -1463,24 +1463,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self.apic_manager.create_contract(
                 contract, owner=tenant, transaction=trs)
 
-            # Create DHCP filter/subject
-            attrs = {'etherT': 'ip',
-                     'prot': 'udp',
-                     'dToPort': 68,
-                     'dFromPort': 68,
-                     'sToPort': 67,
-                     'sFromPort': 67}
-            self._associate_service_filter(tenant, contract, 'dhcp',
-                                           'dhcp', transaction=trs, **attrs)
-            attrs = {'etherT': 'ip',
-                     'prot': 'udp',
-                     'dToPort': 67,
-                     'dFromPort': 67,
-                     'sToPort': 68,
-                     'sFromPort': 68}
-            self._associate_service_filter(tenant, contract, 'dhcp',
-                                           'r-dhcp', transaction=trs, **attrs)
-
             # Create ARP filter/subject
             attrs = {'etherT': 'arp'}
             self._associate_service_filter(tenant, contract, 'arp',
@@ -1538,6 +1520,29 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                      'prot': 'icmp'}
             self._associate_service_filter(tenant, contract, 'icmp',
                                            'icmp', transaction=trs, **attrs)
+
+            # Create DHCP filter/subject
+            attrs = {'etherT': 'ip',
+                     'prot': 'udp',
+                     'dToPort': 68,
+                     'dFromPort': 68,
+                     'sToPort': 67,
+                     'sFromPort': 67}
+            self._associate_service_filter(tenant, contract, 'dhcp',
+                                           'dhcp', transaction=trs, **attrs)
+            attrs = {'etherT': 'ip',
+                     'prot': 'udp',
+                     'dToPort': 67,
+                     'dFromPort': 67,
+                     'sToPort': 68,
+                     'sFromPort': 68}
+            self._associate_service_filter(tenant, contract, 'dhcp',
+                                           'r-dhcp', transaction=trs, **attrs)
+
+            # Create ARP filter/subject
+            attrs = {'etherT': 'arp'}
+            self._associate_service_filter(tenant, contract, 'arp',
+                                           'arp', transaction=trs, **attrs)
 
             contract = self.name_mapper.l2_policy(
                 context, l2p['id'], prefix=IMPLICIT_PREFIX)
