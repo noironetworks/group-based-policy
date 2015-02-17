@@ -1211,8 +1211,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                   "driver.") % es['id'])
             return
         ip = external_segments[es['id']]
-        ip = ip[0] if (ip and ip[0]) else ext_info.get('cidr_exposed',
-                                                       '/').split('/')[0]
+        if ip and ip[0]:
+            ip = ip[0]
+            exposed = ip + '/' + es['cidr'].split('/')[1]
+        else:
+            ip = ext_info.get('cidr_exposed', '/').split('/')[0]
+            exposed = ext_info.get('cidr_exposed')
+
         if not ip:
             raise NoAddressConfiguredOnExternalSegment(
                 l3p_id=context.current['id'], es_id=es['id'])
@@ -1233,8 +1238,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 transaction=trs)
             self.apic_manager.ensure_logical_node_profile_created(
                 es_name, switch, module, sport, encap,
-                ip, owner=es_tenant, router_id=router_id,
-                transaction=trs)
+                exposed, owner=es_tenant,
+                router_id=router_id, transaction=trs)
             for route in es['external_routes']:
                 self.apic_manager.ensure_static_route_created(
                     es_name, switch, route['nexthop'] or default_gateway,

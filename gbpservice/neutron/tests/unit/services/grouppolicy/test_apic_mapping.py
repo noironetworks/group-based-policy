@@ -687,7 +687,7 @@ class TestL3Policy(ApicMappingTestCase):
             transaction=mock.ANY)
         mgr.ensure_logical_node_profile_created.assert_called_once_with(
             es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
-            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.3',
+            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.3/24',
             owner=owner, router_id=APIC_EXTERNAL_RID,
             transaction=mock.ANY)
 
@@ -742,7 +742,7 @@ class TestL3Policy(ApicMappingTestCase):
             transaction=mock.ANY)
         mgr.ensure_logical_node_profile_created.assert_called_once_with(
             es['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
-            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.3',
+            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.0.3/24',
             owner=owner, router_id=APIC_EXTERNAL_RID,
             transaction=mock.ANY)
 
@@ -864,7 +864,7 @@ class TestL3Policy(ApicMappingTestCase):
             transaction=mock.ANY)
         mgr.ensure_logical_node_profile_created.assert_called_once_with(
             es2['id'], mocked.APIC_EXT_SWITCH, mocked.APIC_EXT_MODULE,
-            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.1.3',
+            mocked.APIC_EXT_PORT, mocked.APIC_EXT_ENCAP, '192.168.1.3/24',
             owner=owner, router_id=APIC_EXTERNAL_RID,
             transaction=mock.ANY)
         self.assertFalse(mgr.ensure_static_route_created.called)
