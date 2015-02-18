@@ -696,10 +696,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         self._hadle_redirect_rule(context, rule)
 
     def _update_policy_rule_on_apic(self, context, transaction=None):
-        with self.apic_manager.apic.transaction(transaction) as trs:
-            self._delete_policy_rule_from_apic(context, transaction=trs)
-            # The following only creates the APIC reference
-            self.create_policy_rule_postcommit(context, transaction=trs)
+        self._delete_policy_rule_from_apic(context, transaction=None)
+        # The following only creates the APIC reference
+        self.create_policy_rule_postcommit(context, transaction=None)
 
     def update_policy_target_group_precommit(self, context):
         if set(context.original['subnets']) != set(context.current['subnets']):
