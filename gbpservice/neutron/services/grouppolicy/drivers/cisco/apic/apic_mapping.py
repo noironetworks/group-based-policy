@@ -1398,15 +1398,15 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         l3p = context._plugin.get_l3_policy(context._plugin_context, l3p_id)
         pool = netaddr.IPNetwork(l3p['ip_pool'])
 
+        admin_context = nctx.get_admin_context()
         l2ps = context._plugin.get_l2_policies(
-            context._plugin_context, filters={'l3_policy_id': [l3p['id']]})
+            admin_context, filters={'l3_policy_id': [l3p['id']]})
         ptgs = context._plugin.get_policy_target_groups(
-            context._plugin_context,
-            filters={'l2_policy_id': [x['id'] for x in l2ps]})
+            admin_context, filters={'l2_policy_id': [x['id'] for x in l2ps]})
         subnets = []
         for ptg in ptgs:
             subnets.extend(ptg['subnets'])
-        subnets = self._core_plugin.get_subnets(context._plugin_context,
+        subnets = self._core_plugin.get_subnets(admin_context,
                                                 filters={'id': subnets})
         for cidr in pool.subnet(l3p['subnet_prefix_length']):
             if not self._validate_subnet_overlap_for_l3p(subnets,

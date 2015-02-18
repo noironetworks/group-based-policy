@@ -509,6 +509,26 @@ class TestPolicyTargetGroup(ApicMappingTestCase):
                            'nexthop': subnet['gateway_ip']}],
                          subnet['host_routes'])
 
+    def test_subnets_unique_per_l3p(self):
+        l3p = self.create_l3_policy(shared=True, tenant_id='admin',
+                                    is_admin_context=True)['l3_policy']
+        l2p1 = self.create_l2_policy(
+            tenant_id='hr', l3_policy_id=l3p['id'])['l2_policy']
+        l2p2 = self.create_l2_policy(
+            tenant_id='eng', l3_policy_id=l3p['id'])['l2_policy']
+        ptg1 = self.create_policy_target_group(
+            tenant_id='hr', l2_policy_id=l2p1['id'])['policy_target_group']
+        ptg2 = self.create_policy_target_group(
+            tenant_id='eng', l2_policy_id=l2p2['id'])['policy_target_group']
+        sub_ptg_1 = set(self._get_object('subnets',
+                                         x, self.api)['subnet']['cidr']
+                        for x in ptg1['subnets'])
+        sub_ptg_2 = set(self._get_object('subnets',
+                                         x, self.api)['subnet']['cidr']
+                        for x in ptg2['subnets'])
+        self.assertNotEqual(sub_ptg_1, sub_ptg_2)
+        self.assertFalse(sub_ptg_1 & sub_ptg_2)
+
     def _create_explicit_subnet_ptg(self, cidr, shared=False):
         l2p = self.create_l2_policy(name="l2p", shared=shared)
         l2p_id = l2p['l2_policy']['id']
