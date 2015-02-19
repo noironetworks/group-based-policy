@@ -344,7 +344,8 @@ class ResourceMappingDriver(api.PolicyDriver):
         ipaddress = self._get_ptg_policy_ipaddress_mapping(
             context._plugin_context.session, ptg_id)
         if ipaddress:
-            self._restore_ip_to_allocation_pool(context, subnet, ipaddress)
+            self._restore_ip_to_allocation_pool(context, subnet,
+                                                ipaddress.get("ipaddress"))
             self._delete_policy_ipaddress_mapping(
                 context._plugin_context.session, ptg_id)
 
@@ -1290,7 +1291,7 @@ class ResourceMappingDriver(api.PolicyDriver):
         with session.begin(subtransactions=True):
             mappings = session.query(
                 ServicePolicyPTGIpAddressMapping).filter_by(
-                    policy_target_group=policy_target_group).first()
+                    policy_target_group=policy_target_group).all()
             for ip_map in mappings:
                 session.delete(ip_map)
 

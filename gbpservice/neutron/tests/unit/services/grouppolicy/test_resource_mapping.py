@@ -783,6 +783,28 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         self.assertEqual('L2PolicyUpdateOfPolicyTargetGroupNotSupported',
                          data['NeutronError']['type'])
 
+    def test_nsp_cleanup(self):
+        nsp = self.create_network_service_policy(
+            network_service_params=[{'type': 'ip_single', 'name': 'vip_ip',
+                                     'value': 'self_subnet'}])
+        nsp = nsp['network_service_policy']
+        ptg = self.create_policy_target_group(
+            network_service_policy_id=nsp['id'])['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        allocation = netaddr.IPSet()
+        for x in subnet['subnet']['allocation_pools']:
+            allocation |= netaddr.IPSet(netaddr.IPRange(x['start'], x['end']))
+        # Disassociate NSP
+        self.update_policy_target_group(
+            ptg['id'], network_service_policy_id=None)['policy_target_group']
+        subnet = self._get_object('subnets', ptg['subnets'][0], self.api)
+        new_allocation = netaddr.IPSet()
+        for x in subnet['subnet']['allocation_pools']:
+            new_allocation |= netaddr.IPSet(netaddr.IPRange(x['start'],
+                                                            x['end']))
+        self.assertNotEqual(allocation, new_allocation)
+        self.assertTrue(new_allocation > allocation)
+
     # TODO(rkukura): Test ip_pool exhaustion.
 
 
