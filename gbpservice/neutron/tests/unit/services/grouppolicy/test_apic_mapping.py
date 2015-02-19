@@ -1147,16 +1147,16 @@ class TestPolicyRuleSet(ApicMappingTestCase):
 class TestPolicyRule(ApicMappingTestCase):
 
     def _test_policy_rule_created_on_apic(self, shared=False):
-        pr = self._create_simple_policy_rule('in', 'udp', 88, shared=shared)
+        pr = self._create_simple_policy_rule('in', 'tcp', 88, shared=shared)
 
         tenant = self.common_tenant if shared else pr['tenant_id']
         mgr = self.driver.apic_manager
         expected_calls = [
-            mock.call(pr['id'], owner=tenant, etherT='ip', prot='udp',
+            mock.call(pr['id'], owner=tenant, etherT='ip', prot='tcp',
                       dToPort=88, dFromPort=88, transaction=mock.ANY),
             mock.call(amap.REVERSE_PREFIX + pr['id'], owner=tenant,
-                      etherT='ip', prot='udp', sToPort=88, sFromPort=88,
-                      transaction=mock.ANY)]
+                      etherT='ip', prot='tcp', sToPort=88, sFromPort=88,
+                      tcpRules='est', transaction=mock.ANY)]
         self._check_call_list(
             expected_calls, mgr.create_tenant_filter.call_args_list)
         mgr.reset_mock()
@@ -1202,6 +1202,138 @@ class TestPolicyRule(ApicMappingTestCase):
 
     def test_policy_rule_deleted_on_apic_shared(self):
         self._test_policy_rule_deleted_on_apic(shared=True)
+
+    def test_policy_classifier_updated(self):
+        pa = self.create_policy_action(
+            action_type='allow', is_admin_context=True,
+            tenant_id='admin', shared=True)['policy_action']
+        pc = self.create_policy_classifier(
+            direction='in', protocol='udp', port_range=80,
+            shared=True, is_admin_context=True,
+            tenant_id='admin')['policy_classifier']
+        pr1 = self.create_policy_rule(
+            policy_classifier_id=pc['id'], policy_actions=[pa['id']],
+            shared=True, is_admin_context=True,
+            tenant_id='admin')['policy_rule']
+        pr2 = self.create_policy_rule(policy_classifier_id=pc['id'],
+                                      policy_actions=[pa['id']])['policy_rule']
+        prs1 = self.create_policy_rule_set(
+            policy_rules=[pr1['id']])['policy_rule_set']
+        prs2 = self.create_policy_rule_set(
+            policy_rules=[pr2['id'], pr1['id']])['policy_rule_set']
+
+        mgr = self.driver.apic_manager
+        mgr.reset_mock()
+
+        # Remove Classifier port, should just delete and create the filter
+        self.update_policy_classifier(pc['id'], port_range=None,
+                                      is_admin_context=True)
+        expected_calls = [
+            mock.call(pr1['id'], owner='common', etherT='ip', prot='udp',
+                      transaction=mock.ANY),
+            mock.call(pr2['id'], owner='test-tenant', etherT='ip', prot='udp',
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.create_tenant_filter.call_args_list)
+        expected_calls = [
+            mock.call(pr1['id'], owner='common', transaction=mock.ANY),
+            mock.call(pr2['id'], owner='test-tenant', transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+                      transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.delete_tenant_filter.call_args_list)
+        self.assertFalse(mgr.manage_contract_subject_in_filter.called)
+        self.assertFalse(mgr.manage_contract_subject_out_filter.called)
+        mgr.reset_mock()
+
+        # Change Classifier protocol, to not revertible
+        self.update_policy_classifier(pc['id'], protocol='icmp',
+                                      is_admin_context=True)
+        expected_calls = [
+            mock.call(pr1['id'], owner='common', etherT='ip', prot='icmp',
+                      transaction=mock.ANY),
+            mock.call(pr2['id'], owner='test-tenant', etherT='ip', prot='icmp',
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.create_tenant_filter.call_args_list)
+        expected_calls = [
+            mock.call(pr1['id'], owner='common', transaction=mock.ANY),
+            mock.call(pr2['id'], owner='test-tenant', transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+                      transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.delete_tenant_filter.call_args_list)
+
+        self.assertFalse(mgr.manage_contract_subject_in_filter.called)
+        self.assertFalse(mgr.manage_contract_subject_out_filter.called)
+        mgr.reset_mock()
+
+        # Change Classifier protocol to revertible
+        self.update_policy_classifier(pc['id'], protocol='tcp',
+                                      is_admin_context=True)
+        expected_calls = [
+            mock.call(pr1['id'], owner='common', transaction=mock.ANY),
+            mock.call(pr2['id'], owner='test-tenant', transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+                      transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.delete_tenant_filter.call_args_list)
+        expected_calls = [
+            mock.call(pr1['id'], owner='common', etherT='ip', prot='tcp',
+                      transaction=mock.ANY),
+            mock.call(pr2['id'], owner='test-tenant', etherT='ip', prot='tcp',
+                      transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr1['id'], owner='common',
+                      etherT='ip', prot='tcp', tcpRules='est',
+                      transaction=mock.ANY),
+            mock.call(amap.REVERSE_PREFIX + pr2['id'], owner='test-tenant',
+                      etherT='ip', prot='tcp', tcpRules='est',
+                      transaction=mock.ANY)]
+        self._check_call_list(
+            expected_calls, mgr.create_tenant_filter.call_args_list)
+
+        expected_calls = [
+            # Unset PR1 and PR2 IN
+            mock.call(prs1['id'], prs1['id'], pr1['id'], owner='test-tenant',
+                      transaction=mock.ANY, unset=True, rule_owner='common'),
+            mock.call(prs2['id'], prs2['id'], pr1['id'], owner='test-tenant',
+                      transaction=mock.ANY, unset=True, rule_owner='common'),
+            mock.call(prs2['id'], prs2['id'], pr2['id'], owner='test-tenant',
+                      transaction=mock.ANY, unset=True,
+                      rule_owner='test-tenant'),
+            # SET PR1 and PR2 IN
+            mock.call(prs1['id'], prs1['id'], pr1['id'], owner='test-tenant',
+                      transaction=mock.ANY, unset=False, rule_owner='common'),
+            mock.call(prs2['id'], prs2['id'], pr1['id'], owner='test-tenant',
+                      transaction=mock.ANY, unset=False, rule_owner='common'),
+            mock.call(prs2['id'], prs2['id'], pr2['id'], owner='test-tenant',
+                      transaction=mock.ANY, unset=False,
+                      rule_owner='test-tenant')
+        ]
+        self._check_call_list(
+            expected_calls,
+            mgr.manage_contract_subject_in_filter.call_args_list)
+        # SET Reverse PR1 and PR2 OUT
+        expected_calls = [
+            mock.call(prs1['id'], prs1['id'], amap.REVERSE_PREFIX + pr1['id'],
+                      owner='test-tenant', transaction=mock.ANY, unset=False,
+                      rule_owner='common'),
+            mock.call(prs2['id'], prs2['id'], amap.REVERSE_PREFIX + pr1['id'],
+                      owner='test-tenant', transaction=mock.ANY, unset=False,
+                      rule_owner='common'),
+            mock.call(prs2['id'], prs2['id'], amap.REVERSE_PREFIX + pr2['id'],
+                      owner='test-tenant', transaction=mock.ANY, unset=False,
+                      rule_owner='test-tenant')
+        ]
+        self._check_call_list(
+            expected_calls,
+            mgr.manage_contract_subject_out_filter.call_args_list)
 
 
 class TestExternalSegment(ApicMappingTestCase):

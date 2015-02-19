@@ -102,6 +102,7 @@ APIC_OWNED = 'apic_owned_'
 PROMISCUOUS_TYPES = [n_constants.DEVICE_OWNER_DHCP,
                      n_constants.DEVICE_OWNER_LOADBALANCER]
 ALLOWING_ACTIONS = [g_const.GP_ACTION_ALLOW, g_const.GP_ACTION_REDIRECT]
+REVERTIBLE_PROTOCOLS = [pconst.TCP.lower()]
 
 GOTHROUGH_SERVICES = ['FIREWALL_TRANSPARENT', 'IDS']
 GOTO_SERVICES = [pconst.LOADBALANCER]
@@ -400,15 +401,20 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 self.apic_manager.create_tenant_filter(
                     policy_rule, owner=tenant, transaction=trs, **attrs)
                 # Also create reverse rule
-                policy_rule = self.name_mapper.policy_rule(
-                    context, context.current['id'], prefix=REVERSE_PREFIX)
-                if attrs.get('dToPort') and attrs.get('dFromPort'):
-                    attrs.pop('dToPort')
-                    attrs.pop('dFromPort')
-                    attrs['sToPort'] = port_max
-                    attrs['sFromPort'] = port_min
-                    self.apic_manager.create_tenant_filter(
-                        policy_rule, owner=tenant, transaction=trs, **attrs)
+                if attrs.get('prot') in REVERTIBLE_PROTOCOLS:
+                    if attrs['prot'] == pconst.TCP.lower():
+                        policy_rule = self.name_mapper.policy_rule(
+                            context, context.current['id'],
+                            prefix=REVERSE_PREFIX)
+                        if attrs.get('dToPort') and attrs.get('dFromPort'):
+                            attrs.pop('dToPort')
+                            attrs.pop('dFromPort')
+                            attrs['sToPort'] = port_max
+                            attrs['sFromPort'] = port_min
+                        attrs['tcpRules'] = 'est'
+                        self.apic_manager.create_tenant_filter(
+                            policy_rule, owner=tenant, transaction=trs,
+                            **attrs)
 
     def create_policy_rule_set_precommit(self, context):
         if context.current['child_policy_rule_sets']:
@@ -787,15 +793,34 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         pass
 
     def update_policy_classifier_postcommit(self, context):
-        for rule in context._plugin.get_policy_rules(
-                context._plugin_context,
-                filters={'id': context.current['policy_rules']}):
-
+        admin_context = nctx.get_admin_context()
+        if not context.current['policy_rules']:
+            return
+        rules = context._plugin.get_policy_rules(
+                admin_context,
+                filters={'id': context.current['policy_rules']})
+        # Rewrite the rule on the APIC
+        for rule in rules:
             rule_context = group_policy_context.PolicyRuleContext(
                 context._plugin, context._plugin_context, rule)
             with self.apic_manager.apic.transaction(None) as trs:
                 self._update_policy_rule_on_apic(rule_context,
                                                  transaction=trs)
+            # If direction or protocol changed, the contracts should be updated
+            o_dir = context.original['direction']
+            c_dir = context.current['direction']
+            o_prot = context.original['protocol']
+            c_prot = context.current['protocol']
+            # TODO(ivar): Optimize by aggregating on PRS ID
+            if ((o_dir != c_dir) or
+                    ((o_prot in REVERTIBLE_PROTOCOLS) !=
+                        (c_prot in REVERTIBLE_PROTOCOLS))):
+                for prs in context._plugin.get_policy_rule_sets(
+                        admin_context,
+                        filters={'id': rule['policy_rule_sets']}):
+                    self._remove_policy_rule_set_rules(
+                        context, prs, [(rule, context.original)])
+                    self._apply_policy_rule_set_rules(context, prs, [rule])
 
     def create_external_segment_precommit(self, context):
         if context.current['port_address_translation']:
@@ -974,7 +999,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             parent = context._plugin.get_policy_rule_set(
                 context._plugin_context, policy_rule_set['parent_id'])
             policy_rules = policy_rules & set(parent['policy_rules'])
-        # Don't add rules unallowed by the parent
         self._manage_policy_rule_set_rules(
             context, policy_rule_set, policy_rules, transaction=transaction)
 
@@ -986,7 +1010,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def _manage_policy_rule_set_rules(
             self, context, policy_rule_set, policy_rules, unset=False,
-            transaction=None):
+            transaction=None, classifier=None):
         # REVISIT(ivar): figure out what should be moved in apicapi instead
         if policy_rules:
             tenant = self._tenant_by_sharing_policy(policy_rule_set)
@@ -995,12 +1019,17 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             in_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_IN]
             out_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_OUT]
             for rule in policy_rules:
+                if isinstance(rule, tuple):
+                    classifier = rule[1]
+                    rule = rule[0]
+                else:
+                    classifier = context._plugin.get_policy_classifier(
+                            context._plugin_context,
+                            rule['policy_classifier_id'])
                 policy_rule = self.name_mapper.policy_rule(context, rule['id'])
                 reverse_policy_rule = self.name_mapper.policy_rule(
                     context, rule['id'], prefix=REVERSE_PREFIX)
                 rule_owner = self._tenant_by_sharing_policy(rule)
-                classifier = context._plugin.get_policy_classifier(
-                    context._plugin_context, rule['policy_classifier_id'])
                 with self.apic_manager.apic.transaction(transaction) as trs:
                     if classifier['direction'] in in_dir:
                         # PRS and subject are the same thing in this case
@@ -1008,7 +1037,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                             contract, contract, policy_rule, owner=tenant,
                             transaction=trs, unset=unset,
                             rule_owner=rule_owner)
-                        if classifier['port_range']:
+                        if (classifier['protocol'].lower() in
+                                REVERTIBLE_PROTOCOLS):
                             (self.apic_manager.
                              manage_contract_subject_out_filter(
                                  contract, contract, reverse_policy_rule,
@@ -1020,7 +1050,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                             contract, contract, policy_rule, owner=tenant,
                             transaction=trs, unset=unset,
                             rule_owner=rule_owner)
-                        if classifier['port_range']:
+                        if (classifier['protocol'].lower() in
+                                REVERTIBLE_PROTOCOLS):
                             (self.apic_manager.
                              manage_contract_subject_in_filter(
                                  contract, contract, reverse_policy_rule,
