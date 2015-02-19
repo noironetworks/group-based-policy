@@ -805,6 +805,19 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         self.assertNotEqual(allocation, new_allocation)
         self.assertTrue(new_allocation > allocation)
 
+    def test_nsp_association(self):
+        nsp = self.create_network_service_policy(
+            tenant_id='admin', is_admin_context=True, shared=True,
+            network_service_params=[{'type': 'ip_single', 'name': 'vip_ip',
+                                     'value': 'self_subnet'}])
+        nsp = nsp['network_service_policy']
+        self.create_policy_target_group(
+            expected_res_status=201,
+            network_service_policy_id=nsp['id'])['policy_target_group']
+        self.create_policy_target_group(
+            expected_res_status=201,
+            network_service_policy_id=nsp['id'])['policy_target_group']
+
     # TODO(rkukura): Test ip_pool exhaustion.
 
 
