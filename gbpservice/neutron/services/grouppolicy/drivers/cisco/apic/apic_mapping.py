@@ -93,8 +93,8 @@ class PTGAlreadyProvidingRedirectPRS(gpexc.GroupPolicyBadRequest):
 
 
 REVERSE_PREFIX = 'reverse-'
-SHADOW_PREFIX = 'shadow-'
-SERVICE_PREFIX = 'service-'
+SHADOW_PREFIX = 'Svc-'
+SERVICE_PREFIX = 'Svc-'
 IMPLICIT_PREFIX = 'implicit-'
 ANY_PREFIX = 'any-'
 PROMISCUOUS_SUFFIX = 'promiscuous'
