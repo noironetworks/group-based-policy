@@ -636,6 +636,14 @@ class TestExternalSegment(GroupPolicyPluginTestCase):
         self.assertEqual('ExternalRouteOverlapsWithL3PIpPool',
                          res['NeutronError']['type'])
 
+    def test_external_segment_in_use(self):
+        es = self.create_external_segment()['external_segment']
+        np = self.create_nat_pool(external_segment_id=es['id'])['nat_pool']
+        self.delete_external_segment(es['id'], expected_res_status=409)
+        self.delete_nat_pool(np['id'], expected_res_status=204)
+        self.delete_external_segment(es['id'], expected_res_status=204)
+        self.show_external_segment(es['id'], expected_res_status=404)
+
 
 class TestExternalPolicy(GroupPolicyPluginTestCase):
 
