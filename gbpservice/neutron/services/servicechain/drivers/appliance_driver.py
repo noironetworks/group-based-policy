@@ -39,6 +39,9 @@ CONSUMER_PT_NAME = "chain_consumer_%s_%s"
 SC_METADATA = '{"sc_instance":"%s", "order":"%s", "provider_ptg":"%s"}'
 SVC_MGMT_PTG_NAME = cfg.CONF.appliance_driver.svc_management_ptg_name
 
+POOL_MEMBER_PARAMETER = {"Description": "Pool Member IP Address",
+                         "Type": "String"}
+
 LOG = logging.getLogger(__name__)
 
 
@@ -78,22 +81,11 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
 
         if sc_node['service_type'] == pconst.LOADBALANCER:
             pt_type = SERVICE_PT
-            member_ips = []
-
+            self._generate_pool_members(context, stack_template,
+                                        config_param_values, provider_ptg_id)
             if 'Subnet' in config_param_names:
                 value = self._get_ptg_subnet(context, provider_ptg_id)
                 config_param_values['Subnet'] = value
-
-            if any('PoolMemberIP' in s for s in config_param_names):
-                member_ips = self._get_member_ips(context, provider_ptg_id)
-
-            member_count = 0
-            for key in config_param_names or []:
-                if 'PoolMemberIP' in key:
-                    value = (member_ips[member_count]
-                             if len(member_ips) > member_count else '0')
-                    member_count += 1
-                    config_param_values[key] = value
 
         if 'provider_ptg' in config_param_names:
             config_param_values['provider_ptg'] = provider_ptg_id
@@ -117,4 +109,27 @@ class ChainWithTwoArmAppliance(simplechain_driver.SimpleChainDriver):
             for parameter in config_param_values.keys():
                 if parameter in node_params.keys():
                     stack_params[parameter] = config_param_values[parameter]
-        return (stack_template, stack_params)
+        LOG.debug(stack_template)
+        return stack_template, stack_params
+
+    def _generate_pool_members(self, context, stack_template,
+                               config_param_values, provider_ptg_id):
+        member_ips = self._get_member_ips(context, provider_ptg_id)
+        member_count = 0
+        for member in member_ips:
+            template_name = 'mem-' + member
+            param_name = 'par-' + member
+            stack_template['Resources'][template_name] = (
+                self._generate_pool_member_template(param_name))
+            stack_template['Parameters'][param_name] = POOL_MEMBER_PARAMETER
+            config_param_values[param_name] = member
+            member_count += 1
+
+    def _generate_pool_member_template(self, param_name):
+        return {"Type": "OS::Neutron::PoolMember",
+                "Properties": {
+                    "address": {"Ref": param_name},
+                    "admin_state_up": True,
+                    "pool_id": {"Ref": "HaproxyPool"},
+                    "protocol_port": 80,
+                    "weight": 1}}

@@ -37,6 +37,10 @@ service_chain_opts = [
                default=3,
                help=_("Wait time between two successive stack delete "
                       "retries")),
+    cfg.IntOpt('stack_update_wait_time',
+               default=30,
+               help=_("Max wait time in seconds for a heat resource to go "
+                      "out of the UPDATE state before running an action.")),
     cfg.StrOpt('pool_member_tag',
                default='Pool Member',
                help=_("Policy Targets created for the LB Pool Members should "
@@ -51,6 +55,7 @@ sc_supported_type = [pconst.LOADBALANCER, pconst.FIREWALL]
 STACK_DELETE_RETRIES = cfg.CONF.servicechain.stack_delete_retries
 STACK_DELETE_RETRY_WAIT = cfg.CONF.servicechain.stack_delete_retry_wait
 POOL_MEMBER_TAG = cfg.CONF.servicechain.pool_member_tag
+STACK_UPDATE_WAIT_TIME = cfg.CONF.servicechain.stack_update_wait_time
 
 
 class ServiceChainInstanceStack(model_base.BASEV2):
@@ -154,6 +159,13 @@ class SimpleChainDriver(object):
                     context._plugin_context, new_spec_id)
                 self._update_servicechain_instance(context, context.current,
                                                    newspec)
+        if context.current == context.original:
+            # Void request, update the chain
+            spec_ids = context.current.get('servicechain_specs')
+            for spec in context._plugin.get_servicechain_specs(
+                    context._plugin_context, {'id': spec_ids}):
+                self._update_servicechain_instance_templates(
+                    context, context.current, spec)
 
     @log.log
     def delete_servicechain_instance_precommit(self, context):
@@ -256,7 +268,8 @@ class SimpleChainDriver(object):
         return (stack_template, stack_params)
 
     def _create_servicechain_instance_stacks(self, context, sc_node_ids,
-                                             sc_instance, sc_spec):
+                                             sc_instance, sc_spec,
+                                             update=False):
         heatclient = HeatClient(context._plugin_context)
         order = 1
         for sc_node_id in sc_node_ids:
@@ -266,14 +279,25 @@ class SimpleChainDriver(object):
             stack_template, stack_params = self._fetch_template_and_params(
                 context, sc_instance, sc_spec, sc_node, order)
 
-            stack_name = ("stack_" + sc_instance['name'] + sc_node['name'] +
-                          sc_node['id'][:5])
-            stack = heatclient.create(
-                stack_name.replace(" ", ""), stack_template, stack_params)
+            if not update:
+                stack = heatclient.create(
+                    "stack_" + sc_instance['name'] + sc_node['name']
+                    + sc_node['id'][:5],
+                    stack_template,
+                    stack_params)
 
-            self._insert_chain_stack_db(
-                context._plugin_context.session, sc_instance['id'],
-                stack['stack']['id'])
+                self._insert_chain_stack_db(
+                    context._plugin_context.session, sc_instance['id'],
+                    stack['stack']['id'])
+            else:
+                stack_id = self._get_chain_stacks(
+                    context._plugin_context.session, sc_instance['id'])[0]
+                if self._wait_for_stack_update_end(heatclient, stack_id):
+                    heatclient.update(
+                        stack_id, stack_template, stack_params)
+                else:
+                    # REVISIT(ivar): raise exception?
+                    pass
             order += 1
 
     def _delete_servicechain_instance_stacks(self, context, instance_id):
@@ -319,6 +343,27 @@ class SimpleChainDriver(object):
                 else:
                     continue
 
+    def _wait_for_stack_update_end(self, heatclient, stack_id):
+        check = 1
+        total_time_waited = 0
+        while total_time_waited < STACK_UPDATE_WAIT_TIME:
+            try:
+                stack = heatclient.get(stack_id)
+                if stack.stack_status != 'UPDATE_IN_PROGRESS':
+                    return True
+            except Exception:
+                LOG.exception(_("Could not check stack status"),
+                              {'stack': stack_id})
+                return False
+            else:
+                check *= 2
+                time.sleep(min(check,
+                               STACK_UPDATE_WAIT_TIME - total_time_waited))
+                total_time_waited += check
+        LOG.warn(_("Stack %(stack)s still updating after %(time)s seconds"),
+                 {'stack': stack_id, 'time': STACK_UPDATE_WAIT_TIME})
+        return False
+
     def _get_instance_by_spec_id(self, context, spec_id):
         filters = {'servicechain_spec': [spec_id]}
         return context._plugin.get_servicechain_instances(
@@ -332,6 +377,14 @@ class SimpleChainDriver(object):
                                                   sc_node_ids,
                                                   sc_instance,
                                                   newspec)
+
+    def _update_servicechain_instance_templates(self, context, sc_instance,
+                                                newspec):
+        sc_node_ids = newspec.get('nodes')
+        self._create_servicechain_instance_stacks(context,
+                                                  sc_node_ids,
+                                                  sc_instance,
+                                                  newspec, update=True)
 
     def _delete_chain_stacks_db(self, session, sc_instance_id):
         with session.begin(subtransactions=True):
@@ -400,6 +453,14 @@ class HeatClient:
         fields['template'] = data
         fields['parameters'] = parameters
         return self.stacks.create(**fields)
+
+    def update(self, stack_id, data, parameters=None):
+        fields = {
+            'password': data.get('password')
+        }
+        fields['template'] = data
+        fields['parameters'] = parameters
+        return self.stacks.update(stack_id, **fields)
 
     def delete(self, stack_id):
         try:
