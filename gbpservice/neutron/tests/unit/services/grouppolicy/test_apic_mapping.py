@@ -199,7 +199,7 @@ class TestPolicyTarget(ApicMappingTestCase):
                                           self.fmt).get_response(self.api)
             self.assertEqual(res.status_int, webob.exc.HTTPNoContent.code)
             self.delete_policy_target(pt['policy_target']['id'],
-                                      expected_res_status=204)
+                                      expected_res_status=404)
 
     def test_delete_policy_target_notification_no_apic_network(self):
         ptg = self.create_policy_target_group(

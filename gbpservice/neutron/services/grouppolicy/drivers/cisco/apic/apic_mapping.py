@@ -441,6 +441,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                           context.current['port_id'])
         if self._is_port_bound(port):
             self._notify_port_update(context._plugin_context, port['id'])
+        self._handle_ptg_membership_updated(
+            context, context.current['policy_target_group_id'])
 
     def create_policy_target_group_precommit(self, context):
         if context.current['subnets']:
@@ -570,17 +572,20 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def delete_policy_target_postcommit(self, context):
         try:
-            port = self._core_plugin.get_port(context._plugin_context,
-                                              context.current['port_id'])
+            if context.current['port_id']:
+                port = self._core_plugin.get_port(context._plugin_context,
+                                                  context.current['port_id'])
+                # Delete Neutron's port
+                port_id = context.current['port_id']
+                self._cleanup_port(context._plugin_context, port_id)
+                # Notify the agent. If the port has been deleted by the
+                # parent method the notification will not be done
+                self._notify_port_update(context._plugin_context, port['id'])
         except n_exc.PortNotFound:
             LOG.warn(_("Port %s is missing") % context.current['port_id'])
             return
-        # Delete Neutron's port
-        port_id = context.current['port_id']
-        self._cleanup_port(context._plugin_context, port_id)
-        # Notify the agent. If the port has been deleted by the parent method
-        # the notification will not be done
-        self._notify_port_update(context._plugin_context, port['id'])
+        self._handle_ptg_membership_updated(
+            context, context.current['policy_target_group_id'])
 
     def delete_policy_target_group_precommit(self, context):
         provider_ptg_chain_map = self._get_ptgs_servicechain(
@@ -988,6 +993,18 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def process_port_changed(self, context, old, new):
         pass
+
+    def process_pre_port_deleted(self, context, port):
+        pt = self._port_id_to_pt(context, port['id'])
+        if pt:
+            context.policy_target_id = pt['id']
+
+    def process_port_deleted(self, context, port):
+        try:
+            self.gbp_plugin.delete_policy_target(
+                context, context.policy_target_id)
+        except AttributeError:
+            pass
 
     def process_port_bound(self, context, port):
         pass
@@ -2020,3 +2037,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             if node['service_type'] in GOTHROUGH_SERVICES:
                 n += 1
         return sc_instance_id, n
+
+    def _handle_ptg_membership_updated(self, context, ptg_id):
+        chain = self._get_ptg_servicechain_instance_mappings(
+            context._plugin_context.session, provider_ptg_id=ptg_id)
+        if chain:
+            self._update_resource(
+                self._servicechain_plugin, context._plugin_context,
+                'servicechain_instance', chain[0].servicechain_instance_id, {})

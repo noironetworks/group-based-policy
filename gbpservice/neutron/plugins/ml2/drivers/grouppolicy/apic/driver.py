@@ -73,6 +73,14 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
         self.apic_gbp.process_port_changed(context._plugin_context,
                                            context.original, context.current)
 
+    def delete_port_precommit(self, context):
+        self.apic_gbp.process_pre_port_deleted(context._plugin_context,
+                                               context.current)
+
+    def delete_port_postcommit(self, context):
+        self.apic_gbp.process_port_deleted(context._plugin_context,
+                                           context.current)
+
     def update_subnet_postcommit(self, context):
         self.apic_gbp.process_subnet_changed(context._plugin_context,
                                              context.original, context.current)
