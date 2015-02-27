@@ -101,6 +101,12 @@ class ApicMappingTestCase(
         host_agents = mock.patch('neutron.plugins.ml2.driver_context.'
                                  'PortContext.host_agents').start()
         host_agents.return_value = [self.agent]
+        nova_client = mock.patch(
+            'gbpservice.neutron.services.grouppolicy.drivers.cisco.'
+            'apic.nova_client.NovaClient.get_server').start()
+        vm = mock.Mock()
+        vm.name = 'someid'
+        nova_client.return_value = vm
         super(ApicMappingTestCase, self).setUp(
             core_plugin=test_ml2_plugin.PLUGIN_NAME)
 
@@ -167,7 +173,8 @@ class ApicMappingTestCase(
             shared=shared)['policy_rule']
 
     def _bind_port_to_host(self, port_id, host):
-        data = {'port': {'binding:host_id': host}}
+        data = {'port': {'binding:host_id': host, 'device_owner': 'compute:',
+                         'device_id': 'someid'}}
         # Create EP with bound port
         req = self.new_update_request('ports', data, port_id,
                                       self.fmt)
@@ -234,6 +241,7 @@ class TestPolicyTarget(ApicMappingTestCase):
             device='tap%s' % pt1['port_id'], host='h1')
         self.assertEqual(pt1['port_id'], mapping['port_id'])
         self.assertEqual(ptg['id'], mapping['endpoint_group_name'])
+        self.assertEqual('someid', mapping['vm-name'])
 
     def test_get_gbp_details_shadow(self):
         l2p = self.create_l2_policy()['l2_policy']

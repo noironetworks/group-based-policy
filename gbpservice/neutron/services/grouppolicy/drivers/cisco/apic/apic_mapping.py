@@ -42,6 +42,8 @@ from gbpservice.neutron.services.grouppolicy.common import constants as g_const
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     resource_mapping as api)
+from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
+    nova_client as nclient)
 from gbpservice.neutron.services.grouppolicy import group_policy_context
 
 LOG = logging.getLogger(__name__)
@@ -215,12 +217,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
         if self._is_chain_port(context, port):
             if port['name'].startswith('vip-'):
-                return self._get_chain_vip_details(context, port_context,
-                                                   **kwargs)
+                details = self._get_chain_vip_details(context, port_context,
+                                                      **kwargs)
             else:
                 provider = self._port_id_to_ptg(context, port['id'])
-                return self._get_chain_port_details(context, port_context,
-                                                    provider, **kwargs)
+                details = self._get_chain_port_details(context, port_context,
+                                                       provider, **kwargs)
         else:
             # retrieve PTG from a given Port
             ptg = self._port_id_to_ptg(context, port['id'])
@@ -244,20 +246,24 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                         port['name'].endswith(PROMISCUOUS_SUFFIX))
 
             segment = port_context.bound_segment or {}
-            return {'device': kwargs.get('device'),
-                    'port_id': port_id,
-                    'mac_address': port['mac_address'],
-                    'app_profile_name': str(
-                        self.apic_manager.app_profile_name),
-                    'segment': segment,
-                    'segmentation_id': segment.get('segmentation_id'),
-                    'network_type': segment.get('network_type'),
-                    'l2_policy_id': l2_policy_id,
-                    'tenant_id': port['tenant_id'],
-                    'host': port[portbindings.HOST_ID],
-                    'ptg_tentant': str(ptg_tenant),
-                    'endpoint_group_name': str(endpoint_group_name),
-                    'promiscuous_mode': is_port_promiscuous(port)}
+            details = {'device': kwargs.get('device'),
+                       'port_id': port_id,
+                       'mac_address': port['mac_address'],
+                       'app_profile_name': str(
+                           self.apic_manager.app_profile_name),
+                       'segment': segment,
+                       'segmentation_id': segment.get('segmentation_id'),
+                       'network_type': segment.get('network_type'),
+                       'l2_policy_id': l2_policy_id,
+                       'tenant_id': port['tenant_id'],
+                       'host': port[portbindings.HOST_ID],
+                       'ptg_tentant': str(ptg_tenant),
+                       'endpoint_group_name': str(endpoint_group_name),
+                       'promiscuous_mode': is_port_promiscuous(port)}
+        if port['device_owner'].startswith('compute:') and port['device_id']:
+            vm = nclient.NovaClient().get_server(port['device_id'])
+            details['vm-name'] = vm.name if vm else port['device_id']
+        return details
 
     def _is_chain_vip(self, context, port):
         if port['name'].startswith('vip-'):
