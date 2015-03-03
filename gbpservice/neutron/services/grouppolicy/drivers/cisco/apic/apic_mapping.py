@@ -369,10 +369,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                             **kwargs)
 
     def process_port_added(self, plugin_context, port):
-        l2p = self._network_id_to_l2p(plugin_context, port['network_id'])
-        if l2p and port['device_owner'] == n_constants.AGENT_TYPE_DHCP:
-            # TODO(ivar): create DHCP relay on proper BD
-            pass
+        pass
 
     def create_policy_action_precommit(self, context):
         pass
@@ -489,8 +486,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
     def update_l2_policy_precommit(self, context):
         self._reject_non_shared_net_on_shared_l2p(context)
         self._reject_shared_update(context, 'l2_policy')
-        # TODO(ivar): check whether a transparent SC exists if allow_broadcast
-        # is modified
 
     def create_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).create_l2_policy_postcommit(context)
@@ -570,7 +565,6 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         pass
 
     def delete_policy_rule_set_postcommit(self, context):
-        # TODO(ivar): disassociate PTGs to avoid reference leak
         tenant = self._tenant_by_sharing_policy(context.current)
         contract = self.name_mapper.policy_rule_set(context,
                                                     context.current['id'])
@@ -667,10 +661,17 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self._remove_policy_rule_set_rules(context, context.current, to_remove)
         self._apply_policy_rule_set_rules(context, context.current, to_add)
 
+    def update_policy_target_precommit(self, context):
+        if (context.original['policy_target_group_id'] !=
+                context.current['policy_target_group_id']):
+            if context.current['policy_target_group_id']:
+                self._validate_pt_port_subnets(context)
+
     def update_policy_target_postcommit(self, context):
-        # TODO(ivar): redo binding procedure if the PTG is modified,
-        # not doable unless driver extension framework is in place
-        pass
+        if (context.original['policy_target_group_id'] !=
+                context.current['policy_target_group_id']):
+            self._notify_port_update(context._plugin_context,
+                                     context.current['port_id'])
 
     def update_policy_rule_precommit(self, context):
         self._reject_multiple_redirects_in_rule(context)
@@ -1017,11 +1018,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def _apply_policy_rule_set_rules(
             self, context, policy_rule_set, policy_rules, transaction=None):
-        # TODO(ivar): refactor parent to avoid code duplication
-        if policy_rule_set['parent_id']:
-            parent = context._plugin.get_policy_rule_set(
-                context._plugin_context, policy_rule_set['parent_id'])
-            policy_rules = policy_rules & set(parent['policy_rules'])
+        # TODO(ivar): parent contract filtering when supported
         self._manage_policy_rule_set_rules(
             context, policy_rule_set, policy_rules, transaction=transaction)
 

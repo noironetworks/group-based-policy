@@ -270,6 +270,29 @@ class TestPolicyTarget(ApicMappingTestCase):
                         policy_target_group_id=ptg['id'])
                     self.assertTrue(self.driver.notifier.port_update.called)
 
+    def test_port_notified_on_changed_ptg(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        ptg2 = self.create_policy_target_group(
+            l2_policy_id=ptg['l2_policy_id'])['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+        self._bind_port_to_host(pt['port_id'], 'h1')
+
+        self.driver.notifier.port_update.reset_mock()
+        self.update_policy_target(pt['id'], policy_target_group_id=ptg2['id'])
+        self.assertTrue(self.driver.notifier.port_update.called)
+
+    def test_update_ptg_failed(self):
+        ptg = self.create_policy_target_group()['policy_target_group']
+        ptg2 = self.create_policy_target_group()['policy_target_group']
+        pt = self.create_policy_target(
+            policy_target_group_id=ptg['id'])['policy_target']
+
+        res = self.update_policy_target(
+            pt['id'], policy_target_group_id=ptg2['id'],
+            expected_res_status=400)
+        self.assertEqual('InvalidPortForPTG', res['NeutronError']['type'])
+
 
 class TestPolicyTargetGroup(ApicMappingTestCase):
 
