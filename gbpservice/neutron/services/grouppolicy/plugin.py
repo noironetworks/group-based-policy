@@ -14,6 +14,9 @@ import netaddr
 
 from neutron.api.v2 import attributes as nattr
 from neutron.common import log
+from neutron import manager as n_manager
+from neutron.openstack.common import excutils
+from neutron.plugins.common import constants as pconst
 from oslo_log import log as logging
 from oslo_utils import excutils
 
@@ -26,6 +29,7 @@ from gbpservice.neutron.services.grouppolicy import (
     group_policy_context as p_context)
 from gbpservice.neutron.services.grouppolicy import (
     policy_driver_manager as manager)
+from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 
 
@@ -49,6 +53,17 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             aliases += self.extension_manager.extension_aliases()
             self._aliases = aliases
         return self._aliases
+
+    @property
+    def servicechain_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        plugins = n_manager.NeutronManager.get_service_plugins()
+        servicechain_plugin = plugins.get(pconst.SERVICECHAIN)
+        if not servicechain_plugin:
+            LOG.error(_("No Servicechain service plugin found."))
+            raise gp_exc.GroupPolicyDeploymentError()
+        return servicechain_plugin
 
     # Shared attribute validation rules:
     # - A shared resource cannot use/link a non-shared resource
@@ -112,15 +127,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 link_ids = set()
                 for linked in linked_objects:
                     link_ids.add(linked['id'])
-                    if not linked.get('shared'):
-                        if obj.get('shared'):
-                            raise gp_exc.SharedResourceReferenceError(
-                                res_type=identity, res_id=obj['id'],
-                                ref_type=ref_type, ref_id=linked['id'])
-                        if obj.get('tenant_id') != linked.get('tenant_id'):
-                            raise gp_exc.InvalidCrossTenantReference(
-                                res_type=identity, res_id=obj['id'],
-                                ref_type=ref_type, ref_id=linked['id'])
+                    GroupPolicyPlugin._verify_sharing_consistency(
+                        obj, linked, identity, ref_type)
                 # Check for missing references
                 missing = set(ids) - link_ids
                 if missing:
@@ -269,6 +277,28 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                             raise gp_exc.InvalidL3PExternalIPAddress(
                                 ip=addr, es_id=es['id'], l3p_id=current['id'],
                                 es_cidr=es['cidr'])
+
+    def _validate_action_value(self, context, action):
+        if action.get('action_type') == gp_cts.GP_ACTION_REDIRECT:
+            if action.get('action_value'):
+                # Verify sc spec existence and visibility
+                spec = self.servicechain_plugin.get_servicechain_spec(
+                    context, action['action_value'])
+                GroupPolicyPlugin._verify_sharing_consistency(
+                    action, spec, 'polocy_action', 'servicechain_spec')
+
+    @staticmethod
+    def _verify_sharing_consistency(primary, reference, primary_type,
+                                    reference_type):
+        if not reference.get('shared'):
+            if primary.get('shared'):
+                raise gp_exc.SharedResourceReferenceError(
+                    res_type=primary_type, res_id=primary['id'],
+                    ref_type=reference_type, ref_id=reference['id'])
+            if primary.get('tenant_id') != reference.get('tenant_id'):
+                raise gp_exc.InvalidCrossTenantReference(
+                    res_type=primary_type, res_id=primary['id'],
+                    ref_type=reference_type, ref_id=reference['id'])
 
     def __init__(self):
         self.extension_manager = ext_manager.ExtensionManager()
@@ -870,6 +900,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 session, policy_action, result)
             self._validate_shared_create(self, context, result,
                                          'policy_action')
+            self._validate_action_value(context, result)
             policy_context = p_context.PolicyActionContext(self, context,
                                                            result)
             self.policy_driver_manager.create_policy_action_precommit(
@@ -901,6 +932,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             self._validate_shared_update(self, context, original_policy_action,
                                          updated_policy_action,
                                          'policy_action')
+            self._validate_action_value(context, updated_policy_action)
             policy_context = p_context.PolicyActionContext(
                 self, context, updated_policy_action,
                 original_policy_action=original_policy_action)

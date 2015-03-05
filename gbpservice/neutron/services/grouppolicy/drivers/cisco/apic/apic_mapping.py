@@ -1749,10 +1749,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             if action['action_type'] == g_const.GP_ACTION_REDIRECT:
                 for chain in self._chains_by_rule(context, policy_rule,
                                                   policy_rule_sets):
+                    admin_ctx = nctx.get_admin_context()
                     provider = self.gbp_plugin.get_policy_target_group(
-                        context._plugin_context, chain.provider_ptg_id)
+                        admin_ctx, chain.provider_ptg_id)
                     l2p = self.gbp_plugin.get_l2_policy(
-                        context._plugin_context, provider['l2_policy_id'])
+                        admin_ctx, provider['l2_policy_id'])
                     self._unchain_ptg_pair(context, chain, provider, l2p)
                 break
 
@@ -1762,9 +1763,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                             else policy_rule['policy_rule_sets'])
         r_action = self._get_redirect_action(context, policy_rule)
         if r_action and r_action['action_value']:
+            admin_context = nctx.get_admin_context()
             for prs in context._plugin.get_policy_rule_sets(
-                    context._plugin_context, filters={'id': policy_rule_sets}):
-                # Mash providers and consumenrs
+                    admin_context, filters={'id': policy_rule_sets}):
+                # Mash providers and consumers
                 for prov in prs['providing_policy_target_groups']:
                     self._chain_ptg_pair(context, r_action, policy_rule,
                                          prov, prs)
@@ -1788,22 +1790,23 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         instances = self._get_ptg_servicechain_instance_mappings(
             context._plugin_context.session, provider_id, prs['id'])
         if not instances:
+            admin_context = nctx.get_admin_context()
+            provider_ptg = self.gbp_plugin.get_policy_target_group(
+                admin_context, provider_id)
+            context._plugin_context.proxy_for = provider_ptg['tenant_id']
             sc_instance_id = self._create_servicechain_instance(
                 context, action.get("action_value"),
                 None, provider_id, 'someone',
                 rule['policy_classifier_id'])['id']
-
             # Create N shadow BDs, one for each transparent service
             spec = self.sc_plugin.get_servicechain_spec(
-                context._plugin_context, action.get("action_value"))
+                admin_context, action.get("action_value"))
             nodes = self.sc_plugin.get_servicechain_nodes(
-                context._plugin_context, {'id': spec['nodes']})
-            provider_ptg = self.gbp_plugin.get_policy_target_group(
-                context._plugin_context, provider_id)
-            l2p = self.gbp_plugin.get_l2_policy(context._plugin_context,
+                admin_context, {'id': spec['nodes']})
+            l2p = self.gbp_plugin.get_l2_policy(admin_context,
                                                 provider_ptg['l2_policy_id'])
             tenant = self._tenant_by_sharing_policy(l2p)
-            l3p = context._plugin.get_l3_policy(context._plugin_context,
+            l3p = context._plugin.get_l3_policy(admin_context,
                                                 l2p['l3_policy_id'])
             l3_policy_name = self.name_mapper.l3_policy(context, l3p['id'])
             l2_policy_name = self.name_mapper.l2_policy(context, l2p['id'])
@@ -1851,7 +1854,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     # consumer-side shadow EPG consumes and
                     # provides everything that the real provider does.
                     for prs in context._plugin.get_policy_rule_sets(
-                            context._plugin_context,
+                            admin_context,
                             {'id': provider_ptg['provided_policy_rule_sets']}):
                         c = self.name_mapper.policy_rule_set(context,
                                                              prs['id'])
@@ -1862,7 +1865,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                             transaction=trs)
                     # Consumed
                     for prs in context._plugin.get_policy_rule_sets(
-                            context._plugin_context,
+                            admin_context,
                             {'id': provider_ptg['consumed_policy_rule_sets']}):
                         c = self.name_mapper.policy_rule_set(context,
                                                              prs['id'])
@@ -1897,14 +1900,17 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def _unchain_ptg_pair(self, context, chain, provider, l2p):
         try:
+            # All the newly created objects (spec/instances/etc...) should be
+            # owned by the provider's tenant
+            admin_context = nctx.get_admin_context()
             sc_instance_id = chain.servicechain_instance_id
             l2_policy_name = self.name_mapper.l2_policy(
                 context, l2p['id'])
             tenant = self._tenant_by_sharing_policy(l2p)
             instance = self.sc_plugin.get_servicechain_instance(
-                context._plugin_context, sc_instance_id)
+                admin_context, sc_instance_id)
             specs = self.sc_plugin.get_servicechain_specs(
-                context._plugin_context,
+                admin_context,
                 {'id': instance['servicechain_specs']})
             any_contract = ANY_PREFIX + sc_instance_id
             provider_name = self.name_mapper.policy_target_group(
@@ -1913,7 +1919,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 provider)
             for spec in specs:
                 nodes = self.sc_plugin.get_servicechain_nodes(
-                    context._plugin_context, {'id': spec['nodes']})
+                    admin_context, {'id': spec['nodes']})
                 with self.apic_manager.apic.transaction(None) as trs:
                     n = 0
                     for node in nodes:
@@ -1938,11 +1944,12 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     prov_tenant, provider_name, any_contract,
                     provider=True, contract_owner=tenant)
                 self.apic_manager.delete_contract(any_contract, owner=tenant)
+            context._plugin_context.proxy_for = provider['tenant_id']
             self._delete_servicechain_instance(
                 context, chain.servicechain_instance_id)
         except (schain.ServiceChainInstanceNotFound,
-                orm_exc.ObjectDeletedError):
-            LOG.warn(_("Service chain instance not found."))
+                orm_exc.ObjectDeletedError) as e:
+            LOG.exception(e)
         with context._plugin_context.session.begin(subtransactions=True):
             try:
                 context._plugin_context.session.delete(chain)

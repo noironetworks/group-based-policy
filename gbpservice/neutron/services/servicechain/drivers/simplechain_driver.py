@@ -15,6 +15,7 @@ import time
 
 from heatclient import client as heat_client
 from heatclient import exc as heatException
+from keystoneclient.v2_0 import client as keyclient
 from neutron.common import log
 from neutron.db import model_base
 from neutron import manager
@@ -132,7 +133,13 @@ class SimpleChainDriver(object):
 
     @log.log
     def create_servicechain_instance_precommit(self, context):
-        pass
+        try:
+            context.current.tenant_id = context.proxy_for
+            db_sci = context._plugin._get_servicechain_instance(
+                context._plugin_context, context.current['id'])
+            db_sci['tenant_id'] = context.proxy_for
+        except AttributeError:
+            pass
 
     @log.log
     def create_servicechain_instance_postcommit(self, context):
@@ -169,7 +176,10 @@ class SimpleChainDriver(object):
 
     @log.log
     def delete_servicechain_instance_precommit(self, context):
-        pass
+        try:
+            context.current.tenant_id = context.proxy_for
+        except AttributeError:
+            pass
 
     @log.log
     def delete_servicechain_instance_postcommit(self, context):
@@ -431,12 +441,19 @@ class SimpleChainDriver(object):
         return grouppolicy_plugin
 
 
-class HeatClient:
+class HeatClient(object):
+
     def __init__(self, context, password=None):
         api_version = "1"
-        endpoint = "%s/%s" % (cfg.CONF.servicechain.heat_uri, context.tenant)
+        try:
+            self.tenant = context.proxy_for
+        except AttributeError:
+            self.tenant = context.tenant
+
+        self._keystone = None
+        endpoint = "%s/%s" % (cfg.CONF.servicechain.heat_uri, self.tenant)
         kwargs = {
-            'token': context.auth_token,
+            'token': self._get_auth_token(self.tenant),
             'username': context.user_name,
             'password': password
         }
@@ -471,3 +488,27 @@ class HeatClient:
 
     def get(self, stack_id):
         return self.stacks.get(stack_id)
+
+    @property
+    def keystone(self):
+        if not self._keystone:
+            keystone_conf = cfg.CONF.keystone_authtoken
+            if keystone_conf.get('auth_uri'):
+                auth_url = keystone_conf.auth_uri
+                if not auth_url.endswith('/v2.0/'):
+                    auth_url += '/v2.0/'
+            else:
+                auth_url = ('%s://%s:%s/v2.0/' % (
+                    keystone_conf.auth_protocol,
+                    keystone_conf.auth_host,
+                    keystone_conf.auth_port))
+            user = (keystone_conf.get('admin_user') or keystone_conf.username)
+            pw = (keystone_conf.get('admin_password') or
+                  keystone_conf.password)
+            self._keystone = keyclient.Client(
+                username=user, password=pw, auth_url=auth_url,
+                tenant_id=self.tenant)
+        return self._keystone
+
+    def _get_auth_token(self, tenant):
+        return self.keystone.get_token(tenant)
