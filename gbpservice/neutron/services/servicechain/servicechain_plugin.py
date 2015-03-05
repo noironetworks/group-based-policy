@@ -12,10 +12,13 @@
 
 from neutron.api.v2 import attributes as nattr
 from neutron.common import log
+from neutron import manager as n_manager
 from neutron.openstack.common import excutils
 from neutron.openstack.common import log as logging
+from neutron.plugins.common import constants as pconst
 
 import gbpservice.neutron.db.servicechain_db as servicechain_db
+from gbpservice.neutron.services.grouppolicy.common import exceptions as gp_exc
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 from gbpservice.neutron.services.servicechain import (
     driver_manager as manager)
@@ -46,6 +49,17 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
             self._plurals = dict((nattr.PLURALS[k], k) for k in nattr.PLURALS)
         return self._plurals
 
+    @property
+    def gbp_plugin(self):
+        # REVISIT(rkukura): Need initialization method after all
+        # plugins are loaded to grab and store plugin.
+        plugins = n_manager.NeutronManager.get_service_plugins()
+        gbp_plugin = plugins.get(pconst.GROUP_POLICY)
+        if not gbp_plugin:
+            LOG.error(_("No group policy service plugin found."))
+            raise gp_exc.GroupPolicyDeploymentError()
+        return gbp_plugin
+
     def _validate_shared_create(self, context, obj, identity):
         return gbp_plugin.GroupPolicyPlugin._validate_shared_create(
             self, context, obj, identity)
@@ -63,7 +77,10 @@ class ServiceChainPlugin(servicechain_db.ServiceChainDbPlugin):
             obj['servicechain_specs'])
 
     def _validate_servicechain_spec_unshare(self, context, obj):
-        pass
+        # Verify not pointed by shared policy actions
+        gbp_plugin.GroupPolicyPlugin._check_shared_or_different_tenant(
+            context, obj, self.gbp_plugin.get_policy_actions, 'action_value',
+            [obj['id']])
 
     def __init__(self):
         self.driver_manager = manager.DriverManager()

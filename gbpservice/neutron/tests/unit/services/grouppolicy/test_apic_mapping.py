@@ -1828,38 +1828,6 @@ class TestExternalPolicy(ApicMappingTestCase):
 
 class TestApicChains(ApicMappingTestCase):
 
-    def _create_servicechain_spec(self, node_types=None, shared=False):
-        node_types = node_types or []
-        if not node_types:
-            node_types = ['LOADBALANCER']
-        node_ids = []
-        for node_type in node_types:
-            node_ids.append(self._create_servicechain_node(node_type,
-                                                           shared=shared))
-        data = {'servicechain_spec': {'tenant_id': self._tenant_id if not
-                                      shared else 'another-tenant',
-                                      'nodes': node_ids,
-                                      'shared': shared}}
-        scs_req = self.new_create_request(
-            SERVICECHAIN_SPECS, data, self.fmt)
-        spec = self.deserialize(
-            self.fmt, scs_req.get_response(self.ext_api))
-        scs_id = spec['servicechain_spec']['id']
-        return scs_id
-
-    def _create_servicechain_node(self, node_type="LOADBALANCER",
-                                  shared=False):
-        config = "heat_template_version: 2013-05-23"
-        data = {'servicechain_node': {'service_type': node_type,
-                                      'tenant_id': self._tenant_id if not
-                                      shared else 'another-tenant',
-                                      'config': config,
-                                      'shared': shared}}
-        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
-        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
-        scn_id = node['servicechain_node']['id']
-        return scn_id
-
     def _assert_proper_chain_instance(self, sc_instance, provider_ptg_id,
                                       policy_rule_set_id, scs_id_list):
         self.assertEqual(sc_instance['provider_ptg_id'], provider_ptg_id)
@@ -2293,7 +2261,7 @@ class TestApicChains(ApicMappingTestCase):
 
     def test_chain_on_apic_create_shared(self):
         scs_id = self._create_servicechain_spec(
-            node_types=['FIREWALL_TRANSPARENT'])
+            node_types=['FIREWALL_TRANSPARENT'], shared=True)
         policy_rule_id = self._create_simple_policy_rule(
             action_type='redirect', shared=True, action_value=scs_id)['id']
         policy_rule_set = self.create_policy_rule_set(
@@ -2846,6 +2814,29 @@ class TestApicChains(ApicMappingTestCase):
 
         self._verify_chain_set(app, web_l2p, internet_web_policy_rule_set,
                                sc_instance, 0, pre_set_contract_calls=expected)
+
+    def test_rule_removed_by_shared(self):
+        scs_id = self._create_servicechain_spec(
+            node_types=['FIREWALL_TRANSPARENT'], shared=True)
+        policy_rule_id = self._create_simple_policy_rule(
+            action_type='redirect', shared=True, action_value=scs_id)['id']
+        policy_rule_set = self.create_policy_rule_set(
+            name="c1", policy_rules=[policy_rule_id],
+            shared=True)['policy_rule_set']
+        # Create PTGs on same L2P
+        l2p = self.create_l2_policy(tenant_id='noadmin')['l2_policy']
+        provider = self.create_policy_target_group(
+            l2_policy_id=l2p['id'], tenant_id='noadmin')['policy_target_group']
+
+        mgr = self.driver.apic_manager
+        # form the chain
+        self.update_policy_target_group(
+            provider['id'], tenant_id=provider['tenant_id'],
+            provided_policy_rule_sets={policy_rule_set['id']: ''})
+
+        mgr.reset_mock()
+        self.update_policy_rule_set(policy_rule_set['id'], policy_rules=[],
+                                    expected_res_status=200)
 
     def _verify_chain_set(self, provider, l2p, policy_rule_set, sc_instance,
                           n_tnodes, pre_bd_create_calls=None,
