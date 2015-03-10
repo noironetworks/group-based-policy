@@ -94,6 +94,14 @@ class PTGAlreadyProvidingRedirectPRS(gpexc.GroupPolicyBadRequest):
     message = _("PTG %(ptg_id)s is already providing a redirect PRS.")
 
 
+class InvalidApicName(gpexc.GroupPolicyBadRequest):
+    message = _("Resource has no valid APIC name.")
+
+
+class CannotUpdateApicName(gpexc.GroupPolicyBadRequest):
+    message = _("Objects referring to existing "
+                "APIC resources can't be updated")
+
 REVERSE_PREFIX = 'reverse-'
 SHADOW_PREFIX = 'Svc-'
 SERVICE_PREFIX = 'Svc-'
@@ -108,6 +116,8 @@ REVERTIBLE_PROTOCOLS = [pconst.TCP.lower()]
 
 GOTHROUGH_SERVICES = ['FIREWALL_TRANSPARENT', 'IDS']
 GOTO_SERVICES = [pconst.LOADBALANCER]
+
+APIC_REFERENCE_PREFIX = 'apic:'
 
 
 class ApicPtgServiceChainInstanceMapping(model_base.BASEV2):
@@ -126,6 +136,62 @@ class ApicPtgServiceChainInstanceMapping(model_base.BASEV2):
                                          sa.ForeignKey('sc_instances.id',
                                                        ondelete='CASCADE'),
                                          primary_key=True)
+
+
+class ApicNameManager(object):
+
+    gbp_to_apic = {'l3_policy': 'context',
+                   'l2_policy': 'bridge_domain',
+                   'policy_target_group': 'endpoint_group',
+                   'policy_rule_set': 'contract'}
+
+    def __init__(self, apic_manager):
+        self.name_mapper = apic_manager.apic_mapper
+        self.dn_manager = apic_manager.apic.dn_manager
+
+    def __getattr__(self, item):
+        if self.name_mapper.is_valid_name_type(item):
+            def get_name_wrapper(context, obj_id, prefix=''):
+                return self._get_name(item, context, obj_id, prefix=prefix)
+            return get_name_wrapper
+
+        raise AttributeError
+
+    def tenant(self, obj):
+        if self._is_apic_reference(obj):
+            parts = self._try_all_types(obj)
+            if parts:
+                return parts[0]
+        return self.name_mapper.tenant(None, obj['tenant_id'])
+
+    def has_valid_name(self, obj):
+        if self._is_apic_reference(obj):
+            if not self._try_all_types(obj):
+                raise InvalidApicName()
+
+    def _try_all_types(self, obj):
+        for possible in self.dn_manager.nice_to_rn:
+            parts = getattr(self.dn_manager, 'decompose_%s' % possible)(
+                self._extract_apic_reference(obj))
+            if parts:
+                return parts
+
+    def _get_name(self, obj_type, context, obj, prefix=''):
+        if self._is_apic_reference(obj) and obj_type in self.gbp_to_apic:
+            map_type = self.gbp_to_apic[obj_type]
+            parts = getattr(self.dn_manager, 'decompose_%s' % map_type)(
+                self._extract_apic_reference(obj))
+            result = parts[-1]
+        else:
+            result = getattr(self.name_mapper, obj_type)(context, obj['id'],
+                                                         prefix=prefix)
+        return result
+
+    def _is_apic_reference(self, obj):
+        return obj['name'].startswith(APIC_REFERENCE_PREFIX)
+
+    def _extract_apic_reference(self, obj):
+        return obj['name'][len(APIC_REFERENCE_PREFIX):]
 
 
 class ApicMappingDriver(api.ResourceMappingDriver):
@@ -167,7 +233,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self._setup_rpc_listeners()
         self._setup_rpc()
         self.apic_manager = ApicMappingDriver.get_apic_manager()
-        self.name_mapper = self.apic_manager.apic_mapper
+        self.name_mapper = ApicNameManager(self.apic_manager)
         self._gbp_plugin = None
         self._sc_plugin = None
         ApicMappingDriver.me = self
@@ -236,10 +302,10 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             ptg_tenant = self._tenant_by_sharing_policy(ptg or l2p)
             if ptg:
                 endpoint_group_name = self.name_mapper.policy_target_group(
-                    context, ptg['id'])
+                    context, ptg)
             else:
                 endpoint_group_name = self.name_mapper.l2_policy(
-                    context, l2p['id'], prefix=SHADOW_PREFIX)
+                    context, l2p, prefix=SHADOW_PREFIX)
 
             def is_port_promiscuous(port):
                 return (port['device_owner'] in PROMISCUOUS_TYPES or
@@ -324,7 +390,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if not is_transparent_chain:
             ptg_tenant = self._tenant_by_sharing_policy(provider)
             endpoint_group_name = self.name_mapper.policy_target_group(
-                context, provider['id'])
+                context, provider)
             common.update({
                 'ptg_tentant': str(ptg_tenant),
                 'endpoint_group_name': str(endpoint_group_name),
@@ -399,7 +465,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     attrs['dFromPort'] = port_min
             tenant = self._tenant_by_sharing_policy(context.current)
             policy_rule = self.name_mapper.policy_rule(context,
-                                                       context.current['id'])
+                                                       context.current)
             with self.apic_manager.apic.transaction(transaction) as trs:
                 self.apic_manager.create_tenant_filter(
                     policy_rule, owner=tenant, transaction=trs, **attrs)
@@ -407,7 +473,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 if attrs.get('prot') in REVERTIBLE_PROTOCOLS:
                     if attrs['prot'] == pconst.TCP.lower():
                         policy_rule = self.name_mapper.policy_rule(
-                            context, context.current['id'],
+                            context, context.current,
                             prefix=REVERSE_PREFIX)
                         if attrs.get('dToPort') and attrs.get('dFromPort'):
                             attrs.pop('dToPort')
@@ -420,22 +486,26 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                             **attrs)
 
     def create_policy_rule_set_precommit(self, context):
-        if context.current['child_policy_rule_sets']:
-            raise HierarchicalContractsNotSupported()
+        if not self.name_mapper._is_apic_reference(context.current):
+            if context.current['child_policy_rule_sets']:
+                raise HierarchicalContractsNotSupported()
+        else:
+            self.name_mapper.has_valid_name(context.current)
 
     def create_policy_rule_set_postcommit(self, context):
-        # Create APIC policy_rule_set
-        tenant = self._tenant_by_sharing_policy(context.current)
-        contract = self.name_mapper.policy_rule_set(context,
-                                                    context.current['id'])
-        with self.apic_manager.apic.transaction(None) as trs:
-            self.apic_manager.create_contract(
-                contract, owner=tenant, transaction=trs)
-            rules = self.gbp_plugin.get_policy_rules(
-                context._plugin_context,
-                {'id': context.current['policy_rules']})
-            self._apply_policy_rule_set_rules(
-                context, context.current, rules, transaction=trs)
+        if not self.name_mapper._is_apic_reference(context.current):
+            # Create APIC policy_rule_set
+            tenant = self._tenant_by_sharing_policy(context.current)
+            contract = self.name_mapper.policy_rule_set(context,
+                                                        context.current)
+            with self.apic_manager.apic.transaction(None) as trs:
+                self.apic_manager.create_contract(
+                    contract, owner=tenant, transaction=trs)
+                rules = self.gbp_plugin.get_policy_rules(
+                    context._plugin_context,
+                    {'id': context.current['policy_rules']})
+                self._apply_policy_rule_set_rules(
+                    context, context.current, rules, transaction=trs)
 
     def create_policy_target_postcommit(self, context):
         if not context.current['port_id']:
@@ -448,96 +518,115 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             context, context.current['policy_target_group_id'])
 
     def create_policy_target_group_precommit(self, context):
-        if context.current['subnets']:
-            raise ExplicitSubnetAssociationNotSupported()
-        self._validate_ptg_prss(context, context.current)
+        if not self.name_mapper._is_apic_reference(context.current):
+            if context.current['subnets']:
+                raise ExplicitSubnetAssociationNotSupported()
+            self._validate_ptg_prss(context, context.current)
+        else:
+            self.name_mapper.has_valid_name(context.current)
 
     def create_policy_target_group_postcommit(self, context):
         if not context.current['subnets']:
             self._use_implicit_subnet(context)
-        self._handle_network_service_policy(context)
-        tenant = self._tenant_by_sharing_policy(context.current)
-        l2_policy = self.name_mapper.l2_policy(context,
-                                               context.current['l2_policy_id'])
-        epg = self.name_mapper.policy_target_group(context,
-                                                   context.current['id'])
-        l2_policy_object = context._plugin.get_l2_policy(
-            context._plugin_context, context.current['l2_policy_id'])
-        bd_owner = self._tenant_by_sharing_policy(l2_policy_object)
-        with self.apic_manager.apic.transaction(None) as trs:
-            self.apic_manager.ensure_epg_created(tenant, epg,
-                                                 bd_owner=bd_owner,
-                                                 bd_name=l2_policy)
-
-            l2p = context._plugin.get_l2_policy(
+        if not self.name_mapper._is_apic_reference(context.current):
+            self._handle_network_service_policy(context)
+            tenant = self._tenant_by_sharing_policy(context.current)
+            l2_policy_object = context._plugin.get_l2_policy(
                 context._plugin_context, context.current['l2_policy_id'])
-            self._configure_epg_service_contract(
-                context, context.current, l2p, epg, transaction=trs)
-            self._configure_epg_implicit_contract(
-                context, context.current, l2p, epg, transaction=trs)
+            l2_policy = self.name_mapper.l2_policy(context, l2_policy_object)
+            epg = self.name_mapper.policy_target_group(context,
+                                                       context.current)
+            bd_owner = self._tenant_by_sharing_policy(l2_policy_object)
+            with self.apic_manager.apic.transaction(None) as trs:
+                self.apic_manager.ensure_epg_created(tenant, epg,
+                                                     bd_owner=bd_owner,
+                                                     bd_name=l2_policy)
 
-        self._manage_ptg_policy_rule_sets(
-                context, context.current['provided_policy_rule_sets'],
-                context.current['consumed_policy_rule_sets'], [], [])
+                l2p = context._plugin.get_l2_policy(
+                    context._plugin_context, context.current['l2_policy_id'])
+                self._configure_epg_service_contract(
+                    context, context.current, l2p, epg, transaction=trs)
+                self._configure_epg_implicit_contract(
+                    context, context.current, l2p, epg, transaction=trs)
+
+            self._manage_ptg_policy_rule_sets(
+                    context, context.current['provided_policy_rule_sets'],
+                    context.current['consumed_policy_rule_sets'], [], [])
 
     def create_l2_policy_precommit(self, context):
-        self._reject_non_shared_net_on_shared_l2p(context)
+        if not self.name_mapper._is_apic_reference(context.current):
+            self._reject_non_shared_net_on_shared_l2p(context)
+        else:
+            self.name_mapper.has_valid_name(context.current)
 
     def update_l2_policy_precommit(self, context):
-        self._reject_non_shared_net_on_shared_l2p(context)
-        self._reject_shared_update(context, 'l2_policy')
+        self._reject_apic_name_change(context)
+        if not self.name_mapper._is_apic_reference(context.current):
+            self._reject_non_shared_net_on_shared_l2p(context)
+            self._reject_shared_update(context, 'l2_policy')
 
     def create_l2_policy_postcommit(self, context):
         super(ApicMappingDriver, self).create_l2_policy_postcommit(context)
-        tenant = self._tenant_by_sharing_policy(context.current)
-        l3_policy = self.name_mapper.l3_policy(context,
-                                               context.current['l3_policy_id'])
-        l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
-        l3_policy_object = context._plugin.get_l3_policy(
-            context._plugin_context, context.current['l3_policy_id'])
-        ctx_owner = self._tenant_by_sharing_policy(l3_policy_object)
-        with self.apic_manager.apic.transaction(None) as trs:
-            self.apic_manager.ensure_bd_created_on_apic(
-                tenant, l2_policy, ctx_owner=ctx_owner, ctx_name=l3_policy,
-                allow_broadcast=context.current['allow_broadcast'],
-                transaction=trs)
-            # Create neutron port EPG
-            self._configure_shadow_epg(context, context.current, l2_policy,
-                                       transaction=trs)
-            self._configure_implicit_contract(context, context.current,
-                                              transaction=trs)
-            # Add existing subnets
-            net_id = context.current['network_id']
-            subnets = self._core_plugin.get_subnets(context._plugin_context,
-                                                    {'network_id': [net_id]})
-            self._manage_l2p_subnets(
-                context._plugin_context, context.current['id'], subnets, [],
-                transaction=trs)
+        if not self.name_mapper._is_apic_reference(context.current):
+            tenant = self._tenant_by_sharing_policy(context.current)
+            l3_policy_object = context._plugin.get_l3_policy(
+                context._plugin_context, context.current['l3_policy_id'])
+            l3_policy = self.name_mapper.l3_policy(
+                context, l3_policy_object)
+            l2_policy = self.name_mapper.l2_policy(
+                context, context.current)
+
+            ctx_owner = self._tenant_by_sharing_policy(l3_policy_object)
+            with self.apic_manager.apic.transaction(None) as trs:
+                self.apic_manager.ensure_bd_created_on_apic(
+                    tenant, l2_policy, ctx_owner=ctx_owner, ctx_name=l3_policy,
+                    allow_broadcast=context.current['allow_broadcast'],
+                    transaction=trs)
+                # Create neutron port EPG
+                self._configure_shadow_epg(context, context.current, l2_policy,
+                                           transaction=trs)
+                self._configure_implicit_contract(context, context.current,
+                                                  transaction=trs)
+                # Add existing subnets
+                net_id = context.current['network_id']
+                subnets = self._core_plugin.get_subnets(
+                    context._plugin_context, {'network_id': [net_id]})
+                self._manage_l2p_subnets(
+                    context._plugin_context, context.current['id'], subnets,
+                    [], transaction=trs)
 
     def update_l2_policy_postcommit(self, context):
-        tenant = self._tenant_by_sharing_policy(context.current)
-        l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
-        if (context.current['allow_broadcast'] !=
-                context.original['allow_broadcast']):
-            self.apic_manager.ensure_bd_created_on_apic(
-                tenant, l2_policy, ctx_name=None,
-                allow_broadcast=context.current['allow_broadcast'])
+        if not self.name_mapper._is_apic_reference(context.current):
+            tenant = self._tenant_by_sharing_policy(context.current)
+            l2_policy = self.name_mapper.l2_policy(context, context.current)
+            if (context.current['allow_broadcast'] !=
+                    context.original['allow_broadcast']):
+                self.apic_manager.ensure_bd_created_on_apic(
+                    tenant, l2_policy, ctx_name=None,
+                    allow_broadcast=context.current['allow_broadcast'])
 
     def create_l3_policy_precommit(self, context):
-        self._check_l3p_es(context)
+        # APIC references don't need validation
+        if not self.name_mapper._is_apic_reference(context.current):
+            self._check_l3p_es(context)
+        else:
+            self.name_mapper.has_valid_name(context.current)
 
     def create_l3_policy_postcommit(self, context):
-        tenant = self._tenant_by_sharing_policy(context.current)
-        l3_policy = self.name_mapper.l3_policy(context, context.current['id'])
-        self.apic_manager.ensure_context_enforced(tenant, l3_policy)
-        external_segments = context.current['external_segments']
-        if external_segments:
-            # Create a L3 ext for each External Segment
-            ess = context._plugin.get_external_segments(
-                context._plugin_context,
-                filters={'id': external_segments.keys()})
-            for es in ess:
-                self._plug_l3p_to_es(context, es)
+        # APIC references don't need processing
+        if not self.name_mapper._is_apic_reference(context.current):
+            tenant = self._tenant_by_sharing_policy(context.current)
+            l3_policy = self.name_mapper.l3_policy(context,
+                                                   context.current)
+            self.apic_manager.ensure_context_enforced(tenant, l3_policy)
+            external_segments = context.current['external_segments']
+            if external_segments:
+                # Create a L3 ext for each External Segment
+                ess = context._plugin.get_external_segments(
+                    context._plugin_context,
+                    filters={'id': external_segments.keys()})
+                for es in ess:
+                    self._plug_l3p_to_es(context, es)
 
     def delete_policy_rule_postcommit(self, context):
         for prs in context._plugin.get_policy_rule_sets(
@@ -549,14 +638,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
     def _delete_policy_rule_from_apic(self, context, transaction=None):
         tenant = self._tenant_by_sharing_policy(context.current)
-        policy_rule = self.name_mapper.policy_rule(context,
-                                                   context.current['id'])
+        policy_rule = self.name_mapper.policy_rule(context, context.current)
         with self.apic_manager.apic.transaction(transaction) as trs:
             self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant,
                                                    transaction=trs)
             # Delete policy reverse rule
             policy_rule = self.name_mapper.policy_rule(
-                context, context.current['id'], prefix=REVERSE_PREFIX)
+                context, context.current, prefix=REVERSE_PREFIX)
             self.apic_manager.delete_tenant_filter(policy_rule, owner=tenant,
                                                    transaction=trs)
 
@@ -565,10 +653,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         pass
 
     def delete_policy_rule_set_postcommit(self, context):
-        tenant = self._tenant_by_sharing_policy(context.current)
-        contract = self.name_mapper.policy_rule_set(context,
-                                                    context.current['id'])
-        self.apic_manager.delete_contract(contract, owner=tenant)
+        if not self.name_mapper._is_apic_reference(context.current):
+            tenant = self._tenant_by_sharing_policy(context.current)
+            contract = self.name_mapper.policy_rule_set(context,
+                                                        context.current)
+            self.apic_manager.delete_contract(contract, owner=tenant)
 
     def delete_policy_target_postcommit(self, context):
         try:
@@ -588,67 +677,86 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             context, context.current['policy_target_group_id'])
 
     def delete_policy_target_group_precommit(self, context):
-        provider_ptg_chain_map = self._get_ptgs_servicechain(
-            context._plugin_context.session, context.current['id'])
-
-        context.ptg_chain_map = provider_ptg_chain_map
-        for chain in context.ptg_chain_map:
-            chain.l2p = self.gbp_plugin.get_l2_policy(
-                context._plugin_context, context.current['l2_policy_id'])
+        if not self.name_mapper._is_apic_reference(context.current):
+            provider_ptg_chain_map = self._get_ptgs_servicechain(
+                context._plugin_context.session, context.current['id'])
+            context.ptg_chain_map = provider_ptg_chain_map
+            for chain in context.ptg_chain_map:
+                chain.l2p = self.gbp_plugin.get_l2_policy(
+                    context._plugin_context, context.current['l2_policy_id'])
 
     def delete_policy_target_group_postcommit(self, context):
-        self._cleanup_network_service_policy(
-            context, context.current['subnets'][0], context.current['id'])
+        if not self.name_mapper._is_apic_reference(context.current):
+            self._cleanup_network_service_policy(
+                context, context.current['subnets'][0], context.current['id'])
 
-        for chain in context.ptg_chain_map:
-            self._unchain_ptg_pair(context, chain, context.current, chain.l2p)
+            for chain in context.ptg_chain_map:
+                self._unchain_ptg_pair(context, chain, context.current,
+                                       chain.l2p)
 
-        tenant = self._tenant_by_sharing_policy(context.current)
-        ptg = self.name_mapper.policy_target_group(context,
-                                                   context.current['id'])
+            tenant = self._tenant_by_sharing_policy(context.current)
+            ptg = self.name_mapper.policy_target_group(context,
+                                                       context.current)
+            self.apic_manager.delete_epg_for_network(tenant, ptg)
 
-        self.apic_manager.delete_epg_for_network(tenant, ptg)
+    def delete_l2_policy_precommit(self, context):
+        if not self.name_mapper._is_apic_reference(context.current):
+            super(ApicMappingDriver, self).delete_l2_policy_precommit(context)
 
     def delete_l2_policy_postcommit(self, context):
-        super(ApicMappingDriver, self).delete_l2_policy_postcommit(context)
-        tenant = self._tenant_by_sharing_policy(context.current)
-        l2_policy = self.name_mapper.l2_policy(context, context.current['id'])
+        super(ApicMappingDriver, self).delete_l2_policy_postcommit(
+              context)
+        if not self.name_mapper._is_apic_reference(context.current):
+            tenant = self._tenant_by_sharing_policy(context.current)
+            l2_policy = self.name_mapper.l2_policy(
+                context, context.current)
 
-        with self.apic_manager.apic.transaction(None) as trs:
-            self.apic_manager.delete_bd_on_apic(
-                tenant, l2_policy, transaction=trs)
-            # Delete neutron port EPG
-            self._delete_shadow_epg(context, context.current, transaction=trs)
-            self._delete_implicit_contract(context, context.current,
-                                           transaction=trs)
+            with self.apic_manager.apic.transaction(None) as trs:
+                self.apic_manager.delete_bd_on_apic(
+                    tenant, l2_policy, transaction=trs)
+                # Delete neutron port EPG
+                self._delete_shadow_epg(context, context.current,
+                                        transaction=trs)
+                self._delete_implicit_contract(context, context.current,
+                                               transaction=trs)
+
+    def delete_l3_policy_precommit(self, context):
+        if not self.name_mapper._is_apic_reference(context.current):
+            super(ApicMappingDriver, self).delete_l3_policy_precommit(context)
 
     def delete_l3_policy_postcommit(self, context):
-        tenant = self._tenant_by_sharing_policy(context.current)
-        l3_policy = self.name_mapper.l3_policy(context, context.current['id'])
+        if not self.name_mapper._is_apic_reference(context.current):
+            tenant = self._tenant_by_sharing_policy(context.current)
+            l3_policy = self.name_mapper.l3_policy(context,
+                                                   context.current)
 
-        self.apic_manager.ensure_context_deleted(tenant, l3_policy)
-        external_segments = context.current['external_segments']
-        if external_segments:
-            # Create a L3 ext for each External Segment
-            ess = context._plugin.get_external_segments(
-                context._plugin_context,
-                filters={'id': external_segments.keys()})
-            for es in ess:
-                self._unplug_l3p_from_es(context, es)
+            self.apic_manager.ensure_context_deleted(tenant, l3_policy)
+            external_segments = context.current['external_segments']
+            if external_segments:
+                # Create a L3 ext for each External Segment
+                ess = context._plugin.get_external_segments(
+                    context._plugin_context,
+                    filters={'id': external_segments.keys()})
+                for es in ess:
+                    self._unplug_l3p_from_es(context, es)
 
     def update_policy_rule_set_precommit(self, context):
-        self._reject_shared_update(context, 'policy_rule_set')
-        self._reject_multiple_redirects_in_prs(context)
-        if context.current['child_policy_rule_sets']:
-            raise HierarchicalContractsNotSupported()
-        # If a redirect action is added (from 0 to one) we have to validate
-        # the providing and consuming PTGs
-        old_red_count = self._multiple_pr_redirect_action_number(
-            context._plugin_context.session, context.original['policy_rules'])
-        new_red_count = self._multiple_pr_redirect_action_number(
-            context._plugin_context.session, context.current['policy_rules'])
-        if new_red_count > old_red_count:
-            self._validate_new_prs_redirect(context, context.current)
+        self._reject_apic_name_change(context)
+        if not self.name_mapper._is_apic_reference(context.current):
+            self._reject_shared_update(context, 'policy_rule_set')
+            self._reject_multiple_redirects_in_prs(context)
+            if context.current['child_policy_rule_sets']:
+                raise HierarchicalContractsNotSupported()
+            # If a redirect action is added (from 0 to one) we have to validate
+            # the providing and consuming PTGs
+            old_red_count = self._multiple_pr_redirect_action_number(
+                context._plugin_context.session,
+                context.original['policy_rules'])
+            new_red_count = self._multiple_pr_redirect_action_number(
+                context._plugin_context.session,
+                context.current['policy_rules'])
+            if new_red_count > old_red_count:
+                self._validate_new_prs_redirect(context, context.current)
 
     def update_policy_rule_set_postcommit(self, context):
         # Update policy_rule_set rules
@@ -719,81 +827,90 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         self.create_policy_rule_postcommit(context, transaction=None)
 
     def update_policy_target_group_precommit(self, context):
-        if set(context.original['subnets']) != set(context.current['subnets']):
-            raise ExplicitSubnetAssociationNotSupported()
-        self._reject_shared_update(context, 'policy_target_group')
-        self._validate_ptg_prss(context, context.current)
+        self._reject_apic_name_change(context)
+        if not self.name_mapper._is_apic_reference(context.current):
+            if set(context.original['subnets']) != set(
+                    context.current['subnets']):
+                raise ExplicitSubnetAssociationNotSupported()
+            self._reject_shared_update(context, 'policy_target_group')
+            self._validate_ptg_prss(context, context.current)
 
     def update_policy_target_group_postcommit(self, context):
-        # TODO(ivar): refactor parent to avoid code duplication
-        orig_provided_policy_rule_sets = context.original[
-            'provided_policy_rule_sets']
-        curr_provided_policy_rule_sets = context.current[
-            'provided_policy_rule_sets']
-        orig_consumed_policy_rule_sets = context.original[
-            'consumed_policy_rule_sets']
-        curr_consumed_policy_rule_sets = context.current[
-            'consumed_policy_rule_sets']
+        if not self.name_mapper._is_apic_reference(context.current):
+            # TODO(ivar): refactor parent to avoid code duplication
+            orig_provided_policy_rule_sets = context.original[
+                'provided_policy_rule_sets']
+            curr_provided_policy_rule_sets = context.current[
+                'provided_policy_rule_sets']
+            orig_consumed_policy_rule_sets = context.original[
+                'consumed_policy_rule_sets']
+            curr_consumed_policy_rule_sets = context.current[
+                'consumed_policy_rule_sets']
 
-        new_provided_policy_rule_sets = list(
-            set(curr_provided_policy_rule_sets) - set(
-                orig_provided_policy_rule_sets))
-        new_consumed_policy_rule_sets = list(
-            set(curr_consumed_policy_rule_sets) - set(
-                orig_consumed_policy_rule_sets))
-        removed_provided_policy_rule_sets = list(
-            set(orig_provided_policy_rule_sets) - set(
-                curr_provided_policy_rule_sets))
-        removed_consumed_policy_rule_sets = list(
-            set(orig_consumed_policy_rule_sets) - set(
-                curr_consumed_policy_rule_sets))
+            new_provided_policy_rule_sets = list(
+                set(curr_provided_policy_rule_sets) - set(
+                    orig_provided_policy_rule_sets))
+            new_consumed_policy_rule_sets = list(
+                set(curr_consumed_policy_rule_sets) - set(
+                    orig_consumed_policy_rule_sets))
+            removed_provided_policy_rule_sets = list(
+                set(orig_provided_policy_rule_sets) - set(
+                    curr_provided_policy_rule_sets))
+            removed_consumed_policy_rule_sets = list(
+                set(orig_consumed_policy_rule_sets) - set(
+                    curr_consumed_policy_rule_sets))
 
-        old_nsp = context.original.get("network_service_policy_id")
-        new_nsp = context.current.get("network_service_policy_id")
-        if old_nsp != new_nsp:
-            if old_nsp:
-                self._cleanup_network_service_policy(
-                                        context,
-                                        context.current['subnets'][0],
-                                        context.current['id'])
-            if new_nsp:
-                self._handle_network_service_policy(context)
+            old_nsp = context.original.get("network_service_policy_id")
+            new_nsp = context.current.get("network_service_policy_id")
+            if old_nsp != new_nsp:
+                if old_nsp:
+                    self._cleanup_network_service_policy(
+                                            context,
+                                            context.current['subnets'][0],
+                                            context.current['id'])
+                if new_nsp:
+                    self._handle_network_service_policy(context)
 
-        self._manage_ptg_policy_rule_sets(
-            context, new_provided_policy_rule_sets,
-            new_consumed_policy_rule_sets, removed_provided_policy_rule_sets,
-            removed_consumed_policy_rule_sets)
+            self._manage_ptg_policy_rule_sets(
+                context, new_provided_policy_rule_sets,
+                new_consumed_policy_rule_sets,
+                removed_provided_policy_rule_sets,
+                removed_consumed_policy_rule_sets)
 
     def update_l3_policy_precommit(self, context):
-        self._reject_shared_update(context, 'l3_policy')
-        self._check_l3p_es(context)
+        self._reject_apic_name_change(context)
+        if not self.name_mapper._is_apic_reference(context.current):
+            self._reject_shared_update(context, 'l3_policy')
+            self._check_l3p_es(context)
 
     def update_l3_policy_postcommit(self, context):
-        old_segment_dict = context.original['external_segments']
-        new_segment_dict = context.current['external_segments']
-        if (context.current['external_segments'] !=
-                context.original['external_segments']):
-            new_segments = set(new_segment_dict.keys())
-            old_segments = set(old_segment_dict.keys())
-            added = new_segments - old_segments
-            removed = old_segments - new_segments
-            # Modified ES are treated like new ones
-            modified = set(x for x in (new_segments - added) if
-                        (set(old_segment_dict[x]) != set(new_segment_dict[x])))
-            added |= modified
-            # The following operations could be intra-tenant, can't be executed
-            # in a single transaction
-            if added:
-                # Create a L3 ext for each External Segment
-                added_ess = context._plugin.get_external_segments(
-                    context._plugin_context, filters={'id': added})
-                for es in added_ess:
-                    self._plug_l3p_to_es(context, es)
-            if removed:
-                removed_ess = context._plugin.get_external_segments(
-                    context._plugin_context, filters={'id': removed})
-                for es in removed_ess:
-                    self._unplug_l3p_from_es(context, es)
+        if not self.name_mapper._is_apic_reference(context.current):
+            old_segment_dict = context.original['external_segments']
+            new_segment_dict = context.current['external_segments']
+            if (context.current['external_segments'] !=
+                    context.original['external_segments']):
+                new_segments = set(new_segment_dict.keys())
+                old_segments = set(old_segment_dict.keys())
+                added = new_segments - old_segments
+                removed = old_segments - new_segments
+                # Modified ES are treated like new ones
+                modified = set(x for x in (new_segments - added) if
+                            (set(old_segment_dict[x]) !=
+                             set(new_segment_dict[x])))
+                added |= modified
+                # The following operations could be intra-tenant, can't be
+                # executed in a single transaction
+                if added:
+                    # Create a L3 ext for each External Segment
+                    added_ess = context._plugin.get_external_segments(
+                        context._plugin_context, filters={'id': added})
+                    for es in added_ess:
+                        self._plug_l3p_to_es(context, es)
+                if removed:
+                    removed_ess = context._plugin.get_external_segments(
+                        context._plugin_context, filters={'id': removed})
+                    for es in removed_ess:
+                        self._unplug_l3p_from_es(context, es)
 
     def create_policy_classifier_precommit(self, context):
         pass
@@ -882,10 +999,18 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             switch = ext_info['switch']
             default_gateway = ext_info['gateway_ip']
             es_name = self.name_mapper.external_segment(
-                context, context.current['id'])
+                context, context.current)
             es_tenant = self._tenant_by_sharing_policy(context.current)
+            filters = {'id': context.current['external_policies']}
+
+            # REVISIT(ivar): In APIC, updating a segment route has side effects
+            # on external policies. Those may not be visible for the tenant
+            # that is sharing the segment! Therefore admin context is needed.
+            from neutron import context as nctx
+            external_policies = context._plugin.get_external_policies(
+                nctx.get_admin_context(), filters=filters)
             ep_names = [self.name_mapper.external_policy(context, x)
-                        for x in context.current['external_policies']]
+                        for x in external_policies]
 
             nexthop = lambda h: h if h else default_gateway
             with self.apic_manager.apic.transaction() as trs:
@@ -1035,7 +1160,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         if policy_rules:
             tenant = self._tenant_by_sharing_policy(policy_rule_set)
             contract = self.name_mapper.policy_rule_set(
-                context, policy_rule_set['id'])
+                context, policy_rule_set)
             in_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_IN]
             out_dir = [g_const.GP_DIRECTION_BI, g_const.GP_DIRECTION_OUT]
             for rule in policy_rules:
@@ -1046,9 +1171,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     classifier = context._plugin.get_policy_classifier(
                             context._plugin_context,
                             rule['policy_classifier_id'])
-                policy_rule = self.name_mapper.policy_rule(context, rule['id'])
+                policy_rule = self.name_mapper.policy_rule(context, rule)
                 reverse_policy_rule = self.name_mapper.policy_rule(
-                    context, rule['id'], prefix=REVERSE_PREFIX)
+                    context, rule, prefix=REVERSE_PREFIX)
                 rule_owner = self._tenant_by_sharing_policy(rule)
                 with self.apic_manager.apic.transaction(transaction) as trs:
                     if classifier['direction'] in in_dir:
@@ -1119,7 +1244,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         plugin_context._plugin_context = plugin_context
         mapped_tenant = self._tenant_by_sharing_policy(ptg)
         mapped_ptg = self.name_mapper.policy_target_group(
-            plugin_context, ptg['id'])
+            plugin_context, ptg)
         ptg_params.append((mapped_tenant, mapped_ptg))
         provided = [added_provided, removed_provided]
         consumed = [added_consumed, removed_consumed]
@@ -1130,8 +1255,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             for c in self.gbp_plugin.get_policy_rule_sets(
                     plugin_context, filters={'id': provided[x]}):
                 c_owner = self._tenant_by_sharing_policy(c)
-                c = self.name_mapper.policy_rule_set(plugin_context,
-                                                     c['id'])
+                c = self.name_mapper.policy_rule_set(plugin_context, c)
                 for params in ptg_params:
                     methods[x](params[0], params[1], c, provider=True,
                                contract_owner=c_owner, transaction=None)
@@ -1139,8 +1263,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             for c in self.gbp_plugin.get_policy_rule_sets(
                     plugin_context, filters={'id': consumed[x]}):
                 c_owner = self._tenant_by_sharing_policy(c)
-                c = self.name_mapper.policy_rule_set(plugin_context,
-                                                     c['id'])
+                c = self.name_mapper.policy_rule_set(plugin_context, c)
                 for params in ptg_params:
                     methods[x](params[0], params[1], c, provider=False,
                                contract_owner=c_owner, transaction=None)
@@ -1157,23 +1280,24 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         plugin_context._plugin = self.gbp_plugin
         plugin_context._plugin_context = plugin_context
         mapped_tenant = self._tenant_by_sharing_policy(es)
-        mapped_es = self.name_mapper.external_segment(plugin_context, es['id'])
+        mapped_es = self.name_mapper.external_segment(plugin_context, es)
 
-        mapped_ep = self.name_mapper.external_policy(plugin_context,
-                                                     ep['id'])
+        mapped_ep = self.name_mapper.external_policy(plugin_context, ep)
         provided = [added_provided, removed_provided]
         consumed = [added_consumed, removed_consumed]
         methods = [self.apic_manager.set_contract_for_external_epg,
                    self.apic_manager.unset_contract_for_external_epg]
         with self.apic_manager.apic.transaction(transaction) as trs:
             for x in xrange(len(provided)):
-                for c in provided[x]:
+                for c in self.gbp_plugin.get_policy_rule_sets(
+                        plugin_context, filters={'id': provided[x]}):
                     c = self.name_mapper.policy_rule_set(plugin_context, c)
                     methods[x](mapped_es, c, external_epg=mapped_ep,
                                owner=mapped_tenant, provided=True,
                                transaction=trs)
             for x in xrange(len(consumed)):
-                for c in consumed[x]:
+                for c in self.gbp_plugin.get_policy_rule_sets(
+                        plugin_context, filters={'id': consumed[x]}):
                     c = self.name_mapper.policy_rule_set(plugin_context, c)
                     methods[x](mapped_es, c, external_epg=mapped_ep,
                                owner=mapped_tenant, provided=False,
@@ -1187,7 +1311,9 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         l2_policy_object = self.gbp_plugin.get_l2_policy(
             plugin_context, l2p_id)
         mapped_tenant = self._tenant_by_sharing_policy(l2_policy_object)
-        mapped_l2p = self.name_mapper.l2_policy(plugin_context, l2p_id)
+        mapped_l2p = self.name_mapper.l2_policy(plugin_context,
+                                                l2_policy_object)
+
         subnets = [added_subnets, removed_subnets]
         methods = [self.apic_manager.ensure_subnet_created_on_apic,
                    self.apic_manager.ensure_subnet_deleted_on_apic]
@@ -1259,7 +1385,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             return db_utils._make_policy_target_group_dict(ptg)
 
     def _plug_l3p_to_es(self, context, external_segment):
-        l3_policy = self.name_mapper.l3_policy(context, context.current['id'])
+        l3_policy = self.name_mapper.l3_policy(context, context.current)
         es = external_segment
         external_segments = context.current['external_segments']
         ext_info = self.apic_manager.ext_net_dict.get(es['name'])
@@ -1285,8 +1411,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         module, sport = ext_info['port'].split('/')
         router_id = ext_info['router_id']
         default_gateway = ext_info['gateway_ip']
-        es_name = self.name_mapper.external_segment(
-            context, es['id'])
+        es_name = self.name_mapper.external_segment(context, es)
         es_tenant = self._tenant_by_sharing_policy(es)
         with self.apic_manager.apic.transaction() as trs:
             # Create External Routed Network connected to the proper
@@ -1305,7 +1430,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     subnet=route['destination'], transaction=trs)
 
     def _unplug_l3p_from_es(self, context, es):
-        es_name = self.name_mapper.external_segment(context, es['id'])
+        es_name = self.name_mapper.external_segment(context, es)
         es_tenant = self._tenant_by_sharing_policy(es)
         self.apic_manager.delete_external_routed_network(
             es_name, owner=es_tenant)
@@ -1324,14 +1449,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             added_ess = context._plugin.get_external_segments(
                 context._plugin_context, filters={'id': segments})
             ep_name = self.name_mapper.external_policy(
-                context, ep['id'])
+                context, ep)
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
                     LOG.warn(_("External Segment %s is not managed by APIC "
                              "mapping driver.") % es['id'])
                     continue
-                es_name = self.name_mapper.external_segment(context, es['id'])
+                es_name = self.name_mapper.external_segment(context, es)
                 es_tenant = self._tenant_by_sharing_policy(es)
                 with self.apic_manager.apic.transaction() as trs:
                     # Create External EPG
@@ -1351,14 +1476,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             added_ess = context._plugin.get_external_segments(
                 context._plugin_context, filters={'id': segments})
             ep_name = self.name_mapper.external_policy(
-                context, ep['id'])
+                context, ep)
             for es in added_ess:
                 ext_info = self.apic_manager.ext_net_dict.get(es['name'])
                 if not ext_info:
                     LOG.warn(_("External Segment %s is not managed by APIC "
                              "mapping driver.") % es['id'])
                     continue
-                es_name = self.name_mapper.external_segment(context, es['id'])
+                es_name = self.name_mapper.external_segment(context, es)
                 es_tenant = self._tenant_by_sharing_policy(es)
                 self.apic_manager.ensure_external_epg_deleted(
                         es_name, external_epg=ep_name, owner=es_tenant)
@@ -1389,10 +1514,11 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             raise SharedAttributeUpdateNotSupportedOnApic(type=type)
 
     def _tenant_by_sharing_policy(self, object):
-        if not object.get('shared'):
-            return self.name_mapper.tenant(None, object['tenant_id'])
-        else:
+        if object.get('shared') and not self.name_mapper._is_apic_reference(
+                object):
             return apic_manager.TENANT_COMMON
+        else:
+            return self.name_mapper.tenant(object)
 
     def _notify_port_update(self, plugin_context, port_id):
         try:
@@ -1509,7 +1635,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             tenant = self._tenant_by_sharing_policy(l2p)
             # Create Service contract
             contract = self.name_mapper.l2_policy(
-                context, l2p['id'], prefix=IMPLICIT_PREFIX)
+                context, l2p, prefix=IMPLICIT_PREFIX)
             self.apic_manager.create_contract(
                 contract, owner=tenant, transaction=trs)
 
@@ -1522,14 +1648,14 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         with self.apic_manager.apic.transaction(transaction) as trs:
             tenant = self._tenant_by_sharing_policy(l2p)
             shadow_epg = self.name_mapper.l2_policy(
-                context, l2p['id'], prefix=SHADOW_PREFIX)
+                context, l2p, prefix=SHADOW_PREFIX)
             self.apic_manager.ensure_epg_created(
                 tenant, shadow_epg, bd_owner=tenant, bd_name=bd_name,
                 transaction=trs)
 
             # Create Service contract
             contract = self.name_mapper.l2_policy(
-                context, l2p['id'], prefix=SERVICE_PREFIX)
+                context, l2p, prefix=SERVICE_PREFIX)
             self.apic_manager.create_contract(
                 contract, owner=tenant, transaction=trs)
 
@@ -1595,7 +1721,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                                            'arp', transaction=trs, **attrs)
 
             contract = self.name_mapper.l2_policy(
-                context, l2p['id'], prefix=IMPLICIT_PREFIX)
+                context, l2p, prefix=IMPLICIT_PREFIX)
             # Shadow EPG provides and consumes implicit contract
             self.apic_manager.set_contract_for_epg(
                 tenant, shadow_epg, contract, provider=False,
@@ -1630,13 +1756,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         with self.apic_manager.apic.transaction(transaction) as trs:
             tenant = self._tenant_by_sharing_policy(l2p)
             shadow_epg = self.name_mapper.l2_policy(
-                context, l2p['id'], prefix=SHADOW_PREFIX)
+                context, l2p, prefix=SHADOW_PREFIX)
             self.apic_manager.delete_epg_for_network(
                 tenant, shadow_epg, transaction=trs)
 
             # Delete Service Contract
             contract = self.name_mapper.l2_policy(
-                context, l2p['id'], prefix=SERVICE_PREFIX)
+                context, l2p, prefix=SERVICE_PREFIX)
             self.apic_manager.delete_contract(
                 contract, owner=tenant, transaction=trs)
 
@@ -1644,7 +1770,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
         with self.apic_manager.apic.transaction(transaction) as trs:
             tenant = self._tenant_by_sharing_policy(l2p)
             contract = self.name_mapper.l2_policy(
-                context, l2p['id'], prefix=IMPLICIT_PREFIX)
+                context, l2p, prefix=IMPLICIT_PREFIX)
             self.apic_manager.delete_contract(
                 contract, owner=tenant, transaction=trs)
 
@@ -1654,7 +1780,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             contract_owner = self._tenant_by_sharing_policy(l2p)
             tenant = self._tenant_by_sharing_policy(ptg)
             contract = self.name_mapper.l2_policy(
-                context, l2p['id'], prefix=SERVICE_PREFIX)
+                context, l2p, prefix=SERVICE_PREFIX)
             self.apic_manager.set_contract_for_epg(
                 tenant, epg_name, contract, provider=False,
                 contract_owner=contract_owner, transaction=trs)
@@ -1665,7 +1791,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             contract_owner = self._tenant_by_sharing_policy(l2p)
             tenant = self._tenant_by_sharing_policy(ptg)
             contract = self.name_mapper.l2_policy(
-                context, l2p['id'], prefix=IMPLICIT_PREFIX)
+                context, l2p, prefix=IMPLICIT_PREFIX)
             self.apic_manager.set_contract_for_epg(
                 tenant, epg_name, contract, provider=False,
                 contract_owner=contract_owner, transaction=trs)
@@ -1761,8 +1887,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             tenant = self._tenant_by_sharing_policy(l2p)
             l3p = context._plugin.get_l3_policy(admin_context,
                                                 l2p['l3_policy_id'])
-            l3_policy_name = self.name_mapper.l3_policy(context, l3p['id'])
-            l2_policy_name = self.name_mapper.l2_policy(context, l2p['id'])
+            l3_policy_name = self.name_mapper.l3_policy(context, l3p)
+            l2_policy_name = self.name_mapper.l2_policy(context, l2p)
             ctx_owner = self._tenant_by_sharing_policy(l3p)
             any_contract = ANY_PREFIX + sc_instance_id
             n = 0
@@ -1791,13 +1917,13 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
                     # consumer-side shadow EPG consumes service contract
                     c = self.name_mapper.l2_policy(
-                        context, l2p['id'], prefix=SERVICE_PREFIX)
+                        context, l2p, prefix=SERVICE_PREFIX)
                     self.apic_manager.set_contract_for_epg(
                         tenant, str(n) + '-' + sc_instance_id, c,
                         provider=False, contract_owner=tenant,
                         transaction=trs)
                     c = self.name_mapper.l2_policy(
-                        context, l2p['id'], prefix=IMPLICIT_PREFIX)
+                        context, l2p, prefix=IMPLICIT_PREFIX)
                     self.apic_manager.set_contract_for_epg(
                         tenant, str(n) + '-' + sc_instance_id, c,
                         provider=False, contract_owner=tenant, transaction=trs)
@@ -1809,8 +1935,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     for prs in context._plugin.get_policy_rule_sets(
                             admin_context,
                             {'id': provider_ptg['provided_policy_rule_sets']}):
-                        c = self.name_mapper.policy_rule_set(context,
-                                                             prs['id'])
+                        c = self.name_mapper.policy_rule_set(context, prs)
                         owner = self._tenant_by_sharing_policy(prs)
                         self.apic_manager.set_contract_for_epg(
                             tenant, str(n) + '-' + sc_instance_id, c,
@@ -1820,8 +1945,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                     for prs in context._plugin.get_policy_rule_sets(
                             admin_context,
                             {'id': provider_ptg['consumed_policy_rule_sets']}):
-                        c = self.name_mapper.policy_rule_set(context,
-                                                             prs['id'])
+                        c = self.name_mapper.policy_rule_set(context, prs)
                         owner = self._tenant_by_sharing_policy(prs)
                         self.apic_manager.set_contract_for_epg(
                             tenant, str(n) + '-' + sc_instance_id, c,
@@ -1830,7 +1954,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
 
             # Attach Provider to the 0th shadow BD
             provider_name = self.name_mapper.policy_target_group(context,
-                                                                 provider_id)
+                                                                 provider_ptg)
             prov_tenant = self._tenant_by_sharing_policy(provider_ptg)
             if n > 0:
                 # Move provider EPG to shadow BD
@@ -1857,8 +1981,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             # owned by the provider's tenant
             admin_context = nctx.get_admin_context()
             sc_instance_id = chain.servicechain_instance_id
-            l2_policy_name = self.name_mapper.l2_policy(
-                context, l2p['id'])
+            l2_policy_name = self.name_mapper.l2_policy(context, l2p)
             tenant = self._tenant_by_sharing_policy(l2p)
             instance = self.sc_plugin.get_servicechain_instance(
                 admin_context, sc_instance_id)
@@ -1867,7 +1990,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 {'id': instance['servicechain_specs']})
             any_contract = ANY_PREFIX + sc_instance_id
             provider_name = self.name_mapper.policy_target_group(
-                context, provider['id'])
+                context, provider)
             prov_tenant = self._tenant_by_sharing_policy(
                 provider)
             for spec in specs:
@@ -2055,3 +2178,8 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             self._update_resource(
                 self._servicechain_plugin, context._plugin_context,
                 'servicechain_instance', chain[0].servicechain_instance_id, {})
+
+    def _reject_apic_name_change(self, context):
+        if self.name_mapper._is_apic_reference(context.original):
+            if context.original['name'] != context.current['name']:
+                raise CannotUpdateApicName()
