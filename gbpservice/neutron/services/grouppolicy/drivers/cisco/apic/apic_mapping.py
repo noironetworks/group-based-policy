@@ -323,7 +323,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                        'l2_policy_id': l2_policy_id,
                        'tenant_id': port['tenant_id'],
                        'host': port[portbindings.HOST_ID],
-                       'ptg_tentant': str(ptg_tenant),
+                       'ptg_tenant': str(ptg_tenant),
                        'endpoint_group_name': str(endpoint_group_name),
                        'promiscuous_mode': is_port_promiscuous(port)}
         if port['device_owner'].startswith('compute:') and port['device_id']:
@@ -392,7 +392,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
             endpoint_group_name = self.name_mapper.policy_target_group(
                 context, provider)
             common.update({
-                'ptg_tentant': str(ptg_tenant),
+                'ptg_tenant': str(ptg_tenant),
                 'endpoint_group_name': str(endpoint_group_name),
                 'promiscuous_mode': False})
             return common
@@ -415,7 +415,7 @@ class ApicMappingDriver(api.ResourceMappingDriver):
                 promiscuous = False
                 ptg_name = (str(prev_transparents) + '-' +
                             chain.servicechain_instance_id)
-            common.update({'ptg_tentant': str(ptg_tenant),
+            common.update({'ptg_tenant': str(ptg_tenant),
                            'endpoint_group_name': str(ptg_name),
                            'promiscuous_mode': promiscuous})
             return common
