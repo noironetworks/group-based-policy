@@ -29,8 +29,9 @@ def upgrade(active_plugins=None, options=None):
     fk_name = [fk['name'] for fk in
                inspector.get_foreign_keys('gpm_ptgs_servicechain_mapping')
                if 'consumer_ptg_id' in fk['constrained_columns']]
-    op.drop_constraint(fk_name[0], 'gpm_ptgs_servicechain_mapping',
-                       'foreignkey')
+    if fk_name:
+        op.drop_constraint(fk_name[0], 'gpm_ptgs_servicechain_mapping',
+                           'foreignkey')
 
 
 def downgrade(active_plugins=None, options=None):

@@ -16,13 +16,13 @@
 """gbp_l2p_broadcast
 
 Revision ID: f5f138aa6726
-Revises: e8005b9b1efc
+Revises: 2f3834ea746b
 
 """
 
 # revision identifiers, used by Alembic.
 revision = 'f5f138aa6726'
-down_revision = 'e8005b9b1efc'
+down_revision = '2f3834ea746b'
 
 
 from alembic import op

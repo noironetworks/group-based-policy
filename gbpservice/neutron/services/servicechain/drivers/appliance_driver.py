@@ -13,10 +13,10 @@
 import ast
 
 from neutron.common import log
-from neutron.openstack.common import jsonutils
-from neutron.openstack.common import log as logging
 from neutron.plugins.common import constants as pconst
-from oslo.config import cfg
+from oslo_config import cfg
+from oslo_log import log as logging
+from oslo_serialization import jsonutils
 
 from gbpservice.neutron.services.servicechain.common import exceptions as exc
 from gbpservice.neutron.services.servicechain.drivers import simplechain_driver

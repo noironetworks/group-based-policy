@@ -13,7 +13,6 @@
 from neutron.api.v2 import attributes as nattr
 from neutron.common import log
 from neutron import manager as n_manager
-from neutron.openstack.common import excutils
 from neutron.plugins.common import constants as pconst
 from oslo_log import log as logging
 from oslo_utils import excutils
