@@ -1022,9 +1022,12 @@ class TestPolicyRuleSet(ApicMappingTestCase):
     def test_policy_rule_set_created_on_apic_shared(self):
         self._test_policy_rule_set_created_on_apic(shared=True)
 
-    def _test_policy_rule_set_created_with_rules(self, shared=False):
+    def _test_policy_rule_set_created_with_rules(
+            self, shared=False, protocol='tcp', port_range=80):
+        to_revert = ['tcp']
         bi, in_d, out = range(3)
-        rules = self._create_3_direction_rules(shared=shared)
+        rules = self._create_3_direction_rules(
+            shared=shared, protocol=protocol, port_range=port_range)
         # exclude BI rule for now
         ctr = self.create_policy_rule_set(
             name="ctr", policy_rules=[x['id'] for x in rules[1:]])[
@@ -1036,11 +1039,13 @@ class TestPolicyRuleSet(ApicMappingTestCase):
         expected_calls = [
             mock.call(ctr['id'], ctr['id'], rules[in_d]['id'],
                       owner=ctr['tenant_id'], transaction=mock.ANY,
-                      unset=False, rule_owner=rule_owner),
-            mock.call(ctr['id'], ctr['id'],
-                      amap.REVERSE_PREFIX + rules[out]['id'],
-                      owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner)]
+        if protocol in to_revert:
+            expected_calls.append(
+                mock.call(ctr['id'], ctr['id'],
+                          amap.REVERSE_PREFIX + rules[out]['id'],
+                          owner=ctr['tenant_id'], transaction=mock.ANY,
+                          unset=False, rule_owner=rule_owner))
         self._check_call_list(
             expected_calls,
             mgr.manage_contract_subject_in_filter.call_args_list)
@@ -1048,11 +1053,13 @@ class TestPolicyRuleSet(ApicMappingTestCase):
         expected_calls = [
             mock.call(ctr['id'], ctr['id'], rules[out]['id'],
                       owner=ctr['tenant_id'], transaction=mock.ANY,
-                      unset=False, rule_owner=rule_owner),
-            mock.call(ctr['id'], ctr['id'],
-                      amap.REVERSE_PREFIX + rules[in_d]['id'],
-                      owner=ctr['tenant_id'], transaction=mock.ANY,
                       unset=False, rule_owner=rule_owner)]
+        if protocol in to_revert:
+            expected_calls.append(
+                mock.call(ctr['id'], ctr['id'],
+                          amap.REVERSE_PREFIX + rules[in_d]['id'],
+                          owner=ctr['tenant_id'], transaction=mock.ANY,
+                          unset=False, rule_owner=rule_owner))
         self._check_call_list(
             expected_calls,
             mgr.manage_contract_subject_out_filter.call_args_list)
@@ -1069,20 +1076,25 @@ class TestPolicyRuleSet(ApicMappingTestCase):
             ctr['id'], ctr['id'], rules[bi]['id'], owner=ctr['tenant_id'],
             transaction=mock.ANY, unset=False,
             rule_owner=rule_owner)
-        mgr.manage_contract_subject_in_filter.call_happened_with(
-            ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
-            owner=ctr['tenant_id'], transaction=mock.ANY, unset=False,
-            rule_owner=rule_owner)
-        mgr.manage_contract_subject_out_filter.call_happened_with(
-            ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
-            owner=ctr['tenant_id'], transaction=mock.ANY, unset=False,
-            rule_owner=rule_owner)
+        if protocol in to_revert:
+            mgr.manage_contract_subject_in_filter.call_happened_with(
+                ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
+                owner=ctr['tenant_id'], transaction=mock.ANY, unset=False,
+                rule_owner=rule_owner)
+            mgr.manage_contract_subject_out_filter.call_happened_with(
+                ctr['id'], ctr['id'], amap.REVERSE_PREFIX + rules[bi]['id'],
+                owner=ctr['tenant_id'], transaction=mock.ANY, unset=False,
+                rule_owner=rule_owner)
 
     def test_policy_rule_set_created_with_rules(self):
         self._test_policy_rule_set_created_with_rules()
 
     def test_policy_rule_set_created_with_rules_shared(self):
         self._test_policy_rule_set_created_with_rules(shared=True)
+
+    def test_policy_rule_set_created_with_any_rules(self):
+        self._test_policy_rule_set_created_with_rules(
+            protocol=None, port_range=None)
 
     def _test_policy_rule_set_updated_with_new_rules(self, shared=False):
         bi, in_d, out = range(3)
@@ -1159,11 +1171,12 @@ class TestPolicyRuleSet(ApicMappingTestCase):
     def test_policy_rule_set_updated_with_new_rules_shared(self):
         self._test_policy_rule_set_updated_with_new_rules(shared=True)
 
-    def _create_3_direction_rules(self, shared=False):
+    def _create_3_direction_rules(self, shared=False, protocol='tcp',
+                                  port_range=80):
         a1 = self.create_policy_action(name='a1',
                                        action_type='allow',
                                        shared=shared)['policy_action']
-        cl_attr = {'protocol': 'tcp', 'port_range': 80}
+        cl_attr = {'protocol': protocol, 'port_range': port_range}
         cls = []
         for direction in ['bi', 'in', 'out']:
             cls.append(self.create_policy_classifier(
