@@ -31,6 +31,9 @@ from gbpservice.neutron.services.servicechain.common import exceptions as exc
 LOG = logging.getLogger(__name__)
 
 service_chain_opts = [
+    cfg.StrOpt('admin_user',
+               default='admin',
+               help=_("Admin user in the system ")),
     cfg.IntOpt('stack_delete_retries',
                default=5,
                help=_("Number of attempts to retry for stack deletion")),
@@ -502,9 +505,8 @@ class HeatClient(object):
                     keystone_conf.auth_protocol,
                     keystone_conf.auth_host,
                     keystone_conf.auth_port))
-            user = (keystone_conf.username or keystone_conf.get('admin_user'))
-            pw = (keystone_conf.password or
-                  keystone_conf.get('admin_password'))
+            user = cfg.CONF.servicechain.admin_user
+            pw = keystone_conf.password
             self._keystone = keyclient.Client(
                 username=user, password=pw, auth_url=auth_url,
                 tenant_id=self.tenant)
