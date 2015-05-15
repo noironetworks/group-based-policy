@@ -24,6 +24,29 @@ cfg.CONF.import_opt('servicechain_drivers',
                     group='servicechain')
 
 
+chain_driver_for_tenant_associations = [
+    cfg.MultiStrOpt('tenant_association',
+               default=['*:chain_with_two_arm_appliance_driver',
+                        'Finance:oc-chain-driver'],
+               help=_("tenant-name:driver-name")),
+]
+
+cfg.CONF.register_opts(chain_driver_for_tenant_associations,
+                       "chain_driver_for_tenant")
+
+def parse_chain_driver_opts():
+
+    driver_opts = cfg.CONF.chain_driver_for_tenant.tenant_association
+    res = {}
+    for driver in driver_opts:
+        split = driver.split(':')
+        try:
+            tenant_name, driver_name = split[:]
+            res[tenant_name] = driver_name
+        except ValueError:
+            raise
+    return res
+
 class DriverManager(stevedore.named.NamedExtensionManager):
     """Route servicechain APIs to servicechain drivers.
 
@@ -35,6 +58,7 @@ class DriverManager(stevedore.named.NamedExtensionManager):
         # Ordered list of servicechain drivers, defining
         # the order in which the drivers are called.
         self.ordered_drivers = []
+        self.driver_for_tenant = parse_chain_driver_opts()
 
         LOG.info(_("Configured servicechain driver names: %s"),
                  cfg.CONF.servicechain.servicechain_drivers)
@@ -78,19 +102,28 @@ class DriverManager(stevedore.named.NamedExtensionManager):
         if any servicechain driver call fails.
         """
         error = False
-        for driver in self.ordered_drivers:
-            try:
-                getattr(driver.obj, method_name)(context)
-            except sc_exc.ServiceChainException:
-                # This is an exception for the user.
-                raise
-            except Exception:
-                # This is an internal failure.
-                LOG.exception(
-                    _("ServiceChain driver '%(name)s' failed in %(method)s"),
-                    {'name': driver.name, 'method': method_name}
-                )
-                error = True
+        tenant_name = context._plugin_context.tenant_name
+        if tenant_name in self.driver_for_tenant and (
+            self.driver_for_tenant[tenant_name] not in self.ordered_drivers):
+	    error = True
+        else:
+            for driver in self.ordered_drivers:
+                try:
+                    if tenant_name in self.driver_for_tenant:
+                        if self.driver_for_tenant[tenant_name] == driver.name:
+                            getattr(driver.obj, method_name)(context)
+                    else:
+		        getattr(driver.obj, method_name)(context)
+                except sc_exc.ServiceChainException:
+                    # This is an exception for the user.
+                    raise
+                except Exception:
+                    # This is an internal failure.
+                    LOG.exception(
+                        _("ServiceChain driver '%(name)s' failed in %(method)s"),
+                        {'name': driver.name, 'method': method_name}
+                    )
+                    error = True
         if error:
             raise sc_exc.ServiceChainDriverError(
                 method=method_name
