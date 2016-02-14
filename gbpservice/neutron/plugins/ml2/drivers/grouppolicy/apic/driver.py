@@ -27,8 +27,9 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
 LOG = log.getLogger(__name__)
 
 # TODO(tbachman) Find a good home for these
-AGENT_TYPE_DVS = 'DVS agent'
 VIF_TYPE_DVS = 'dvs'
+AGENT_TYPE_DVS = 'DVS agent'
+HYPERVISOR_VCENTER = 'VMware vCenter'
 
 
 class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
@@ -51,7 +52,7 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
         port = context.current
         if port['device_owner'] == 'compute:nova':
             hv_type = agent['configurations'].get('hypervisor_type', None)
-            if hv_type and hv_type == acst.HYPERVISOR_VCENTER:
+            if hv_type and hv_type == HYPERVISOR_VCENTER:
                 return True
         return False
 
@@ -70,14 +71,13 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
             network = self.apic_gbp._get_network(context._plugin_context,
                                                  network_id)
             project_name = self.apic_gbp.name_mapper.tenant(context.current)
-            profile = (self.apic_gbp.apic_manager.
-                apic_config.apic_app_profile_name)
+            profile = self.apic_gbp.get_apic_manager().app_profile_name
             # networks are named using the name of the Policy Target
             # Group prepended iwth "l2p_". However, the portgroup just
             # uses the Policy Target Group name
             network_name = network['name'][4:]
             vif_details['dvs_port_group'] = (str(project_name) +
-                                             '|' + profile +
+                                             '|' + str(profile) +
                                              '|' + network_name)
         return vif_details
 
@@ -85,7 +85,7 @@ class APICMechanismGBPDriver(mech_agent.AgentMechanismDriverBase):
         if self._check_segment_for_agent(segment, agent):
             vif_type = self.vif_type
             vif_details = self.vif_details
-            if self._is_dvs_vif_type(context, agent)
+            if self._is_dvs_vif_type(context, agent):
                 vif_type = VIF_TYPE_DVS
                 vif_details = self._get_dvs_vif_details(context)
             context.set_binding(segment[api.ID], vif_type, vif_details)
