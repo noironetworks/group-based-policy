@@ -276,23 +276,45 @@ function test_north_south {
     local FLAVOR_NAME=$4
     local NODES=$5
     local CONSUMERS=$6
+
+    local PROVIDER_GW_FMT="172.168.%s.1"
+    local PROVIDER_CIDR_FMT="172.168.%s.0/24"
+    local PROVIDER_SNET="172.168.0.0/16"
+
+    local CONSUMER_GW_FMT="173.168.%s.1"
+    local CONSUMER_CIDR_FMT="173.168.%s.0/24"
+    local CONSUMER_SNET="173.168.0.0/16"
+
+    local LEFT_GW_FMT="1.1.%s.1"
+    local LEFT_CIDR_FMT="1.1.%s.0/24"
+
+    local RIGHT_GW_FMT="2.2.%s.1"
+    local RIGHT_CIDR_FMT="2.2.%s.0/24"
+
+    local TRANSIT_GW="192.168.1.1"
+    local TRANSIT_CIDR="192.168.1.0/24"
+    local PROV_BACK_TRANS_IP="192.168.1.10"
+    local CONS_BACK_TRANS_IP="192.168.1.30"
     # Create left and right networks
     # Create routers to set VRF
-    create_router $PROJECT "LEFT-CONS-ROUTER"
-    LEFT_ROUTER_ID=${CREATED_ROUTERS[-1]}
-    create_router $PROJECT "RIGHT-PROV-ROUTER"
-    RIGHT_ROUTER_ID=${CREATED_ROUTERS[-1]}
+    create_router $PROJECT "VRF-ROUTER"
+    ROUTER_ID=${CREATED_ROUTERS[-1]}
     for ((i=1; i<=NODES; i++)); do
+        local LEFT_GW=`printf ${LEFT_GW_FMT} ${i}`
+        local LEFT_CIDR=`printf ${LEFT_CIDR_FMT} ${i}`
         create_network $PROJECT "left-${i}" ""
         LEFT_ID=${CREATED_NETWORKS[-1]}
-        create_subnet $PROJECT $LEFT_ID "1.1.${i}.1" "1.1.${i}.0/24" "--host-route destination=172.168.0.0/16,gateway=1.1.${i}.1"
+        create_subnet $PROJECT $LEFT_ID $LEFT_GW $LEFT_CIDR "--host-route destination=${CONSUMER_SNET},gateway=${LEFT_GW}"
         LEFT_S_ID=${CREATED_SUBNETS[-1]}
-        add_subnets_to_router $PROJECT $LEFT_ROUTER_ID $LEFT_S_ID
+        add_subnets_to_router $PROJECT $ROUTER_ID $LEFT_S_ID
+
+        local RIGHT_GW=`printf ${RIGHT_GW_FMT} ${i}`
+        local RIGHT_CIDR=`printf ${RIGHT_CIDR_FMT} ${i}`
         create_network $PROJECT "right-${i}" ""
         RIGHT_ID=${CREATED_NETWORKS[-1]}
-        create_subnet $PROJECT $RIGHT_ID "2.2.${i}.1" "2.2.${i}.0/24" "--host-route destination=173.168.0.0/16,gateway=2.2.${i}.1"
+        create_subnet $PROJECT $RIGHT_ID $RIGHT_GW $RIGHT_CIDR "--host-route destination=${PROVIDER_SNET},gateway=${RIGHT_GW}"
         RIGHT_S_ID=${CREATED_SUBNETS[-1]}
-        add_subnets_to_router $PROJECT $RIGHT_ROUTER_ID $RIGHT_S_ID
+        add_subnets_to_router $PROJECT $ROUTER_ID $RIGHT_S_ID
         # Create service VM
         create_port $PROJECT $LEFT_ID "--no-security-group --disable-port-security"
         LEFT_PORT_ID=${CREATED_PORTS[-1]}
@@ -302,47 +324,48 @@ function test_north_south {
         create_port_pair $PROJECT $LEFT_PORT_ID $RIGHT_PORT_ID
         create_port_pair_group $PROJECT ${CREATED_PORT_PAIRS[-1]}
     done
-    # Create SVI Provider network
-    create_network $PROJECT "provider" "--provider:network_type vlan --apic:svi True"
-    PROV_ID=${CREATED_NETWORKS[-1]}
-    create_subnet $PROJECT $PROV_ID "192.168.1.1" "192.168.1.0/24" "--host-route destination=172.168.0.0/24,gateway=192.168.1.1"
-    PROV_S_ID=${CREATED_SUBNETS[-1]}
-    add_subnets_to_router $PROJECT $RIGHT_ROUTER_ID $PROV_S_ID
+    # Create SVI transit network
+    create_network $PROJECT "transit" "--provider:network_type vlan --apic:svi True"
+    TRANS_ID=${CREATED_NETWORKS[-1]}
+    create_subnet $PROJECT $TRANS_ID $TRANSIT_GW $TRANSIT_CIDR \
+    "--host-route destination=${PROVIDER_SNET},gateway=${TRANSIT_GW} --host-route destination=${CONSUMER_SNET},gateway=${TRANSIT_GW}"
+    TRANS_S_ID=${CREATED_SUBNETS[-1]}
+    add_subnets_to_router $PROJECT $ROUTER_ID $TRANS_S_ID
     create_network $PROJECT "prov-back1" ""
     PROV_BACK_ID=${CREATED_NETWORKS[-1]}
-    create_subnet $PROJECT $PROV_BACK_ID "172.168.1.1" "172.168.1.0/24"
+    local PROVIDER_GW=`printf ${PROVIDER_GW_FMT} "1"`
+    local PROVIDER_CIDR=`printf ${PROVIDER_CIDR_FMT} "1"`
+    create_subnet $PROJECT $PROV_BACK_ID $PROVIDER_GW $PROVIDER_CIDR
     PROV_BACK_S_ID=${CREATED_SUBNETS[-1]}
     # Create Provider side routing VM (NAT)
-    create_port $PROJECT $PROV_ID "--no-security-group --disable-port-security"
+    create_port $PROJECT $TRANS_ID "--no-security-group --disable-port-security --fixed-ip subnet=$TRANS_S_ID,ip-address=${PROV_BACK_TRANS_IP}"
     PROV_PORT_ID=${CREATED_PORTS[-1]}
-    create_port $PROJECT $PROV_BACK_ID "--no-security-group --disable-port-security --fixed-ip subnet=$PROV_BACK_S_ID,ip-address=172.168.1.1"
+    create_port $PROJECT $PROV_BACK_ID "--no-security-group --disable-port-security --fixed-ip subnet=$PROV_BACK_S_ID,ip-address=${PROVIDER_GW}"
     PROV_BACK_PORT_ID=${CREATED_PORTS[-1]}
     create_vm $PROJECT "" "$PROV_PORT_ID,$PROV_BACK_PORT_ID" $MULTI_NIC_IMG_NAME $FLAVOR_NAME "prov-router"
-
-    # Create SVI Consumer network
     create_vm $PROJECT "$PROV_BACK_ID" "" $TRAFFIC_IMG_NAME $FLAVOR_NAME "provider"
-    create_network $PROJECT "consumer" "--provider:network_type vlan --apic:svi True"
-    CONS_ID=${CREATED_NETWORKS[-1]}
-    create_subnet $PROJECT $CONS_ID "192.168.0.1" "192.168.0.0/24" "--host-route destination=172.168.1.0/24,gateway=192.168.0.1"
-    CONS_S_ID=${CREATED_SUBNETS[-1]}
-    add_subnets_to_router $PROJECT $LEFT_ROUTER_ID $CONS_S_ID
 
+    local CONS_PORTS=""
     for ((i=1; i<=CONSUMERS; i++)); do
         # Create backend networks. These networks simulate the customer sites. Create more than one on the consumer side to test multi-site and multi-classifier chains.
+        local CONSUMER_GW=`printf ${CONSUMER_GW_FMT} ${i}`
+        local CONSUMER_CIDR=`printf ${CONSUMER_CIDR_FMT} ${i}`
         create_network $PROJECT "cons-back${i}" ""
         CONS_BACK_ID=${CREATED_NETWORKS[-1]}
-        create_subnet $PROJECT $CONS_BACK_ID "173.168.${i}.1" "173.168.${i}.0/24"
+        create_subnet $PROJECT $CONS_BACK_ID $CONSUMER_GW $CONSUMER_CIDR
         CONS_BACK_S_ID=${CREATED_SUBNETS[-1]}
-        create_flow_classifier $PROJECT "172.168.1.0/24" "173.168.${i}.0/24" $PROV_ID $CONS_ID
-        # Create Consumer side routing VM (BRAS)
-        create_port $PROJECT $CONS_ID "--no-security-group --disable-port-security"
-        CONS_PORT_ID=${CREATED_PORTS[-1]}
-        create_port $PROJECT $CONS_BACK_ID "--no-security-group --disable-port-security --fixed-ip subnet=$CONS_BACK_S_ID,ip-address=173.168.${i}.1"
+        # Provider and Consumer networks are the same
+        create_flow_classifier $PROJECT $PROVIDER_CIDR $CONSUMER_CIDR $TRANS_ID $TRANS_ID
+        create_port $PROJECT $CONS_BACK_ID "--no-security-group --disable-port-security --fixed-ip subnet=$CONS_BACK_S_ID,ip-address=$CONSUMER_GW"
         CONS_BACK_PORT_ID=${CREATED_PORTS[-1]}
-        create_vm $PROJECT "" "$CONS_PORT_ID,$CONS_BACK_PORT_ID" $MULTI_NIC_IMG_NAME $FLAVOR_NAME "cons-router-${i}"
+        CONS_PORTS+=",${CONS_BACK_PORT_ID}"
         # Create Consumer Back VM
         create_vm $PROJECT "$CONS_BACK_ID" "" $TRAFFIC_IMG_NAME $FLAVOR_NAME "consumer-${i}"
     done
+    # Create Consumer side routing VM (BRAS)
+    create_port $PROJECT $TRANS_ID "--no-security-group --disable-port-security --fixed-ip subnet=$TRANS_S_ID,ip-address=${CONS_BACK_TRANS_IP}"
+    CONS_PORT_ID=${CREATED_PORTS[-1]}
+    create_vm $PROJECT "" "${CONS_PORT_ID}${CONS_PORTS}" $MULTI_NIC_IMG_NAME $FLAVOR_NAME "cons-router"
     # Create Service Chain
     create_port_chain_with_all $PROJECT
     set +o xtrace
