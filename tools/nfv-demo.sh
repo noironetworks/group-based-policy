@@ -384,18 +384,18 @@ function demo {
     create_subnet $PEETS $PEETS_NET_ID "192.168.0.1" "192.168.0.0/24" ""; PEETS_SUB_ID=${CREATED_SUBNETS[-1]}
     # Pre allocate secondary IPs
     create_svi_ports $PEETS $PEETS_NET_ID $PEETS_SUB_ID "192.168.0"
-    echo "Phase 2: Peets transit SVI network created."
+    echo "Peets transit SVI network created."
     # BRAS1 Subport
-    create_port $PEETS "BRAS1-PEET-SUBPORT" $PEETS_NET_ID "--no-security-group --disable-port-security"; BRAS1_SUBPORT_ID=${CREATED_PORTS[-1]}
+    create_port $PEETS "BRAS1-PEET-SUBPORT" $PEETS_NET_ID "--no-security-group --disable-port-security --mac-address fa:16:3e:bc:d5:37"; BRAS1_SUBPORT_ID=${CREATED_PORTS[-1]}
     # Add Subport to Trunk
     add_trunk_subport $ADMIN $BRAS1_TRUNK_ID $BRAS1_SUBPORT_ID 10
     # BRAS2 Subport
-    create_port $PEETS "BRAS2-PEET-SUBPORT" $PEETS_NET_ID "--no-security-group --disable-port-security"; BRAS2_SUBPORT_ID=${CREATED_PORTS[-1]}
+    create_port $PEETS "BRAS2-PEET-SUBPORT" $PEETS_NET_ID "--no-security-group --disable-port-security --mac-address fa:16:3e:bc:d5:38"; BRAS2_SUBPORT_ID=${CREATED_PORTS[-1]}
     echo "BRAS connected to Peets transit network via subinterface."
     # Add Subport to Trunk
     add_trunk_subport $ADMIN $BRAS2_TRUNK_ID $BRAS2_SUBPORT_ID 10
     # NAT Subport
-    create_port $PEETS "NAT-PEET-SUBPORT" $PEETS_NET_ID "--no-security-group --disable-port-security"; NAT_SUBPORT_ID=${CREATED_PORTS[-1]}
+    create_port $PEETS "NAT-PEET-SUBPORT" $PEETS_NET_ID "--no-security-group --disable-port-security --mac-address fa:16:3e:1b:a1:a1"; NAT_SUBPORT_ID=${CREATED_PORTS[-1]}
     # Add Peets subnet to router
     add_subnets_to_router $PEETS $PEETS_ROUTER_ID $PEETS_SUB_ID
     # Add Subport to Trunk
@@ -419,7 +419,7 @@ function demo {
     # Create Service Networks: Service 1, RIGHT (Provider Side) network
     create_network $PEETS "RIGHT-1" ""; RIGHT_ID=${CREATED_NETWORKS[-1]}
     # Create RIGHT network subnet
-    create_subnet $PEETS $RIGHT_ID "2.2.0.1" "2.2.0.0/24" "--host-route destination=0.0.0.0/0,gateway=2.2.0.1"; RIGHT_S_ID=${CREATED_SUBNETS[-1]}
+    create_subnet $PEETS $RIGHT_ID "2.2.0.1" "2.2.0.0/24" "--host-route destination=0.0.0.0/1,gateway=2.2.0.1 --host-route destination=128.0.0.0/1,gateway=2.2.0.1"; RIGHT_S_ID=${CREATED_SUBNETS[-1]}
     echo "Left and Right networks created for service 1."
     # Attach subnet to router
     add_subnets_to_router $PEETS $PEETS_ROUTER_ID $RIGHT_S_ID
@@ -430,7 +430,6 @@ function demo {
     echo "Creating Service 1..."
     create_vm $PEETS "SERVICE-1" "$SERVICE1_INGRESS_PORT_ID,$SERVICE1_EGRESS_PORT_ID" "ServiceImage1" "medium"
     echo "Service 1 created."
-    read -n 1 -s;echo
     # Create Flow Classifier for Site1
     create_flow_classifier $PEETS "PEETS-SITE1-INTERNET" "0.0.0.0/0" "10.0.1.0/24" $PEETS_NET_ID $PEETS_NET_ID; PEET_FLC1=${CREATED_FLOW_CLASSIFIERS[-1]}
     echo "Flow Classifier for Peets site 1 created"
@@ -448,7 +447,7 @@ function demo {
     add_subnets_to_router $PEETS $PEETS_ROUTER_ID $LEFT_S_ID
     # Create Service Networks: Service 2, RIGHT (Consumer Side) network
     create_network $PEETS "RIGHT-2" ""; RIGHT_ID=${CREATED_NETWORKS[-1]}
-    create_subnet $PEETS $RIGHT_ID "4.4.0.1" "4.4.0.0/24" "--host-route destination=0.0.0.0/0,gateway=4.4.0.1"; RIGHT_S_ID=${CREATED_SUBNETS[-1]}
+    create_subnet $PEETS $RIGHT_ID "4.4.0.1" "4.4.0.0/24" "--host-route destination=0.0.0.0/1,gateway=4.4.0.1 --host-route destination=128.0.0.0/1,gateway=4.4.0.1"; RIGHT_S_ID=${CREATED_SUBNETS[-1]}
     add_subnets_to_router $PEETS $PEETS_ROUTER_ID $RIGHT_S_ID
     echo "Left and Right networks created for service cluster 2."
     echo "Creating three service VMs for cluster 2..."
@@ -471,7 +470,7 @@ function demo {
     create_subnet $PEETS $LEFT_ID "5.5.0.1" "5.5.0.0/24" "--host-route destination=10.0.0.0/16,gateway=5.5.0.1"; LEFT_S_ID=${CREATED_SUBNETS[-1]}
     add_subnets_to_router $PEETS $PEETS_ROUTER_ID $LEFT_S_ID
     create_network $PEETS "RIGHT-3" ""; RIGHT_ID=${CREATED_NETWORKS[-1]}
-    create_subnet $PEETS $RIGHT_ID "6.6.0.1" "6.6.0.0/24" "--host-route destination=0.0.0.0/0,gateway=6.6.0.1"; RIGHT_S_ID=${CREATED_SUBNETS[-1]}
+    create_subnet $PEETS $RIGHT_ID "6.6.0.1" "6.6.0.0/24" "--host-route destination=0.0.0.0/1,gateway=6.6.0.1 --host-route destination=128.0.0.0/1,gateway=6.6.0.1"; RIGHT_S_ID=${CREATED_SUBNETS[-1]}
     add_subnets_to_router $PEETS $PEETS_ROUTER_ID $RIGHT_S_ID
     echo "Left and Right networks created for service cluster 3."
     create_port $PEETS "SERVICE3-INGRESS" $LEFT_ID "--no-security-group --disable-port-security --fixed-ip subnet=${LEFT_S_ID},ip-address=5.5.0.11"; SERVICE3_INGRESS_PORT_ID=${CREATED_PORTS[-1]}
@@ -513,15 +512,15 @@ function demo {
     # Pre allocate secondary IPs
     create_svi_ports $STARBUCKS $STARBUCKS_NET_ID $STARBUCKS_SUB_ID "192.168.0"
     # BRAS1 Subport
-    create_port $STARBUCKS "BRAS1-STARBUCKS-SUBPORT" $STARBUCKS_NET_ID "--no-security-group --disable-port-security"; BRAS1_SUBPORT_ID=${CREATED_PORTS[-1]}
+    create_port $STARBUCKS "BRAS1-STARBUCKS-SUBPORT" $STARBUCKS_NET_ID "--no-security-group --disable-port-security --mac-address fa:16:3e:4e:20:5d"; BRAS1_SUBPORT_ID=${CREATED_PORTS[-1]}
     # Add Subport to Trunk
     add_trunk_subport $ADMIN $BRAS1_TRUNK_ID $BRAS1_SUBPORT_ID 20
     # BRAS2 Subport
-    create_port $STARBUCKS "BRAS2-STARBUCKS-SUBPORT" $STARBUCKS_NET_ID "--no-security-group --disable-port-security"; BRAS2_SUBPORT_ID=${CREATED_PORTS[-1]}
+    create_port $STARBUCKS "BRAS2-STARBUCKS-SUBPORT" $STARBUCKS_NET_ID "--no-security-group --disable-port-security --mac-address fa:16:3e:4e:20:5e"; BRAS2_SUBPORT_ID=${CREATED_PORTS[-1]}
     # Add Subport to Trunk
     add_trunk_subport $ADMIN $BRAS2_TRUNK_ID $BRAS2_SUBPORT_ID 20
     # NAT Subport
-    create_port $STARBUCKS "NAT-STARBUCKS-SUBPORT" $STARBUCKS_NET_ID "--no-security-group --disable-port-security"; NAT_SUBPORT_ID=${CREATED_PORTS[-1]}
+    create_port $STARBUCKS "NAT-STARBUCKS-SUBPORT" $STARBUCKS_NET_ID "--no-security-group --disable-port-security --mac-address fa:16:3e:66:ee:38"; NAT_SUBPORT_ID=${CREATED_PORTS[-1]}
     # Add Starbucks subnet to router
     add_subnets_to_router $STARBUCKS $STARBUCKS_ROUTER_ID $STARBUCKS_SUB_ID
     # Add Subport to Trunk
@@ -536,7 +535,7 @@ function demo {
     create_subnet $STARBUCKS $LEFT_ID "1.1.0.1" "1.1.0.0/24" "--host-route destination=10.0.0.0/16,gateway=1.1.0.1"; LEFT_S_ID=${CREATED_SUBNETS[-1]}
     add_subnets_to_router $STARBUCKS $STARBUCKS_ROUTER_ID $LEFT_S_ID
     create_network $STARBUCKS "RIGHT-1" ""; RIGHT_ID=${CREATED_NETWORKS[-1]}
-    create_subnet $STARBUCKS $RIGHT_ID "2.2.0.1" "2.2.0.0/24" "--host-route destination=0.0.0.0/0,gateway=2.2.0.1"; RIGHT_S_ID=${CREATED_SUBNETS[-1]}
+    create_subnet $STARBUCKS $RIGHT_ID "2.2.0.1" "2.2.0.0/24" "--host-route destination=0.0.0.0/1,gateway=2.2.0.1 --host-route destination=128.0.0.0/1,gateway=2.2.0.1"; RIGHT_S_ID=${CREATED_SUBNETS[-1]}
     add_subnets_to_router $STARBUCKS $STARBUCKS_ROUTER_ID $RIGHT_S_ID
     create_port $STARBUCKS "SERVICE1-INGRESS" $LEFT_ID "--no-security-group --disable-port-security --fixed-ip subnet=${LEFT_S_ID},ip-address=1.1.0.11"; SERVICE1_INGRESS_PORT_ID=${CREATED_PORTS[-1]}
     create_port $STARBUCKS "SERVICE1-EGRESS" $RIGHT_ID "--no-security-group --disable-port-security --fixed-ip subnet=${RIGHT_S_ID},ip-address=2.2.0.11"; SERVICE1_EGRESS_PORT_ID=${CREATED_PORTS[-1]}
