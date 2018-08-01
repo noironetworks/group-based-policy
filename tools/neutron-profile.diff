@@ -1,0 +1,192 @@
+diff --git a/neutron/api/v2/base.py b/neutron/api/v2/base.py
+index 9311795..8135afb 100644
+--- a/neutron/api/v2/base.py
++++ b/neutron/api/v2/base.py
+@@ -53,6 +53,24 @@ FAULT_MAP = {exceptions.NotFound: webob.exc.HTTPNotFound,
+              }
+ 
+ 
++from contextlib import contextmanager
++
++
++@contextmanager
++def profile(func_name):
++    import cProfile, pstats, StringIO
++    pr = cProfile.Profile()
++    pr.enable()
++    yield
++    pr.disable()
++    s = StringIO.StringIO()
++    ps = pstats.Stats(pr, stream=s).sort_stats('cumulative', 'time')
++    ps.print_stats()
++    header = '#### Profiled %s ####\n' % func_name
++    trailer = '#### End ####'
++    LOG.info(header + s.getvalue() + trailer)
++
++
+ class Controller(object):
+     LIST = 'list'
+     SHOW = 'show'
+@@ -256,7 +274,8 @@ class Controller(object):
+                                name,
+                                resource,
+                                pluralized=self._collection)
+-                ret_value = getattr(self._plugin, name)(*arg_list, **kwargs)
++                with profile(name):
++                    ret_value = getattr(self._plugin, name)(*arg_list, **kwargs)
+                 # It is simply impossible to predict whether one of this
+                 # actions alters resource usage. For instance a tenant port
+                 # is created when a router interface is added. Therefore it is
+@@ -306,7 +325,8 @@ class Controller(object):
+         if parent_id:
+             kwargs[self._parent_id_name] = parent_id
+         obj_getter = getattr(self._plugin, self._plugin_handlers[self.LIST])
+-        obj_list = obj_getter(request.context, **kwargs)
++        with profile(self._plugin_handlers[self.LIST]):
++            obj_list = obj_getter(request.context, **kwargs)
+         obj_list = sorting_helper.sort(obj_list)
+         obj_list = pagination_helper.paginate(obj_list)
+         # Check authz
+@@ -349,7 +369,8 @@ class Controller(object):
+         if parent_id:
+             kwargs[self._parent_id_name] = parent_id
+         obj_getter = getattr(self._plugin, action)
+-        obj = obj_getter(request.context, id, **kwargs)
++        with profile(action):
++            obj = obj_getter(request.context, id, **kwargs)
+         # Check authz
+         # FIXME(salvatore-orlando): obj_getter might return references to
+         # other resources. Must check authZ on them too.
+@@ -522,7 +543,8 @@ class Controller(object):
+                         kwargs.update({self._collection: body})
+                     else:
+                         kwargs.update({self._resource: body})
+-                    return obj_creator(request.context, **kwargs)
++                    with profile(action):
++                        return obj_creator(request.context, **kwargs)
+             except Exception:
+                 # In case of failure the plugin will always raise an
+                 # exception. Cancel the reservation
+@@ -587,7 +609,8 @@ class Controller(object):
+             raise webob.exc.HTTPNotFound(msg)
+ 
+         obj_deleter = getattr(self._plugin, action)
+-        obj_deleter(request.context, id, **kwargs)
++        with profile(action):
++            obj_deleter(request.context, id, **kwargs)
+         # A delete operation usually alters resource usage, so mark affected
+         # usage trackers as dirty
+         resource_registry.set_resources_dirty(request.context)
+@@ -662,7 +685,8 @@ class Controller(object):
+         kwargs = {self._resource: body}
+         if parent_id:
+             kwargs[self._parent_id_name] = parent_id
+-        obj = obj_updater(request.context, id, **kwargs)
++        with profile(action):
++            obj = obj_updater(request.context, id, **kwargs)
+         # Usually an update operation does not alter resource usage, but as
+         # there might be side effects it might be worth checking for changes
+         # in resource usage here as well (e.g: a tenant port is created when a
+diff --git a/neutron/pecan_wsgi/controllers/resource.py b/neutron/pecan_wsgi/controllers/resource.py
+index 67204a4..6d1c4f6 100644
+--- a/neutron/pecan_wsgi/controllers/resource.py
++++ b/neutron/pecan_wsgi/controllers/resource.py
+@@ -23,6 +23,23 @@ from neutron.pecan_wsgi.controllers import utils
+ 
+ LOG = logging.getLogger(__name__)
+ 
++from contextlib import contextmanager
++
++
++@contextmanager
++def profile(func_name):
++    import cProfile, pstats, StringIO
++    pr = cProfile.Profile()
++    pr.enable()
++    yield
++    pr.disable()
++    s = StringIO.StringIO()
++    ps = pstats.Stats(pr, stream=s).sort_stats('cumulative', 'time')
++    ps.print_stats()
++    header = '#### Profiled %s ####\n' % func_name
++    trailer = '#### End ####'
++    LOG.info(header + s.getvalue() + trailer)
++
+ 
+ class ItemController(utils.NeutronPecanController):
+ 
+@@ -47,7 +64,9 @@ class ItemController(utils.NeutronPecanController):
+         if 'parent_id' in request.context:
+             getter_args.append(request.context['parent_id'])
+         fields = request.context['query_params'].get('fields')
+-        return {self.resource: self.plugin_shower(*getter_args, fields=fields)}
++        with profile(self.plugin_shower.__name__):
++            return {self.resource: self.plugin_shower(*getter_args,
++                                                      fields=fields)}
+ 
+     @utils.when(index, method='HEAD')
+     @utils.when(index, method='POST')
+@@ -67,7 +86,8 @@ class ItemController(utils.NeutronPecanController):
+         if 'parent_id' in request.context:
+             updater_args.append(request.context['parent_id'])
+         updater_args.append(data)
+-        return {self.resource: self.plugin_updater(*updater_args)}
++        with profile(self.plugin_updater.__name__):
++            return {self.resource: self.plugin_updater(*updater_args)}
+ 
+     @utils.when_delete(index)
+     def delete(self):
+@@ -75,7 +95,8 @@ class ItemController(utils.NeutronPecanController):
+         deleter_args = [neutron_context, self.item]
+         if 'parent_id' in request.context:
+             deleter_args.append(request.context['parent_id'])
+-        return self.plugin_deleter(*deleter_args)
++        with profile(self.plugin_deleter.__name__):
++            return self.plugin_deleter(*deleter_args)
+ 
+     @utils.expose()
+     def _lookup(self, collection, *remainder):
+@@ -134,8 +155,9 @@ class CollectionsController(utils.NeutronPecanController):
+         lister_args = [neutron_context]
+         if 'parent_id' in request.context:
+             lister_args.append(request.context['parent_id'])
+-        return {self.collection: self.plugin_lister(*lister_args,
+-                **query_params)}
++        with profile(self.plugin_lister.__name__):
++            return {self.collection: self.plugin_lister(*lister_args,
++                    **query_params)}
+ 
+     @utils.when(index, method='HEAD')
+     @utils.when(index, method='PATCH')
+@@ -167,7 +189,8 @@ class CollectionsController(utils.NeutronPecanController):
+         creator_args = [neutron_context]
+         if 'parent_id' in request.context and self._parent_id_name:
+             creator_kwargs[self._parent_id_name] = request.context['parent_id']
+-        return {key: creator(*creator_args, **creator_kwargs)}
++        with profile(creator.__name__):
++            return {key: creator(*creator_args, **creator_kwargs)}
+ 
+ 
+ class MemberActionController(ItemController):
+@@ -201,7 +224,8 @@ class MemberActionController(ItemController):
+         neutron_context = request.context['neutron_context']
+         # NOTE(blogan): The legacy wsgi code did not pass fields to the plugin
+         # on GET member actions.  To maintain compatibility, we'll do the same.
+-        return self.plugin_shower(neutron_context, self.item)
++        with profile(self.plugin_shower.__name__):
++            return self.plugin_shower(neutron_context, self.item)
+ 
+     @utils.when(index, method='PUT')
+     def put(self, *args, **kwargs):
+@@ -217,8 +241,9 @@ class MemberActionController(ItemController):
+                   {'action': self._update_action,
+                    'resource': self.resource,
+                    'item': self.item})
+-        return self.plugin_updater(neutron_context, self.item,
+-                                   request.context['request_data'])
++        with profile(self.plugin_updater.__name__):
++            return self.plugin_updater(neutron_context, self.item,
++                                       request.context['request_data'])
+ 
+     @utils.when(index, method='HEAD')
+     @utils.when(index, method='POST')
