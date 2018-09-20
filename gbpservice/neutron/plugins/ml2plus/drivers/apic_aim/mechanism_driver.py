@@ -405,9 +405,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=dname,
             direction='ingress',
             ethertype='ipv6',
-            ip_protocol='icmpv6',
-            remote_ips=['::/0'])
+            ip_protocol='icmpv6')
         self.aim.create(aim_ctx, icmp6_ingress_rule, overwrite=True)
+        aim_sg_rule = self.aim.get(aim_ctx, icmp6_ingress_rule,
+                                   include_aim_id=True)
+        sg_r_ip = aim_resource.SecurityGroupRuleRemoteIp(
+            security_group_rule_aim_id=aim_sg_rule._aim_id, cidr='::/0')
+        self.aim.create(aim_ctx, sg_r_ip, overwrite=True)
 
     def _setup_keystone_notification_listeners(self):
         targets = [oslo_messaging.Target(
@@ -1836,7 +1840,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 security_group_name=sg_rule['security_group_id'],
                 security_group_subject_name='default',
                 name=sg_rule['id'])
-            aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim)
+            aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim, include_aim_id=True)
             if not aim_sg_rule:
                 continue
             ip_version = 0
@@ -1844,15 +1848,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 ip_version = 4
             elif sg_rule['ethertype'] == 'IPv6':
                 ip_version = 6
+            remote_ips = [ip.cidr for ip in
+                self.aim.find(aim_ctx, aim_resource.SecurityGroupRuleRemoteIp,
+                    security_group_rule_aim_id=aim_sg_rule._aim_id)]
             for fixed_ip in fixed_ips:
+                sg_r_ip = aim_resource.SecurityGroupRuleRemoteIp(
+                    security_group_rule_aim_id=aim_sg_rule._aim_id,
+                    cidr=fixed_ip)
                 if is_delete:
-                    if fixed_ip in aim_sg_rule.remote_ips:
-                        aim_sg_rule.remote_ips.remove(fixed_ip)
+                    if fixed_ip in remote_ips:
+                        self.aim.delete(aim_ctx, sg_r_ip)
+                        remote_ips.remove(fixed_ip)
                 elif ip_version == netaddr.IPAddress(fixed_ip).version:
-                    if fixed_ip not in aim_sg_rule.remote_ips:
-                        aim_sg_rule.remote_ips.append(fixed_ip)
-            self.aim.update(aim_ctx, sg_rule_aim,
-                            remote_ips=aim_sg_rule.remote_ips)
+                    if fixed_ip not in remote_ips:
+                        self.aim.create(aim_ctx, sg_r_ip)
+                        remote_ips.append(fixed_ip)
 
     def create_port_precommit(self, context):
         port = context.current
@@ -1958,13 +1968,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 ethertype=sg_rule['ethertype'].lower(),
                 ip_protocol=(sg_rule['protocol'] if sg_rule['protocol']
                              else 'unspecified'),
-                remote_ips=(sg_rule['remote_ip_prefix']
-                            if sg_rule['remote_ip_prefix'] else ''),
                 from_port=(sg_rule['port_range_min']
                            if sg_rule['port_range_min'] else 'unspecified'),
                 to_port=(sg_rule['port_range_max']
                          if sg_rule['port_range_max'] else 'unspecified'))
             self.aim.create(aim_ctx, sg_rule_aim)
+            aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim, include_aim_id=True)
+            cidr = (sg_rule['remote_ip_prefix']
+                    if sg_rule['remote_ip_prefix'] else '')
+            sg_r_ip = aim_resource.SecurityGroupRuleRemoteIp(
+                security_group_rule_aim_id=aim_sg_rule._aim_id, cidr=cidr)
+            self.aim.create(aim_ctx, sg_r_ip)
 
     def update_security_group_precommit(self, context):
         # Only display_name change makes sense here
@@ -2031,12 +2045,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ethertype=sg_rule['ethertype'].lower(),
             ip_protocol=(sg_rule['protocol'] if sg_rule['protocol']
                          else 'unspecified'),
-            remote_ips=remote_ips,
             from_port=(sg_rule['port_range_min']
                        if sg_rule['port_range_min'] else 'unspecified'),
             to_port=(sg_rule['port_range_max']
                      if sg_rule['port_range_max'] else 'unspecified'))
         self.aim.create(aim_ctx, sg_rule_aim)
+        aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim, include_aim_id=True)
+        for remote_ip in remote_ips:
+            sg_r_ip = aim_resource.SecurityGroupRuleRemoteIp(
+                security_group_rule_aim_id=aim_sg_rule._aim_id, cidr=remote_ip)
+            self.aim.create(aim_ctx, sg_r_ip)
 
     def delete_security_group_rule_precommit(self, context):
         session = context._plugin_context.session
@@ -2049,6 +2067,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             security_group_name=sg_rule['security_group_id'],
             security_group_subject_name='default',
             name=sg_rule['id'])
+        aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim, include_aim_id=True)
+        sg_r_ips = self.aim.find(aim_ctx, aim_resource.SecurityGroupRuleRemoteIp,
+                security_group_rule_aim_id=aim_sg_rule._aim_id)
+        for sg_r_ip in sg_r_ips:
+            self.aim.delete(aim_ctx, sg_r_ip)
         self.aim.delete(aim_ctx, sg_rule_aim)
 
     def delete_port_postcommit(self, context):
