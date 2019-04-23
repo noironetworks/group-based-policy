@@ -5,7 +5,7 @@
 # default:
 # pip install {opts} {packages}
 
-DIR=/home/zuul/src/git.openstack.org/openstack/requirements
+DIR=/home/zuul/src/opendev.org/openstack/requirements
 if [ -d "$DIR" ]; then
     pushd $DIR
     git checkout stable/queens
