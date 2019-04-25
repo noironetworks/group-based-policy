@@ -56,6 +56,7 @@ class NovaClient(object):
                            'deleted': 'false'}
         try:
             return self.client.servers.list(detailed=False,
-                                            search_opts=search_opts)
+                                            search_opts=search_opts,
+                                            limit=-1)
         except Exception as e:
             LOG.exception(e)
