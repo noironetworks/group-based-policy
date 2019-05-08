@@ -150,13 +150,15 @@ class KeystoneNotificationEndpoint(object):
         self._dvs_notifier = None
 
     def info(self, ctxt, publisher_id, event_type, payload, metadata):
-        LOG.debug("Keystone notification getting called!")
-
         tenant_id = payload.get('resource_info')
         # malformed notification?
         if not tenant_id:
             return None
 
+        LOG.info("Keystone notification %(event_type)s received for "
+                 "tenant %(tenant_id)s",
+                 {'event_type': event_type,
+                  'tenant_id': tenant_id})
         if event_type == 'identity.project.updated':
             new_project_name = (self._driver.project_name_cache.
                                 update_project_name(tenant_id))
