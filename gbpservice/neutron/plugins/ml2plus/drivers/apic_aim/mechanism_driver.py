@@ -186,8 +186,11 @@ class KeystoneNotificationEndpoint(object):
             if not self._driver.enable_keystone_notification_purge:
                 return None
 
-            self.tenant = tenant_id
-            self._driver.project_name_cache.purge_gbp(self)
+            # REVISIT(kentwu): we should come up with our own version
+            # of the gbp/neutron purge on the server side instead of
+            # using gbp/neutron client API to do it which is not so
+            # efficient.
+            self._driver.project_name_cache.purge_gbp(tenant_id)
 
             # delete the tenant and AP in AIM also
             session = db_api.get_session()

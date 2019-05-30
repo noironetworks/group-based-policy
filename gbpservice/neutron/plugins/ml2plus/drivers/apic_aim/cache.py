@@ -108,8 +108,13 @@ class ProjectNameCache(object):
         return None
 
     def purge_gbp(self, project_id):
+        class TempArg(object):
+            pass
+
         if self.gbp is None:
             self._get_keystone_client()
         if self.gbp:
             LOG.debug("Calling gbp purge() API")
-            self.gbp.purge(project_id)
+            temp_arg = TempArg()
+            temp_arg.tenant = project_id
+            self.gbp.purge(temp_arg)
