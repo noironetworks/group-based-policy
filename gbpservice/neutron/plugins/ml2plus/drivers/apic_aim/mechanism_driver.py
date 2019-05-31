@@ -22,7 +22,6 @@ import os
 import re
 import sqlalchemy as sa
 from sqlalchemy.ext import baked
-from sqlalchemy import orm
 
 from aim.aim_lib.db import model as aim_lib_model
 from aim.aim_lib import nat_strategy
@@ -5159,10 +5158,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         for sg_id, ip in query(mgr.actual_session):
             sg_ips[sg_id].add(ip)
 
+        # REVISIT: Loading of the SG rules was previously optimized
+        # via options(orm.joinedload('rules')), but this broke when
+        # upstream neutron changed the relationship from
+        # lazy='subquery' to lazy='dynamic'. If there is any way to
+        # override this dynamic loading with eager loading for a
+        # specific query, we may want to do so.
         query = BAKERY(lambda s: s.query(
             sg_models.SecurityGroup))
-        query += lambda q: q.options(
-            orm.joinedload('rules'))
         for sg_db in query(mgr.actual_session):
             # Ignore anonymous SGs, which seem to be a Neutron bug.
             if sg_db.tenant_id:
