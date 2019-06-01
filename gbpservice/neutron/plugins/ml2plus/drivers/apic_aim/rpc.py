@@ -1052,7 +1052,7 @@ class ApicRpcHandlerMixin(object):
         # applications use port_security_enabled=False?
         return (port_info.device_owner in constants.PROMISCUOUS_TYPES or
                 port_info.port_name.endswith(constants.PROMISCUOUS_SUFFIX) or
-                not port_info.psec_enabled)
+                port_info.psec_enabled is False)
 
     def _build_sg_details(self, info):
         return (

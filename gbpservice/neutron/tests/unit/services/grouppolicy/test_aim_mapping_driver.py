@@ -29,6 +29,7 @@ from neutron.callbacks import registry
 from neutron.common import utils as n_utils
 from neutron.db import api as db_api
 from neutron.db.models import securitygroup as sg_models
+from neutron.db.port_security import models as psec_models
 from neutron.extensions import dns
 from neutron.notifiers import nova
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
@@ -5681,6 +5682,30 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                              device_owner='compute:',
                              port_security_enabled=False)['port']
         p3 = self._bind_port_to_host(p3['id'], 'host1')['port']
+        details = self.mech_driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p3['id'],
+            host='host1')
+        self.assertTrue(details['promiscuous_mode'])
+
+        # Test RPC without a PortSecurityBinding record, which should
+        # be equivalent to port_security_enabled being set to
+        # True. This can occur when migrating to the unified plugin
+        # from a configuration that did not include ML2's
+        # port_security extension driver.
+        with self.db_session.begin():
+            psb = (self.db_session.query(psec_models.PortSecurityBinding).
+                   filter_by(port_id=p3['id']).
+                   one())
+            self.db_session.delete(psb)
+        details = self.mech_driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p3['id'],
+            host='host1')
+        self.assertFalse(details['promiscuous_mode'])
+
+        # Test that updating port_security_enabled restores
+        # the missing PortSecurityBinding record.
+        self._update(
+            'ports', p3['id'], {'port': {'port_security_enabled': False}})
         details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p3['id'],
             host='host1')
