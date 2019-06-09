@@ -1,0 +1,23 @@
+# REVISIT: This currently just overrides nodeset and timeout
+# properties needed to enable the check and gate jobs to work in
+# stable/newton. The job definitions should eventually be moved here,
+# as described in
+# https://docs.openstack.org/infra/manual/zuulv3.html#moving-legacy-jobs-to-projects.
+
+- project:
+    name: x/group-based-policy
+    templates:
+      - openstack-python-jobs
+      - publish-to-pypi
+    check:
+      jobs:
+        - openstack-tox-pep8:
+            nodeset: ubuntu-xenial
+        - openstack-tox-py27:
+            nodeset: ubuntu-xenial
+    gate:
+      jobs:
+        - openstack-tox-pep8:
+            nodeset: ubuntu-xenial
+        - openstack-tox-py27:
+            nodeset: ubuntu-xenial
