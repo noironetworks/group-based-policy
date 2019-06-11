@@ -2010,9 +2010,8 @@ class TestAimMapping(ApicAimTestCase):
         # test again with project.deleted event
         self.driver.enable_keystone_notification_purge = True
         keystone_ep.info(None, None, 'identity.project.deleted', payload, None)
-        self.assertEqual(keystone_ep.tenant, 'test-tenant')
         self.driver.project_name_cache.purge_gbp.assert_called_once_with(
-                                                                keystone_ep)
+                                                                'test-tenant')
         tenant = aim_resource.Tenant(name=tenant_name)
         exp_calls = [
             mock.call(mock.ANY, tenant, cascade=True)]
