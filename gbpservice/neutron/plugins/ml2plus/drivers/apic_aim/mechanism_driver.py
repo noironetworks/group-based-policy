@@ -1130,6 +1130,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def extend_subnet_dict_bulk(self, session, results):
         LOG.debug("APIC AIM MD Bulk extending dict for subnet: %s", results)
 
+        if not results:
+            return
         aim_ctx = aim_context.AimContext(session)
         aim_resources = []
         res_dict_by_aim_res_dn = {}
@@ -1141,7 +1143,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # TODO(sridar): Baked query - evaluate across branches,
         # with in_
+        # REVISIT(sridar)
+        # The noload option is being used to override lazy loading
+        # of related tables which seems to create an issue later
+        # during subnet update workflows. The issue manifests as expunge
+        # not removing the object reference in the session identity_map
+        # and an address mismatch between the object and the reference
+        # in the identity_map. The override limits the objects tracked in
+        # the identity_map and fixes the issue. This is being put in as
+        # a workaround pending determination of the root cause.
         networks_db = (session.query(models_v2.Network).
+                       options(orm.noload('subnets')).
                        filter(models_v2.Network.id.in_(net_ids)).all())
         net_map = {network['id']: network for network in networks_db}
 
