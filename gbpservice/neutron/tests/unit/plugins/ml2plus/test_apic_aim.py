@@ -4113,6 +4113,212 @@ class TestTopology(ApicAimTestCase):
             {'port_id': port_id,
              l3_ext.OVERRIDE_NETWORK_ROUTING_TOPOLOGY_VALIDATION: True})
 
+    def test_reject_subnet_overlap(self):
+        # Create two routers.
+        router1_id = self._make_router(
+            self.fmt, 'test-tenant', 'router1')['router']['id']
+        router2_id = self._make_router(
+            self.fmt, 'test-tenant', 'router2')['router']['id']
+
+        # Create two networks.
+        net1_resp = self._make_network(self.fmt, 'net1', True)
+        net2_resp = self._make_network(self.fmt, 'net2', True)
+
+        # Create 4 subnets on 1st network and add to 1st router.
+        subnet1a_id = self._make_subnet(
+            self.fmt, net1_resp, '10.1.0.1', '10.1.0.0/24')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1a_id})
+        subnet1b_id = self._make_subnet(
+            self.fmt, net1_resp, '10.2.0.1', '10.2.0.0/24')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1b_id})
+        subnet1c_id = self._make_subnet(
+            self.fmt, net1_resp, '10.3.0.1', '10.3.0.0/24')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1c_id})
+        subnet1d_id = self._make_subnet(
+            self.fmt, net1_resp, '10.4.0.1', '10.4.0.0/24')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1d_id})
+
+        # Create non-overlapping subnet on 2nd network and add to 2nd router.
+        subnet2a_id = self._make_subnet(
+            self.fmt, net2_resp, '10.1.1.2', '10.1.1.0/24')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2a_id})
+
+        # Verify that adding larger overlapping subnet on 2nd network
+        # to 2nd router is rejected due to overlapping CIDR within the
+        # project's default VRF.
+        subnet2b_id = self._make_subnet(
+            self.fmt, net2_resp, '10.2.0.2', '10.2.0.0/16')['subnet']['id']
+        self.assertRaises(
+            exceptions.SubnetOverlapInRoutedVRF,
+            self.l3_plugin.add_router_interface,
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2b_id})
+
+        # Verify that adding identical overlapping subnet on 2nd
+        # network to 2nd router is rejected due to overlapping CIDR
+        # within the project's default VRF.
+        subnet2c_id = self._make_subnet(
+            self.fmt, net2_resp, '10.3.0.2', '10.3.0.0/24')['subnet']['id']
+        self.assertRaises(
+            exceptions.SubnetOverlapInRoutedVRF,
+            self.l3_plugin.add_router_interface,
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2c_id})
+
+        # Verify that adding smaller overlapping subnet on 2nd network
+        # to 2nd router is rejected due to overlapping CIDR within the
+        # project's default VRF.
+        subnet2d_id = self._make_subnet(
+            self.fmt, net2_resp, '10.4.0.2', '10.4.0.0/26')['subnet']['id']
+        self.assertRaises(
+            exceptions.SubnetOverlapInRoutedVRF,
+            self.l3_plugin.add_router_interface,
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2d_id})
+
+        # Create another non-overlapping subnet on 2nd network and add
+        # to 2nd router, ensuring unrouted subnets are not considered
+        # overlapping.
+        subnet2e_id = self._make_subnet(
+            self.fmt, net2_resp, '10.5.0.2', '10.5.0.0/24')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2e_id})
+
+    def test_reject_moved_subnet_overlap(self):
+        # Create isolated routed topology as tenant_1.
+        router1_id = self._make_router(
+            self.fmt, 'tenant_1', 'router1')['router']['id']
+        net1_resp = self._make_network(
+            self.fmt, 'net1', True, tenant_id='tenant_1')
+        subnet1_id = self._make_subnet(
+            self.fmt, net1_resp, '10.0.1.1', '10.0.1.0/24',
+            tenant_id='tenant_1')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1_id})
+
+        # Create overlapping isolated routed topology as tenant_2.
+        router2_id = self._make_router(
+            self.fmt, 'tenant_2', 'router2')['router']['id']
+        net2_resp = self._make_network(
+            self.fmt, 'net2', True, tenant_id='tenant_2')
+        subnet2_id = self._make_subnet(
+            self.fmt, net2_resp, '10.0.1.1', '10.0.1.0/24',
+            tenant_id='tenant_2')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2_id})
+
+        # Create shared network and non-overlapping subnet as tenant_2.
+        net3_resp = self._make_network(
+            self.fmt, 'net3', True, tenant_id='tenant_2', shared=True)
+        subnet3_id = self._make_subnet(
+            self.fmt, net3_resp, '10.0.3.1', '10.0.3.0/24',
+            tenant_id='tenant_2')['subnet']['id']
+
+        # Verify that adding tenant_2's shared subnet to tenant_1's
+        # topology is rejected due to tenant_1's overlapping CIDR
+        # being moved to tenant_2's default VRF.
+        self.assertRaises(
+            exceptions.SubnetOverlapInRoutedVRF,
+            self.l3_plugin.add_router_interface,
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet3_id})
+
+    def test_reject_moved_back_subnet_overlap(self):
+        # Create isolated routed topology as tenant_1.
+        router1_id = self._make_router(
+            self.fmt, 'tenant_1', 'router1')['router']['id']
+        net1_resp = self._make_network(
+            self.fmt, 'net1', True, tenant_id='tenant_1')
+        subnet1_id = self._make_subnet(
+            self.fmt, net1_resp, '10.0.1.1', '10.0.1.0/24',
+            tenant_id='tenant_1')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1_id})
+
+        # Create shared network and non-overlapping subnet as tenant_2.
+        net2_resp = self._make_network(
+            self.fmt, 'net', True, tenant_id='tenant_2', shared=True)
+        subnet2_id = self._make_subnet(
+            self.fmt, net2_resp, '10.0.2.1', '10.0.2.0/24',
+            tenant_id='tenant_2')['subnet']['id']
+
+        # Create another router as tenant_1 and add subnet shared by tenant_2.
+        router2_id = self._make_router(
+            self.fmt, 'tenant_1', 'router2')['router']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2_id})
+
+        # Create and add subnet that overlaps isolated topology. This
+        # is allowed because router2's topology is using tenant_2's
+        # routed VRF.
+        net3_resp = self._make_network(
+            self.fmt, 'net3', True, tenant_id='tenant_1')
+        subnet3_id = self._make_subnet(
+            self.fmt, net3_resp, '10.0.1.1', '10.0.1.0/24',
+            tenant_id='tenant_1')['subnet']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet3_id})
+
+        # Create yet another router and add the overlapping subnet to
+        # this router too, so the network does not become unrouted
+        # when the subnet is later removed from router2.
+        router3_id = self._make_router(
+            self.fmt, 'tenant_1', 'router3')['router']['id']
+        port_id = self._make_port(
+            self.fmt, net3_resp['network']['id'],
+            fixed_ips=[{'subnet_id': subnet3_id, 'ip_address': '10.0.1.2'}]
+        )['port']['id']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router3_id,
+            {'port_id': port_id})
+
+        # Verify that removing shared subnet from router2 is rejected
+        # due to overlapping CIDR in router topology being moved back
+        # to tenant_1's default VRF.
+        self.assertRaises(
+            exceptions.SubnetOverlapInRoutedVRF,
+            self.l3_plugin.remove_router_interface,
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2_id})
+
+        # Verify that removing overlapping subnet from router2 is
+        # rejected due to overlapping CIDR in interface topology being
+        # moved back to tenant_1's default VRF.
+        self.assertRaises(
+            exceptions.SubnetOverlapInRoutedVRF,
+            self.l3_plugin.remove_router_interface,
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet3_id})
+
+        # Remove the overlapping subnet from router1's isolated
+        # topology.
+        self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1_id})
+
+        # Remove the shared subnet from router2, which is no longer
+        # should result in overlapping CIDRs in tenant_1's default
+        # VRF.
+        self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2_id})
+
     def test_reject_routing_shared_networks_from_different_projects(self):
         # Create router as tenant_1.
         router_id = self._make_router(
