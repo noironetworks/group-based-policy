@@ -85,3 +85,8 @@ class ExternalSubnetNotAllowed(exceptions.BadRequest):
     message = _("Connecting port or subnet which is on external network "
                 "%(network_id)s as a router interface is not allowed. "
                 "External networks can only be used as router gateways.")
+
+
+class SubnetOverlapInRoutedVRF(exceptions.BadRequest):
+    message = _("Subnets %(id1)s (%(cidr1)s) and %(id2)s (%(cidr2)s) mapped "
+                "to %(vrf)s overlap.")
