@@ -6095,12 +6095,55 @@ class TestExternalConnectivityBase(object):
             self._router_interface_action('add', router['id'], sub['id'], None)
         mock_notif.assert_has_calls(port_calls, any_order=True)
 
+        # add, update or delete a snat subnet - expect no notifications
+        mock_notif.reset_mock()
+        ext_sub2 = self._make_subnet(
+            self.fmt, {'network': ext_net1}, '200.200.200.1',
+            '200.200.200.0/24')['subnet']
+        self._update('subnets', ext_sub2['id'],
+                     {'subnet': {SNAT_POOL: True}})
+        mock_notif.assert_not_called()
+
+        self._update('subnets', ext_sub2['id'],
+                     {'subnet': {SNAT_POOL: False}})
+        mock_notif.assert_not_called()
+
+        self._update('subnets', ext_sub2['id'],
+                     {'subnet': {SNAT_POOL: True}})
+        mock_notif.assert_not_called()
+
+        self._delete('subnets', ext_sub2['id'])
+        mock_notif.assert_not_called()
+
         # set external gateway - expect notifications
         mock_notif.reset_mock()
         self._update('routers', router['id'],
                      {'router':
                       {'external_gateway_info': {'network_id':
                                                  ext_net1['id']}}})
+        mock_notif.assert_has_calls(port_calls, any_order=True)
+
+        # add, update or delete a snat subnet - expect notifications
+        mock_notif.reset_mock()
+        ext_sub3 = self._make_subnet(
+            self.fmt, {'network': ext_net1}, '200.200.250.1',
+            '200.200.250.0/24')['subnet']
+        self._update('subnets', ext_sub3['id'],
+                     {'subnet': {SNAT_POOL: True}})
+        mock_notif.assert_has_calls(port_calls, any_order=True)
+
+        mock_notif.reset_mock()
+        self._update('subnets', ext_sub3['id'],
+                     {'subnet': {SNAT_POOL: False}})
+        mock_notif.assert_has_calls(port_calls, any_order=True)
+
+        mock_notif.reset_mock()
+        self._update('subnets', ext_sub3['id'],
+                     {'subnet': {SNAT_POOL: True}})
+        mock_notif.assert_has_calls(port_calls, any_order=True)
+
+        mock_notif.reset_mock()
+        self._delete('subnets', ext_sub3['id'])
         mock_notif.assert_has_calls(port_calls, any_order=True)
 
         # unset external gateway - expect notifications
