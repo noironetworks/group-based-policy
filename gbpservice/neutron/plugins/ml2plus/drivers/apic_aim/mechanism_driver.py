@@ -1003,6 +1003,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         cidr=current['cidr'], l3out=l3out.dn)
             ns.create_subnet(aim_ctx, l3out,
                              self._subnet_to_gw_ip_mask(current))
+            # Send a port update for those existing VMs because
+            # SNAT info has been added.
+            if current[cisco_apic.SNAT_HOST_POOL]:
+                self._notify_existing_vm_ports(context._plugin_context,
+                                               network_id)
 
         # Limit 1 subnet per SVI network as each SVI interface
         # in ACI can only have 1 primary addr
@@ -1054,15 +1059,30 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         is_ext = network_db.external is not None
         session = context._plugin_context.session
 
-        # If subnet is no longer a SNAT pool, check if SNAT IP ports
-        # are allocated
-        if (is_ext and original[cisco_apic.SNAT_HOST_POOL] and
-            not current[cisco_apic.SNAT_HOST_POOL] and
-            self._has_snat_ip_ports(context._plugin_context, current['id'])):
-                raise exceptions.SnatPortsInUse(subnet_id=current['id'])
-
-        if (not is_ext and
-            current['name'] != original['name']):
+        if is_ext:
+            # We have to allow this upon a customer request.
+            if (original[cisco_apic.SNAT_HOST_POOL] !=
+                    current[cisco_apic.SNAT_HOST_POOL]):
+                # If subnet is no longer a SNAT pool, check if SNAT IP ports
+                # are allocated.
+                if (original[cisco_apic.SNAT_HOST_POOL] and
+                        self._has_snat_ip_ports(context._plugin_context,
+                                                current['id'])):
+                    raise exceptions.SnatPortsInUse(subnet_id=current['id'])
+                self._notify_existing_vm_ports(context._plugin_context,
+                                               network_id)
+            if current['gateway_ip'] != original['gateway_ip']:
+                l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
+                                                               network_db)
+                if not ext_net:
+                    return  # Unmanaged external network
+                if original['gateway_ip']:
+                    ns.delete_subnet(aim_ctx, l3out,
+                                     self._subnet_to_gw_ip_mask(original))
+                if current['gateway_ip']:
+                    ns.create_subnet(aim_ctx, l3out,
+                                     self._subnet_to_gw_ip_mask(current))
+        elif current['name'] != original['name']:
             # Nothing to be done for SVI network.
             if self._is_svi(context.network.current):
                 return
@@ -1079,19 +1099,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
                 sn = self._map_subnet(current, gw_ip, bd)
                 self.aim.update(aim_ctx, sn, display_name=dname)
-
-        elif (is_ext and current['gateway_ip'] != original['gateway_ip']):
-
-            l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
-                                                               network_db)
-            if not ext_net:
-                return  # Unmanaged external network
-            if original['gateway_ip']:
-                ns.delete_subnet(aim_ctx, l3out,
-                                 self._subnet_to_gw_ip_mask(original))
-            if current['gateway_ip']:
-                ns.create_subnet(aim_ctx, l3out,
-                                 self._subnet_to_gw_ip_mask(current))
 
     def delete_subnet_precommit(self, context):
         current = context.current
@@ -1110,6 +1117,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return  # Unmanaged external network
             ns.delete_subnet(aim_ctx, l3out,
                              self._subnet_to_gw_ip_mask(current))
+            # Send a port update for those existing VMs because
+            # SNAT info has been deleted.
+            if current[cisco_apic.SNAT_HOST_POOL]:
+                self._notify_existing_vm_ports(context._plugin_context,
+                                               network_id)
 
         if network_db.aim_mapping:
             # Provide VRF notifications if deleting subnets from
@@ -1472,9 +1484,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # with the router will change because router's gateway
                 # changed.
                 sub_ids = self._get_router_interface_subnets(session,
-                                                             current['id'])
-                affected_port_ids = self._get_non_router_ports_in_subnets(
-                    session, sub_ids)
+                                                             [current['id']])
+                affected_port_ids = self._get_compute_dhcp_ports_in_subnets(
+                                                            session, sub_ids)
 
             old_net = self.plugin.get_network(context,
                                               old_net) if old_net else None
@@ -1847,7 +1859,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # SNAT information of ports on the subnet will change because
             # of router interface addition. Send a port update so that it may
             # be recalculated.
-            port_ids = self._get_non_router_ports_in_subnets(
+            port_ids = self._get_compute_dhcp_ports_in_subnets(
                 session,
                 [subnet['id'] for subnet in subnets])
             ports_to_notify.update(port_ids)
@@ -2013,7 +2025,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # SNAT information of ports on the subnet will change because
             # of router interface removal. Send a port update so that it may
             # be recalculated.
-            port_ids = self._get_non_router_ports_in_subnets(
+            port_ids = self._get_compute_dhcp_ports_in_subnets(
                 session,
                 [subnet['id'] for subnet in subnets])
             ports_to_notify.update(port_ids)
@@ -4292,21 +4304,47 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 net_ids.add(seg.network_id)
         return result
 
-    def _get_router_interface_subnets(self, session, router_id):
+    def _notify_existing_vm_ports(self, plugin_context, ext_net_id):
+        session = plugin_context.session
+        router_ids = self._get_router_ids_from_exteral_net(
+                                        session, ext_net_id)
+        sub_ids = self._get_router_interface_subnets(
+                                        session, router_ids)
+        affected_port_ids = self._get_compute_dhcp_ports_in_subnets(
+                                        session, sub_ids)
+        self._notify_port_update_bulk(plugin_context,
+                                      affected_port_ids)
+
+    def _get_router_ids_from_exteral_net(self, session, network_id):
         query = BAKERY(lambda s: s.query(
-            models_v2.IPAllocation.subnet_id))
+            l3_db.RouterPort.router_id))
         query += lambda q: q.join(
-            l3_db.RouterPort,
-            l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
+            models_v2.Port,
+            l3_db.RouterPort.port_id == models_v2.Port.id)
         query += lambda q: q.filter(
-            l3_db.RouterPort.router_id == sa.bindparam('router_id'))
-        query += lambda q: q.distinct()
-        subnet_ids = query(session).params(
-            router_id=router_id)
+            l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_GW)
+        query += lambda q: q.filter(
+            models_v2.Port.network_id == sa.bindparam('network_id'))
+        router_ids = query(session).params(
+            network_id=network_id)
+
+        return [r[0] for r in router_ids]
+
+    def _get_router_interface_subnets(self, session, router_ids):
+        if not router_ids:
+            return []
+
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        subnet_ids = (session.query(models_v2.IPAllocation.subnet_id)
+                     .join(l3_db.RouterPort,
+                           l3_db.RouterPort.port_id ==
+                           models_v2.IPAllocation.port_id)
+                     .filter(l3_db.RouterPort.router_id.in_(router_ids))
+                     .distinct())
 
         return [s[0] for s in subnet_ids]
 
-    def _get_non_router_ports_in_subnets(self, session, subnet_ids):
+    def _get_compute_dhcp_ports_in_subnets(self, session, subnet_ids):
         if not subnet_ids:
             return []
 
@@ -4315,8 +4353,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     .join(models_v2.Port,
                           models_v2.Port.id == models_v2.IPAllocation.port_id)
                     .filter(models_v2.IPAllocation.subnet_id.in_(subnet_ids))
-                    .filter(models_v2.Port.device_owner !=
-                            n_constants.DEVICE_OWNER_ROUTER_INTF)
+                    .filter(sa.or_(models_v2.Port.device_owner.startswith(
+                                   n_constants.DEVICE_OWNER_COMPUTE_PREFIX),
+                                   models_v2.Port.device_owner ==
+                                   n_constants.DEVICE_OWNER_DHCP))
                     .all())
 
         return [p[0] for p in port_ids]
