@@ -2149,6 +2149,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _insert_provisioning_block(self, context):
         # we insert a status barrier to prevent the port from transitioning
         # to active until the agent reports back that the wiring is done
+
+        # If using optimized DHCP, no need to add a provisioning block.
+        if self.enable_dhcp_opt:
+            return
+
         port = context.current
         if (not context.host or
                 port['status'] == n_constants.PORT_STATUS_ACTIVE):
