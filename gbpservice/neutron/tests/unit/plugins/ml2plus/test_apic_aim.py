@@ -3886,7 +3886,7 @@ class TestSyncState(ApicAimTestCase):
                                                     msg='%s' % a_res)
 
     def test_unmanaged_external_network(self):
-        self._test_external_network('N/A')
+        self._test_external_network('build')
 
     def _test_external_subnet(self, expected_state, dn=None):
         net = self._make_ext_network('net1', dn=dn)
