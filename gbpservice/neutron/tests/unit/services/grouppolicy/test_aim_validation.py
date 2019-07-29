@@ -817,6 +817,101 @@ class TestNeutronMapping(AimValidationTestCase):
         self._test_routed_subnet(subnet1_id, '10.0.1.1')
         self._test_unscoped_vrf(router_id)
 
+    def test_subnet_overlap(self):
+        # Create two routers.
+        router1_id = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']['id']
+        router2_id = self._make_router(
+            self.fmt, self._tenant_id, 'router2')['router']['id']
+
+        # Create a network with four unscoped subnets.
+        net1_resp = self._make_network(self.fmt, 'net1', True)
+        subnet1a_id = self._make_subnet(
+            self.fmt, net1_resp, '10.1.1.1', '10.1.1.0/24')['subnet']['id']
+        subnet1b_id = self._make_subnet(
+            self.fmt, net1_resp, '10.2.1.1', '10.2.1.0/24')['subnet']['id']
+        subnet1c_id = self._make_subnet(
+            self.fmt, net1_resp, '10.3.1.1', '10.3.1.0/24')['subnet']['id']
+        subnet1d_id = self._make_subnet(
+            self.fmt, net1_resp, '10.4.1.1', '10.4.1.0/24')['subnet']['id']
+
+        # Add all four net1 subnets to router1.
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1a_id})
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1b_id})
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1c_id})
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router1_id,
+            {'subnet_id': subnet1d_id})
+
+        # Create another network with four unscoped subnets: one that
+        # doesn't overlap any net1 subnet, one that overlaps subnet1b
+        # exactly, one contained within subnet1c, and one containing
+        # subnet1d.
+        net2_resp = self._make_network(self.fmt, 'net2', True)
+        subnet2a_id = self._make_subnet(
+            self.fmt, net2_resp, '10.1.2.2', '10.1.2.0/24')['subnet']['id']
+        subnet2b_id = self._make_subnet(
+            self.fmt, net2_resp, '10.2.1.2', '10.2.1.0/24')['subnet']['id']
+        subnet2c_id = self._make_subnet(
+            self.fmt, net2_resp, '10.3.1.2', '10.3.1.0/25')['subnet']['id']
+        subnet2d_id = self._make_subnet(
+            self.fmt, net2_resp, '10.4.1.2', '10.4.1.0/23')['subnet']['id']
+
+        # Add the non-overlapping net2 subnet to router2 and test that
+        # validation passes.
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2a_id})
+        self._validate()
+
+        # Disabled overlap rejection so that we can add router
+        # interfaces below that result in overlapping AIM Subnets
+        # within a routed VRF. Note that this does not prevent overlap
+        # detection when validating.
+        self.driver.aim_mech_driver.allow_routed_vrf_subnet_overlap = True
+
+        # Add the net2 subnet that overlaps exactly to router2, test
+        # that validation fails, remove the subnet, and test the
+        # validation again passes.
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2b_id})
+        self._validate_unrepairable()
+        self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2b_id})
+        self._validate()
+
+        # Add the net2 subnet contained within a net1 subnet to
+        # router2, test that validation fails, remove the subnet, and
+        # test the validation again passes.
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2c_id})
+        self._validate_unrepairable()
+        self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2c_id})
+        self._validate()
+
+        # Add the net2 subnet containing a net1 subnet to router2,
+        # test that validation fails, remove the subnet, and test the
+        # validation again passes.
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2d_id})
+        self._validate_unrepairable()
+        self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router2_id,
+            {'subnet_id': subnet2d_id})
+        self._validate()
+
     def test_security_group(self):
         # Create security group with a rule.
         sg = self._make_security_group(
