@@ -4653,7 +4653,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._validate_floatingips(mgr)
         self._validate_port_bindings(mgr)
 
-    # Note: The queries bellow are executed only once per run of the
+    # Note: The queries below are executed only once per run of the
     # validation CLI tool, but are baked in order to speed up unit
     # test execution, where they are called repeatedly.
 
@@ -4832,6 +4832,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         routed_nets = self._get_router_interface_info(mgr)
         network_vrfs, router_vrfs = self._determine_vrfs(
             mgr, net_dbs, routed_nets)
+        self._validate_routed_vrfs(mgr, routed_nets, network_vrfs)
 
         for net_db in net_dbs.values():
             if not net_db.aim_extension_mapping:
@@ -5051,6 +5052,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     router_vrfs[router_id][tuple(vrf.identity)] = vrf
 
         return network_vrfs, router_vrfs
+
+    def _validate_routed_vrfs(self, mgr, routed_nets, network_vrfs):
+        vrf_subnets = defaultdict(list)
+        for net_id, intfs in routed_nets.items():
+            vrf = network_vrfs[net_id]
+            vrf_subnets[tuple(vrf.identity)] += [
+                (intf.subnet.id, netaddr.IPNetwork(intf.subnet.cidr))
+                for intf in intfs]
+        for vrf_id, subnets in vrf_subnets.items():
+            subnets.sort(key=lambda s: s[1])
+            for (id1, cidr1), (id2, cidr2) in zip(subnets[:-1], subnets[1:]):
+                if id2 != id1 and cidr2 in cidr1:
+                    vrf = aim_resource.VRF(
+                        tenant_name=vrf_id[0], name=vrf_id[1])
+                    mgr.validation_failed(
+                        "overlapping routed subnets %(id1)s (%(cidr1)s) "
+                        "and %(id2)s (%(cidr2)s) mapped to %(vrf)s" %
+                        {'id1': id1, 'cidr1': cidr1,
+                         'id2': id2, 'cidr2': cidr2,
+                         'vrf': vrf})
 
     def _missing_network_extension_mapping(self, mgr, net_db):
         # Note that this is intended primarily to handle migration to
