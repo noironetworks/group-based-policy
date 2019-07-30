@@ -1722,6 +1722,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if self._is_preexisting_svi_db(network_db):
             raise exceptions.PreExistingSVICannotBeConnectedToRouter()
 
+        # We disallow connecting subnets that are on an external network
+        # as router interfaces (can only use external networks for the
+        # router gateway).
+        if network_db.external:
+            raise exceptions.ExternalSubnetNotAllowed(network_id=network_id)
+
         # Find the address_scope(s) for the new interface.
         #
         # REVISIT: If dual-stack interfaces allowed, process each

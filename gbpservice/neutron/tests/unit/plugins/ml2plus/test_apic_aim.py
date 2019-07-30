@@ -1789,6 +1789,25 @@ class TestAimMapping(ApicAimTestCase):
         self.assertRaises(webob.exc.HTTPClientError, self._make_subnet,
                           self.fmt, net_resp, gw2_ip, '10.0.2.0/24')
 
+    def test_no_extneral_subnet_for_router_interface(self):
+        # Create external network with subnet.
+        ext_net1 = self._make_ext_network(
+            'ext-net1', dn=self.dn_t1_l1_n1)
+        subnet = self._make_subnet(
+            self.fmt, {'network': ext_net1}, '100.100.100.1',
+            '100.100.100.0/24')['subnet']
+        subnet_id = subnet['id']
+
+        # Create router.
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+        router_id = router['id']
+
+        self.assertRaises(exceptions.ExternalSubnetNotAllowed,
+                          self.l3_plugin.add_router_interface,
+                          n_context.get_admin_context(), router_id,
+                          {'subnet_id': subnet_id})
+
     def _test_router_interface_with_address_scope(self, is_svi=False):
         # REVISIT(rkukura): Currently follows same workflow as above,
         # but might be sufficient to test with a single subnet with
