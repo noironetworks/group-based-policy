@@ -79,3 +79,9 @@ class ExternalSubnetOverlapInL3Out(exceptions.BadRequest):
 class ExhaustedApicRouterIdPool(exceptions.IpAddressGenerationFailure):
     message = _("All the IPs in the APIC router ID pool %(pool)s "
                 "have been taken.")
+
+
+class ExternalSubnetNotAllowed(exceptions.BadRequest):
+    message = _("Connecting port or subnet which is on external network "
+                "%(network_id)s as a router interface is not allowed. "
+                "External networks can only be used as router gateways.")
