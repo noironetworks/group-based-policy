@@ -34,7 +34,7 @@ class AddressScopeMapping(model_base.BASEV2):
         primary_key=True)
 
     address_scope = orm.relationship(
-        as_db.AddressScope, lazy='joined',
+        as_db.AddressScope,
         backref=orm.backref(
             'aim_mapping', lazy='joined', uselist=False, cascade='delete'))
 
@@ -51,7 +51,7 @@ class NetworkMapping(model_base.BASEV2):
         primary_key=True)
 
     network = orm.relationship(
-        models_v2.Network, lazy='joined',
+        models_v2.Network,
         backref=orm.backref(
             'aim_mapping', lazy='joined', uselist=False, cascade='delete'))
 

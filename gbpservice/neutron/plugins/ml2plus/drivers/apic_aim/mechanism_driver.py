@@ -1604,14 +1604,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         query = BAKERY(lambda s: s.query(
             models_v2.IPAllocation.ip_address,
-            models_v2.Subnet,
-            models_v2.Network))
+            models_v2.Subnet.cidr,
+            models_v2.Subnet.network_id,
+            models_v2.SubnetPool.address_scope_id,
+            db.NetworkMapping))
         query += lambda q: q.join(
             models_v2.Subnet,
             models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
-        query += lambda q: q.join(
-            models_v2.Network,
-            models_v2.Network.id == models_v2.Subnet.network_id)
+        query += lambda q: q.outerjoin(
+            models_v2.SubnetPool,
+            models_v2.SubnetPool.id == models_v2.Subnet.subnetpool_id)
+        query += lambda q: q.outerjoin(
+            db.NetworkMapping,
+            db.NetworkMapping.network_id == models_v2.Subnet.network_id)
         query += lambda q: q.join(
             l3_db.RouterPort,
             l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
@@ -1620,26 +1625,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_INTF)
         for intf in query(session).params(
                 router_id=router_db.id):
-
-            ip_address, subnet_db, network_db = intf
-            if not network_db.aim_mapping:
+            ip_address, subnet_cidr, net_id, scope_id, net_mapping = intf
+            if not net_mapping:
                 LOG.warning(
                     "Mapping missing for network %s in extend_router_dict" %
-                    network_db.id)
+                    net_id)
                 continue
-
-            if network_db.aim_mapping.bd_name:
-                bd = self._get_network_bd(network_db.aim_mapping)
-                sn = self._map_subnet(subnet_db, intf.ip_address, bd)
+            if net_mapping.bd_name:
+                bd = self._get_network_bd(net_mapping)
+                sn = self._map_subnet({'cidr': subnet_cidr}, ip_address, bd)
                 dist_names[intf.ip_address] = sn.dn
                 sync_state = self._merge_status(aim_ctx, sync_state, sn)
-
-            scope_id = (subnet_db.subnetpool and
-                        subnet_db.subnetpool.address_scope_id)
             if scope_id:
                 scope_ids.add(scope_id)
             else:
-                vrf = self._get_network_vrf(network_db.aim_mapping)
+                vrf = self._get_network_vrf(net_mapping)
                 if unscoped_vrf and unscoped_vrf.identity != vrf.identity:
                     # This should never happen. If it does, it
                     # indicates an inconsistency in the DB state
@@ -1649,16 +1649,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     LOG.error("Inconsistent unscoped VRFs %s and %s for "
                               "router %s.", vrf, unscoped_vrf, router_db)
                 unscoped_vrf = vrf
-
         for scope_id in scope_ids:
-            scope_db = self._scope_by_id(session, scope_id)
-            if not scope_db.aim_mapping:
+            addr_scope_mapping = self._get_address_scope_mapping(session,
+                                                                 scope_id)
+            if not addr_scope_mapping:
                 LOG.warning(
                     "Mapping missing for address scope %s in "
-                    "extend_router_dict" % scope_db.id)
+                    "extend_router_dict" % scope_id)
                 continue
-
-            vrf = self._get_address_scope_vrf(scope_db.aim_mapping)
+            vrf = self._get_address_scope_vrf(addr_scope_mapping)
             dist_names[a_l3.SCOPED_VRF % scope_id] = vrf.dn
             sync_state = self._merge_status(aim_ctx, sync_state, vrf)
 
