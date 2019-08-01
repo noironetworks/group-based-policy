@@ -249,6 +249,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
         self.apic_nova_vm_name_cache_update_interval = (cfg.CONF.ml2_apic_aim.
                                     apic_nova_vm_name_cache_update_interval)
+        self.allow_routed_vrf_subnet_overlap = (
+            cfg.CONF.ml2_apic_aim.allow_routed_vrf_subnet_overlap)
+        if self.allow_routed_vrf_subnet_overlap:
+            LOG.warning("The allow_routed_vrf_subnet_overlap config option is "
+                        "True, disabling checking for overlapping CIDRs "
+                        "within a routed VRF. Overlapping CIDRs result in ACI "
+                        "faults and loss of connectivity, so please eliminate "
+                        "any existing overlap and set this option to False "
+                        "(the default) as soon as possible.")
         self._setup_nova_vm_update()
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._ensure_static_resources()
@@ -1868,6 +1877,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 epg = self._get_network_l3out_ext_net(
                     network_db.aim_mapping)
 
+        # If we are using an unscoped VRF, raise exception if it has
+        # overlapping subnets, which could be due to this new
+        # interface itself or to movement of either topology.
+        if scope_id == NO_ADDR_SCOPE:
+            self._check_vrf_for_overlap(session, vrf, subnets)
+
         if network_db.aim_mapping.epg_name:
             # Create AIM Subnet(s) for each added Neutron subnet.
             for subnet in subnets:
@@ -2034,6 +2049,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     self._move_topology(
                         context, aim_ctx, intf_topology, old_vrf, intf_vrf,
                         nets_to_notify, vrfs_to_notify)
+                    self._check_vrf_for_overlap(session, intf_vrf)
 
             # See if the router's topology must be moved.
             router_topology = self._router_topology(session, router_db.id)
@@ -2047,6 +2063,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     self._move_topology(
                         context, aim_ctx, router_topology, old_vrf, router_vrf,
                         nets_to_notify, vrfs_to_notify)
+                    self._check_vrf_for_overlap(session, router_vrf)
                     router_topo_moved = True
 
         # If network is no longer connected to any router, make the
@@ -2105,6 +2122,48 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self._notify_port_update_bulk(context, ports_to_notify)
         if vrfs_to_notify:
             self._notify_vrf_update(context, vrfs_to_notify)
+
+    def _check_vrf_for_overlap(self, session, vrf, new_subnets=None):
+        if self.allow_routed_vrf_subnet_overlap:
+            return
+
+        query = BAKERY(lambda s: s.query(
+            models_v2.Subnet.id,
+            models_v2.Subnet.cidr))
+        query += lambda q: q.join(
+            models_v2.IPAllocation,
+            models_v2.IPAllocation.subnet_id ==
+            models_v2.Subnet.id)
+        query += lambda q: q.join(
+            l3_db.RouterPort,
+            l3_db.RouterPort.port_id ==
+            models_v2.IPAllocation.port_id)
+        query += lambda q: q.join(
+            db.NetworkMapping,
+            db.NetworkMapping.network_id ==
+            models_v2.Subnet.network_id)
+        query += lambda q: q.filter(
+            l3_db.RouterPort.port_type ==
+            n_constants.DEVICE_OWNER_ROUTER_INTF,
+            db.NetworkMapping.vrf_name ==
+            sa.bindparam('vrf_name'),
+            db.NetworkMapping.vrf_tenant_name ==
+            sa.bindparam('vrf_tenant_name'))
+        subnets = [(id, netaddr.IPNetwork(cidr))
+                   for id, cidr in query(session).params(
+                           vrf_name=vrf.name,
+                           vrf_tenant_name=vrf.tenant_name)]
+
+        if new_subnets:
+            subnets.extend(
+                [(s['id'], netaddr.IPNetwork(s['cidr']))
+                 for s in new_subnets])
+
+        subnets.sort(key=lambda s: s[1])
+        for (id1, cidr1), (id2, cidr2) in zip(subnets[:-1], subnets[1:]):
+            if id2 != id1 and cidr2 in cidr1:
+                raise exceptions.SubnetOverlapInRoutedVRF(
+                    id1=id1, cidr1=cidr1, id2=id2, cidr2=cidr2, vrf=vrf)
 
     def bind_port(self, context):
         port = context.current
