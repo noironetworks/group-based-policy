@@ -62,6 +62,15 @@ apic_opts = [
                help=("How many seconds for the polling thread on each "
                      "controller should wait before it updates the nova vm "
                      "name cache again.")),
+    cfg.BoolOpt('allow_routed_vrf_subnet_overlap',
+                default=False,
+                help=("Set to True to turn off checking for overlapping "
+                      "subnets within a routed VRF when adding or removing "
+                      "router interfaces. Overlapping subnets in a routed VRF "
+                      "will result in ACI faults and lost connectivity, so "
+                      "this should only be used temporarily to enable "
+                      "cleaning up overlapping routed subnets created before "
+                      "overlap checking was implemented.")),
 ]
 
 
