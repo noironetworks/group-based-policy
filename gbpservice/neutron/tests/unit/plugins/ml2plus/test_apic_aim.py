@@ -2077,6 +2077,34 @@ class TestAimMapping(ApicAimTestCase):
                           self.driver._set_vm_name_update,
                           self.db_session, None, 'host_id1', current_time)
 
+        # This is just to test the port notification part for a VM
+        # being associated with 2 ports
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+
+        net1 = self._make_network(self.fmt, 'net1', True)
+        net_id = net1['network']['id']
+        self._make_subnet(self.fmt, net1, '10.0.1.1', '10.0.1.0/24')
+        port1_id = self._make_port(self.fmt, net_id)['port']['id']
+
+        net2 = self._make_network(self.fmt, 'net2', True)
+        net_id = net2['network']['id']
+        self._make_subnet(self.fmt, net2, '20.0.1.1', '20.0.1.0/24')
+        port2_id = self._make_port(self.fmt, net_id)['port']['id']
+
+        self._bind_port_to_host(port1_id, 'h1')
+        self._bind_port_to_host(port2_id, 'h1')
+        self.driver._notify_port_update = mock.Mock()
+
+        vm.id = 'someid'
+        vm.name = 'somename'
+        self.nova_client.return_value = [vm]
+        self.driver._update_nova_vm_name_cache()
+        exp_calls = [
+            mock.call(mock.ANY, port1_id),
+            mock.call(mock.ANY, port2_id)]
+        self._check_call_list(exp_calls,
+            self.driver._notify_port_update.call_args_list)
+
     def test_multi_scope_routing_with_unscoped_pools(self):
         self._test_multi_scope_routing(True)
 
