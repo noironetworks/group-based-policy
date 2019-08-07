@@ -340,11 +340,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     models_v2.Port.id))
                 query += lambda q: q.filter(
                     models_v2.Port.device_id == sa.bindparam('device_id'))
-                port = query(session).params(
-                    device_id=device_id).one_or_none()
-                if port:
-                    port_id, = port
-                    update_ports.append(port_id)
+                port_ids = [p[0] for p in
+                      query(session).params(device_id=device_id)]
+                if port_ids:
+                    update_ports.extend(port_ids)
 
         if update_ports:
             self._notify_port_update_bulk(self.admin_context, update_ports)
