@@ -1016,6 +1016,17 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual((str(sg_rule['port_range_max']) if
                           sg_rule['port_range_max'] else 'unspecified'),
                          aim_sg_rule.to_port)
+        if (sg_rule['protocol'] and sg_rule['protocol'].lower() == 'icmp'):
+            if (sg_rule['port_range_min']):
+                self.assertEqual(str(sg_rule['port_range_min']),
+                    aim_sg_rule.icmp_code)
+            else:
+                self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
+            if (sg_rule['port_range_max']):
+                self.assertEqual(str(sg_rule['port_range_max']),
+                    aim_sg_rule.icmp_type)
+            else:
+                self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
 
     def _check_router(self, router, expected_gw_ips, scopes=None,
                       unscoped_project=None, is_svi_net=False):
@@ -1334,6 +1345,25 @@ class TestAimMapping(ApicAimTestCase):
         sg_rule = self._make_security_group_rule(
             self.fmt, rules)['security_group_rules'][0]
         self._check_sg_rule(sg_id, sg_rule)
+
+        rule2 = self._build_security_group_rule(
+            sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, '8', '100',
+            remote_ip_prefix='1.1.1.1/0', remote_group_id=None,
+            ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule2['security_group_rule']]}
+        sg_rule = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        self._check_sg_rule(sg_id, sg_rule)
+
+        rule3 = self._build_security_group_rule(
+            sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, None, None,
+            remote_ip_prefix='1.1.1.1/0', remote_group_id=None,
+            ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule3['security_group_rule']]}
+        sg_rule = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        self._check_sg_rule(sg_id, sg_rule)
+
         sg = self._show('security-groups', sg_id)['security_group']
         self._check_sg(sg)
 
@@ -8438,6 +8468,30 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         aim_sg_rule = self._get_sg_rule(
             sg_rule1['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+
+        rule2 = self._build_security_group_rule(
+            default_sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, '2', '33',
+            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule2['security_group_rule']]}
+        sg_rule2 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule2['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+        self.assertEqual(aim_sg_rule.icmp_code, '2')
+        self.assertEqual(aim_sg_rule.icmp_type, '33')
+
+        rule3 = self._build_security_group_rule(
+            default_sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, None, None,
+            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule3['security_group_rule']]}
+        sg_rule3 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule3['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+        self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
+        self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
 
         # delete SG from port
         data = {'port': {'security_groups': []}}
