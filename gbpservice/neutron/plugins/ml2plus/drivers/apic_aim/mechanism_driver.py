@@ -2472,6 +2472,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ip_protocol=(sg_rule['protocol'] if sg_rule['protocol']
                          else 'unspecified'),
             remote_ips=remote_ips,
+            icmp_code=(sg_rule['port_range_min']
+                       if (sg_rule['port_range_min'] and
+                           sg_rule['protocol'].lower() == 'icmp')
+                       else 'unspecified'),
+            icmp_type=(sg_rule['port_range_max']
+                       if (sg_rule['port_range_max'] and
+                           sg_rule['protocol'].lower() == 'icmp')
+                       else 'unspecified'),
             from_port=(sg_rule['port_range_min']
                        if sg_rule['port_range_min'] else 'unspecified'),
             to_port=(sg_rule['port_range_max']
