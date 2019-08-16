@@ -48,7 +48,7 @@ class TestServerEp(manager.NetworkScenarioTest):
         if should_check_floating_ip_status:
             self.check_floating_ip_status(floating_ip, floatingip_status)
         LOG.debug('Starting Ping to Connect')
-        self.track_success = self._track_connectivity(ip_address)
+        self._track_connectivity(ip_address)
         return self.track_success
 
     def _track_connectivity(self, floating_ip):
