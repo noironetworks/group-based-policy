@@ -4172,6 +4172,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     self.aim.update(aim_ctx, epg,
                                     vmm_domains=vmms)
                 else:
+                    if not aim_epg:
+                       return
                     vmms = aim_epg.vmm_domains[:]
                     for domain in domains:
                         if domain not in aim_epg.vmm_domains:
@@ -4193,6 +4195,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     self.aim.update(aim_ctx, epg,
                                     physical_domains=phys)
                 else:
+                    if not aim_epg:
+                       return
                     phys = aim_epg.physical_domains[:]
                     for domain in domains:
                         if domain not in aim_epg.physical_domains:
