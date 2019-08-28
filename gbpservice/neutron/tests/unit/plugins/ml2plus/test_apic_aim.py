@@ -337,12 +337,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.assertIsInstance(dn, six.string_types)
         self.assertEqual(resource.dn, dn)
 
-    def _check_dn_has_resource(self, dns, key, cls):
-        dn = dns.pop(key, None)
-        self.assertIsInstance(dn, six.string_types)
-        resource = self._find_by_dn(dn, cls)
-        self.assertIsNotNone(resource)
-
     def _check_dn(self, resource, aim_resource, key, dname=None):
         dist_names = resource.get('apic:distinguished_names')
         self.assertIsInstance(dist_names, dict)
@@ -1028,8 +1022,7 @@ class TestAimMapping(ApicAimTestCase):
             else:
                 self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
 
-    def _check_router(self, router, expected_gw_ips, scopes=None,
-                      unscoped_project=None, is_svi_net=False):
+    def _check_router(self, router):
         dns = copy.copy(router.get(DN))
         aname = self.name_mapper.router(None, router['id'])
 
@@ -1051,44 +1044,7 @@ class TestAimMapping(ApicAimTestCase):
                          aim_subject.bi_filters)
         self._check_dn_is_resource(dns, 'ContractSubject', aim_subject)
 
-        if expected_gw_ips:
-            if unscoped_project:
-                self._check_router_vrf(
-                    'DefaultVRF', 'DefaultRoutedVRF', unscoped_project,
-                    dns, 'no_scope-VRF')
-
-            for scope in scopes or []:
-                actual_scope = self._actual_scopes.get(scope['id'], scope)
-                dname = self._scope_vrf_dnames.get(
-                    actual_scope['id'], actual_scope['name'])
-                self._check_router_vrf(
-                    self.name_mapper.address_scope(None, actual_scope['id']),
-                    dname, actual_scope['tenant_id'], dns,
-                    'as_%s-VRF' % scope['id'])
-
-        # The AIM Subnets are validated in _check_subnet, so just
-        # check that their DNs are present and valid.
-        if not is_svi_net:
-            for gw_ip in expected_gw_ips:
-                self._check_dn_has_resource(dns, gw_ip, aim_resource.Subnet)
-
         self.assertFalse(dns)
-
-    def _check_router_vrf(self, aname, dname, project_id, dns, key):
-        tenant_aname = self.name_mapper.project(None, project_id)
-        tenant_dname = TEST_TENANT_NAMES[project_id]
-
-        aim_tenant = self._get_tenant(tenant_aname)
-        self.assertEqual(tenant_aname, aim_tenant.name)
-        self.assertEqual(tenant_dname, aim_tenant.display_name)
-
-        aim_vrf = self._get_vrf(aname, tenant_aname)
-        self.assertEqual(tenant_aname, aim_vrf.tenant_name)
-        self.assertEqual(aname, aim_vrf.name)
-        self.assertEqual(dname, aim_vrf.display_name)
-        self.assertEqual('enforced', aim_vrf.policy_enforcement_pref)
-
-        self._check_dn_is_resource(dns, key, aim_vrf)
 
     def _check_router_deleted(self, router):
         aname = self.name_mapper.router(None, router['id'])
@@ -1553,16 +1509,16 @@ class TestAimMapping(ApicAimTestCase):
         router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
         router_id = router['id']
-        self._check_router(router, [])
+        self._check_router(router)
 
         # Test show.
         router = self._show('routers', router_id)['router']
-        self._check_router(router, [])
+        self._check_router(router)
 
         # Test update.
         data = {'router': {'name': 'newnameforrouter'}}
         router = self._update('routers', router_id, data)['router']
-        self._check_router(router, [])
+        self._check_router(router)
 
         # Test delete.
         self._delete('routers', router_id)
@@ -1578,7 +1534,6 @@ class TestAimMapping(ApicAimTestCase):
         router = self._make_router(
             self.fmt, self._tenant_id, 'router1')['router']
         router_id = router['id']
-        self._check_router(router, [])
 
         # Create network.
         if not is_svi:
@@ -1631,11 +1586,6 @@ class TestAimMapping(ApicAimTestCase):
         # Verify ports were notified.
         mock_notif.assert_has_calls(port_calls, any_order=True)
 
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], unscoped_project=self._tenant_id,
-                           is_svi_net=is_svi)
-
         # Check network.
         net = self._show('networks', net_id)['network']
         self._check_network(net, [router])
@@ -1657,8 +1607,6 @@ class TestAimMapping(ApicAimTestCase):
         # Test router update.
         data = {'router': {'name': 'newnameforrouter'}}
         router = self._update('routers', router_id, data)['router']
-        self._check_router(router, [gw1_ip], unscoped_project=self._tenant_id,
-                           is_svi_net=is_svi)
         self._check_subnet(subnet, net, [(gw1_ip, router)], [])
 
         # Add subnet2 to router by port.
@@ -1675,12 +1623,6 @@ class TestAimMapping(ApicAimTestCase):
 
             # Verify ports were not notified.
             mock_notif.assert_not_called()
-
-            # Check router.
-            router = self._show('routers', router_id)['router']
-            self._check_router(
-                router, [gw1_ip, gw2_ip], unscoped_project=self._tenant_id,
-                is_svi_net=is_svi)
 
             # Check network.
             net = self._show('networks', net_id)['network']
@@ -1699,19 +1641,12 @@ class TestAimMapping(ApicAimTestCase):
             {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
-        # Check router.
-        router = self._show('routers', router_id)['router']
         if not is_svi:
             # Verify ports were not notified.
             mock_notif.assert_not_called()
-            self._check_router(router, [gw2_ip],
-                               unscoped_project=self._tenant_id,
-                               is_svi_net=is_svi)
         else:
             # Verify ports were notified.
             mock_notif.assert_has_calls(port_calls, any_order=True)
-            self._check_router(router, [], unscoped_project=self._tenant_id,
-                               is_svi_net=is_svi)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -1738,9 +1673,6 @@ class TestAimMapping(ApicAimTestCase):
 
             # Verify ports were notified.
             mock_notif.assert_has_calls(port_calls, any_order=True)
-            # Check router.
-            router = self._show('routers', router_id)['router']
-            self._check_router(router, [])
             # Check network.
             net = self._show('networks', net_id)['network']
             self._check_network(net)
@@ -1865,7 +1797,6 @@ class TestAimMapping(ApicAimTestCase):
         router = self._make_router(
             self.fmt, 'test-tenant', 'router1')['router']
         router_id = router['id']
-        self._check_router(router, [], scopes=[scope])
 
         # Create network.
         if not is_svi:
@@ -1921,11 +1852,6 @@ class TestAimMapping(ApicAimTestCase):
         # Verify ports were notified.
         mock_notif.assert_has_calls(port_calls, any_order=True)
 
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], scopes=[scope],
-                           is_svi_net=is_svi)
-
         # Check network.
         net = self._show('networks', net_id)['network']
         self._check_network(net, [router], scope)
@@ -1947,8 +1873,6 @@ class TestAimMapping(ApicAimTestCase):
         # Test router update.
         data = {'router': {'name': 'newnameforrouter'}}
         router = self._update('routers', router_id, data)['router']
-        self._check_router(router, [gw1_ip], scopes=[scope],
-                           is_svi_net=is_svi)
         self._check_subnet(subnet, net, [(gw1_ip, router)], [], scope)
 
         # Add subnet2 to router by port.
@@ -1964,10 +1888,6 @@ class TestAimMapping(ApicAimTestCase):
             self.assertIn(subnet2_id, info['subnet_ids'])
             # Verify ports were not notified.
             mock_notif.assert_not_called()
-            # Check router.
-            router = self._show('routers', router_id)['router']
-            self._check_router(router, [gw1_ip, gw2_ip], scopes=[scope],
-                               is_svi_net=is_svi)
             # Check network.
             net = self._show('networks', net_id)['network']
             self._check_network(net, [router], scope)
@@ -1985,18 +1905,12 @@ class TestAimMapping(ApicAimTestCase):
             {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
-        # Check router.
-        router = self._show('routers', router_id)['router']
         if not is_svi:
             # Verify ports were not notified.
             mock_notif.assert_not_called()
-            self._check_router(router, [gw2_ip], scopes=[scope],
-                               is_svi_net=is_svi)
         else:
             # Verify ports were notified.
             mock_notif.assert_has_calls(port_calls, any_order=True)
-            self._check_router(router, [], scopes=[scope],
-                               is_svi_net=is_svi)
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -2021,9 +1935,6 @@ class TestAimMapping(ApicAimTestCase):
             self.assertIn(subnet2_id, info['subnet_ids'])
             # Verify ports were notified.
             mock_notif.assert_has_calls(port_calls, any_order=True)
-            # Check router.
-            router = self._show('routers', router_id)['router']
-            self._check_router(router, [], scopes=[scope])
             # Check network.
             net = self._show('networks', net_id)['network']
             self._check_network(net)
@@ -2344,9 +2255,8 @@ class TestAimMapping(ApicAimTestCase):
                     router_ctx, router_id, {'subnet_id': subnet['id']})
                 self.assertIn(subnet['id'], info['subnet_ids'])
 
-            def check(nets, scopes, unscoped_project):
+            def check(nets):
                 router = self._show('routers', router_id)['router']
-                expected_gw_ips = []
                 for (net, routed_subnets, unrouted_subnets,
                         scope, project) in nets:
                     net = self._show('networks', net['id'])['network']
@@ -2355,7 +2265,6 @@ class TestAimMapping(ApicAimTestCase):
                         scope, project)
                     for subnet in routed_subnets:
                         gw_ip = subnet['gateway_ip']
-                        expected_gw_ips.append(gw_ip)
                         subnet = self._show('subnets', subnet['id'])['subnet']
                         self._check_subnet(
                             subnet, net, [(gw_ip, router)], [], scope, project)
@@ -2364,8 +2273,6 @@ class TestAimMapping(ApicAimTestCase):
                         subnet = self._show('subnets', subnet['id'])['subnet']
                         self._check_subnet(
                             subnet, net, [], [gw_ip], scope, project)
-                self._check_router(
-                    router, expected_gw_ips, scopes, unscoped_project)
 
             def check_ns(disconnect_vrf_dns, from_net_dn,
                          connect_vrf_dns, to_net_dn):
@@ -2398,8 +2305,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [], [subnet4i1, subnet61], None, None),
                    (net2, [], [subnet4n2, subnet62], None, None),
                    (net3, [], [subnet43, subnet63], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [], None)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([], None, [], None)
 
             # Add first scoped v4 subnet to router, which should connect
@@ -2408,8 +2314,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [subnet4i1], [subnet61], scope4i, None),
                    (net2, [], [subnet4n2, subnet62], None, None),
                    (net3, [], [subnet43, subnet63], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [scope4i], None)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([], None, [scope46i_vrf], self.dn_t1_l1_n1)
             check_vrf_notifies(notify, [scope46i_vrf])
 
@@ -2419,8 +2324,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [subnet4i1, subnet61], [], scope4i, None),
                    (net2, [], [subnet4n2, subnet62], None, None),
                    (net3, [], [subnet43, subnet63], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [scope4i, scope6], None)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([], None, [], None)
             check_vrf_notifies(notify, [])
 
@@ -2430,8 +2334,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [subnet4i1, subnet61], [], scope4i, None),
                    (net2, [], [subnet4n2, subnet62], None, None),
                    (net3, [subnet63], [subnet43], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [scope4i, scope6], self._tenant_id)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([], None, [main_vrf], self.dn_t1_l1_n1)
             check_vrf_notifies(notify, [main_vrf])
 
@@ -2444,8 +2347,7 @@ class TestAimMapping(ApicAimTestCase):
             # check([(net1, [subnet4i1, subnet61], [], scope4i, None),
             #        (net2, [subnet62], [subnet4n2], scope6, None),
             #        (net3, [subnet63], [subnet43], None, None),
-            #        (net4, [], [subnet44, subnet64], None, None)],
-            #       [scope4i, scope6], self._tenant_id)
+            #        (net4, [], [subnet44, subnet64], None, None)])
             # check_vrf_notifies(....)
 
             # Add second scoped v4 subnet to router, which should connect
@@ -2454,8 +2356,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [subnet4i1, subnet61], [], scope4i, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet63], [subnet43], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [scope4i, scope4n, scope6], self._tenant_id)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([], None, [scope4n_vrf], self.dn_t1_l1_n1)
             check_vrf_notifies(notify, [scope4n_vrf])
 
@@ -2465,8 +2366,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [subnet4i1, subnet61], [], scope4i, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet43, subnet63], [], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [scope4i, scope4n, scope6], self._tenant_id)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([], None, [], None)
             # no notify here b/c attaching subnet63 above caused
             # everything in the net/BD to get moved
@@ -2480,8 +2380,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [subnet4i1, subnet61], [], scope4i, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet43, subnet63], [], None, 'tenant_2'),
-                   (net4, [subnet44], [subnet64], None, 'tenant_2')],
-                  [scope4i, scope4n, scope6], 'tenant_2')
+                   (net4, [subnet44], [subnet64], None, 'tenant_2')])
             check_ns([main_vrf], self.dn_t1_l1_n1,
                      [shared_vrf], self.dn_t1_l1_n1)
             check_vrf_notifies(notify, [main_vrf, shared_vrf])
@@ -2492,8 +2391,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [subnet4i1, subnet61], [], scope4i, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet43, subnet63], [], None, 'tenant_2'),
-                   (net4, [subnet44, subnet64], [], None, 'tenant_2')],
-                  [scope4i, scope4n, scope6], 'tenant_2')
+                   (net4, [subnet44, subnet64], [], None, 'tenant_2')])
             check_ns([], None, [], None)
             check_vrf_notifies(notify, [])
 
@@ -2505,8 +2403,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [subnet4i1, subnet61], [], scope4i, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet43, subnet63], [], None, 'tenant_2'),
-                   (net4, [subnet44, subnet64], [], None, 'tenant_2')],
-                  [scope4i, scope4n, scope6], 'tenant_2')
+                   (net4, [subnet44, subnet64], [], None, 'tenant_2')])
             check_ns([scope46i_vrf, scope4n_vrf, shared_vrf], self.dn_t1_l1_n1,
                      [scope46i_vrf, scope4n_vrf, shared_vrf], self.dn_t1_l2_n2)
             check_vrf_notifies(notify, [])
@@ -2517,8 +2414,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [subnet61], [subnet4i1], scope6, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet43, subnet63], [], None, 'tenant_2'),
-                   (net4, [subnet44, subnet64], [], None, 'tenant_2')],
-                  [scope4n, scope6], 'tenant_2')
+                   (net4, [subnet44, subnet64], [], None, 'tenant_2')])
             check_ns([], None, [], None)
             check_vrf_notifies(notify, [])
 
@@ -2528,8 +2424,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [], [subnet4i1, subnet61], None, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet43, subnet63], [], None, 'tenant_2'),
-                   (net4, [subnet44, subnet64], [], None, 'tenant_2')],
-                  [scope4n], 'tenant_2')
+                   (net4, [subnet44, subnet64], [], None, 'tenant_2')])
             check_ns([scope46i_vrf], self.dn_t1_l2_n2, [], None)
             check_vrf_notifies(notify, [unrouted_vrf])
 
@@ -2539,8 +2434,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [], [subnet4i1, subnet61], None, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet43, subnet63], [], None, 'tenant_2'),
-                   (net4, [subnet64], [subnet44], None, 'tenant_2')],
-                  [scope4n], 'tenant_2')
+                   (net4, [subnet64], [subnet44], None, 'tenant_2')])
             check_ns([], None, [], None)
             check_vrf_notifies(notify, [])
 
@@ -2552,8 +2446,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [], [subnet4i1, subnet61], None, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet43, subnet63], [], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [scope4n], self._tenant_id)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([shared_vrf], self.dn_t1_l2_n2,
                      [main_vrf], self.dn_t1_l2_n2)
             check_vrf_notifies(notify, [unrouted_vrf, shared_vrf, main_vrf])
@@ -2564,8 +2457,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [], [subnet4i1, subnet61], None, None),
                    (net2, [subnet4n2], [subnet62], scope4n, None),
                    (net3, [subnet43], [subnet63], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [scope4n], self._tenant_id)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([], None, [], None)
             check_vrf_notifies(notify, [])
 
@@ -2575,8 +2467,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [], [subnet4i1, subnet61], None, None),
                    (net2, [], [subnet4n2, subnet62], None, None),
                    (net3, [subnet43], [subnet63], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [], self._tenant_id)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([scope4n_vrf], self.dn_t1_l2_n2, [], None)
             check_vrf_notifies(notify, [unrouted_vrf])
 
@@ -2586,8 +2477,7 @@ class TestAimMapping(ApicAimTestCase):
             check([(net1, [], [subnet4i1, subnet61], None, None),
                    (net2, [], [subnet4n2, subnet62], None, None),
                    (net3, [], [subnet43, subnet63], None, None),
-                   (net4, [], [subnet44, subnet64], None, None)],
-                  [], None)
+                   (net4, [], [subnet44, subnet64], None, None)])
             check_ns([main_vrf], self.dn_t1_l2_n2, [], None)
             check_vrf_notifies(notify, [unrouted_vrf, main_vrf])
 
@@ -2599,8 +2489,7 @@ class TestAimMapping(ApicAimTestCase):
             # check([(net1, [], [subnet4i1, subnet61], None, None),
             #        (net2, [], [subnet4n2, subnet62], None, None),
             #        (net3, [], [subnet43, subnet63], None, None),
-            #        (net4, [], [subnet44, subnet64], None, None)],
-            #       [], None)
+            #        (net4, [], [subnet44, subnet64], None, None)])
             # check_ns(...)
             # check_vrf_notifies(...)
 
@@ -2623,7 +2512,6 @@ class TestAimMapping(ApicAimTestCase):
         router = self._make_router(
             self.fmt, 'tenant_2', 'router1')['router']
         router_id = router['id']
-        self._check_router(router, [], scopes=[scope])
 
         # Create network as tenant_2.
         net_resp = self._make_network(self.fmt, 'net1', True,
@@ -2645,10 +2533,6 @@ class TestAimMapping(ApicAimTestCase):
             n_context.get_admin_context(), router_id,
             {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
-
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], scopes=[scope])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -2672,10 +2556,6 @@ class TestAimMapping(ApicAimTestCase):
             {'subnet_id': subnet2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
 
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip, gw2_ip], scopes=[scope])
-
         # Check network.
         net = self._show('networks', net_id)['network']
         self._check_network(net, [router], scope)
@@ -2694,10 +2574,6 @@ class TestAimMapping(ApicAimTestCase):
             {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw2_ip], scopes=[scope])
-
         # Check network.
         net = self._show('networks', net_id)['network']
         self._check_network(net, [router], scope)
@@ -2715,10 +2591,6 @@ class TestAimMapping(ApicAimTestCase):
             n_context.get_admin_context(), router_id,
             {'subnet_id': subnet2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
-
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(router, [])
 
         # Check network.
         net = self._show('networks', net_id)['network']
@@ -2741,7 +2613,6 @@ class TestAimMapping(ApicAimTestCase):
             self.fmt, 'tenant_1', 'router')['router']
         router_id = router['id']
         router_ctx = n_context.Context(None, 'tenant_1')
-        self._check_router(router, [])
 
         # Create net1 as tenant_1.
         net1_resp = self._make_network(
@@ -2791,10 +2662,6 @@ class TestAimMapping(ApicAimTestCase):
             router_ctx, router_id, {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
 
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], unscoped_project='tenant_1')
-
         # Check net1.
         net1 = self._show('networks', net1_id)['network']
         self._check_network(net1, [router])
@@ -2823,11 +2690,6 @@ class TestAimMapping(ApicAimTestCase):
         info = self.l3_plugin.add_router_interface(
             router_ctx, router_id, {'subnet_id': subnet2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
-
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(
-            router, [gw1_ip, gw2_ip], unscoped_project='tenant_2')
 
         # Check net1, which should be moved to tenant_2.
         net1 = self._show('networks', net1_id)['network']
@@ -2858,11 +2720,6 @@ class TestAimMapping(ApicAimTestCase):
         info = self.l3_plugin.add_router_interface(
             router_ctx, router_id, {'subnet_id': subnet3_id})
         self.assertIn(subnet3_id, info['subnet_ids'])
-
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(
-            router, [gw1_ip, gw2_ip, gw3_ip], unscoped_project='tenant_2')
 
         # Check net1, which should still be moved to tenant_2.
         net1 = self._show('networks', net1_id)['network']
@@ -2895,11 +2752,6 @@ class TestAimMapping(ApicAimTestCase):
             router_ctx, router_id, {'subnet_id': subnet3_id})
         self.assertIn(subnet3_id, info['subnet_ids'])
 
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(
-            router, [gw1_ip, gw2_ip], unscoped_project='tenant_2')
-
         # Check net1, which should still be moved to tenant_2.
         net1 = self._show('networks', net1_id)['network']
         self._check_network(net1, [router], project='tenant_2')
@@ -2930,10 +2782,6 @@ class TestAimMapping(ApicAimTestCase):
             router_ctx, router_id, {'subnet_id': subnet2_id})
         self.assertIn(subnet2_id, info['subnet_ids'])
 
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(router, [gw1_ip], unscoped_project='tenant_1')
-
         # Check net1, which should be moved back to tenant_1.
         net1 = self._show('networks', net1_id)['network']
         self._check_network(net1, [router])
@@ -2962,10 +2810,6 @@ class TestAimMapping(ApicAimTestCase):
         info = self.l3_plugin.remove_router_interface(
             router_ctx, router_id, {'subnet_id': subnet1_id})
         self.assertIn(subnet1_id, info['subnet_ids'])
-
-        # Check router.
-        router = self._show('routers', router_id)['router']
-        self._check_router(router, [], unscoped_project='tenant_1')
 
         # Check net1.
         net1 = self._show('networks', net1_id)['network']
@@ -3017,7 +2861,6 @@ class TestAimMapping(ApicAimTestCase):
         def make_router(letter, project):
             name = 'router%s' % letter
             router = self._make_router(self.fmt, project, name)['router']
-            self._check_router(router, [])
             return router
 
         def add_interface(router, net_id, subnet_id, gw_ip, project):
@@ -3043,11 +2886,6 @@ class TestAimMapping(ApicAimTestCase):
             subnet = self._show('subnets', subnet_id)['subnet']
             self._check_subnet(
                 subnet, net, expected_gws, unexpected_gw_ips, project=project)
-
-        def check_router(router, expected_gw_ips, project):
-            router = self._show('routers', router['id'])['router']
-            self._check_router(
-                router, expected_gw_ips, unscoped_project=project)
 
         def check_default_vrf(project, should_exist):
             tenant_name = self.name_mapper.project(None, project)
@@ -3091,9 +2929,6 @@ class TestAimMapping(ApicAimTestCase):
         gw4C = '10.0.4.3'
 
         # Check initial state with no routing.
-        check_router(rA, [], None)
-        check_router(rB, [], None)
-        check_router(rC, [], None)
         check_net(net1, sn1, [], [], [gw1A], t1)
         check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
@@ -3106,9 +2941,6 @@ class TestAimMapping(ApicAimTestCase):
         # default VRF.
         add_interface(rA, net1, sn1, gw1A, t1)
         check_port_notify([p1])
-        check_router(rA, [gw1A], t1)
-        check_router(rB, [], None)
-        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
@@ -3120,9 +2952,6 @@ class TestAimMapping(ApicAimTestCase):
         # Add subnet 2 to router A.
         add_interface(rA, net2, sn2, gw2A, t1)
         check_port_notify([p2])
-        check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [], None)
-        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA], [(gw2A, rA)], [gw2B], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
@@ -3134,9 +2963,6 @@ class TestAimMapping(ApicAimTestCase):
         # Add subnet 2 to router B.
         add_interface(rB, net2, sn2, gw2B, t1)
         check_port_notify()
-        check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [gw2B], t1)
-        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
@@ -3148,9 +2974,6 @@ class TestAimMapping(ApicAimTestCase):
         # Add subnet 3 to router B.
         add_interface(rB, net3, sn3, gw3B, t1)
         check_port_notify([p3])
-        check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [gw2B, gw3B], t1)
-        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [rB], [(gw3B, rB)], [gw3C], t1)
@@ -3162,9 +2985,6 @@ class TestAimMapping(ApicAimTestCase):
         # Add subnet 3 to router C.
         add_interface(rC, net3, sn3, gw3C, t1)
         check_port_notify()
-        check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [gw2B, gw3B], t1)
-        check_router(rC, [gw3C], t1)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t1)
@@ -3179,9 +2999,6 @@ class TestAimMapping(ApicAimTestCase):
         # 1's default VRF.
         add_interface(rC, net4, sn4, gw4C, t1)
         check_port_notify([p1, p2, p3])
-        check_router(rA, [gw1A, gw2A], t2)
-        check_router(rB, [gw2B, gw3B], t2)
-        check_router(rC, [gw3C, gw4C], t2)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t2)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t2)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
@@ -3195,9 +3012,6 @@ class TestAimMapping(ApicAimTestCase):
         # and create tenant 1's default VRF.
         remove_interface(rB, net3, sn3, gw3B, t1)
         check_port_notify([p1, p2])
-        check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [gw2B], t1)
-        check_router(rC, [gw3C, gw4C], t2)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [rC], [(gw3C, rC)], [gw3B], t2)
@@ -3211,9 +3025,6 @@ class TestAimMapping(ApicAimTestCase):
         # again and delete tenant 1's default VRF.
         add_interface(rB, net3, sn3, gw3B, t1)
         check_port_notify([p1, p2])
-        check_router(rA, [gw1A, gw2A], t2)
-        check_router(rB, [gw2B, gw3B], t2)
-        check_router(rC, [gw3C, gw4C], t2)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t2)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t2)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
@@ -3227,9 +3038,6 @@ class TestAimMapping(ApicAimTestCase):
         # and create tenant 1's default VRF
         remove_interface(rB, net2, sn2, gw2B, t1)
         check_port_notify([p1, p2])
-        check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [gw3B], t2)
-        check_router(rC, [gw3C, gw4C], t2)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA], [(gw2A, rA)], [gw2B], t1)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
@@ -3243,9 +3051,6 @@ class TestAimMapping(ApicAimTestCase):
         # and delete tenant 1's default VRF.
         add_interface(rB, net2, sn2, gw2B, t1)
         check_port_notify([p1, p2])
-        check_router(rA, [gw1A, gw2A], t2)
-        check_router(rB, [gw2B, gw3B], t2)
-        check_router(rC, [gw3C, gw4C], t2)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t2)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t2)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t2)
@@ -3260,9 +3065,6 @@ class TestAimMapping(ApicAimTestCase):
         # default VRF.
         remove_interface(rC, net4, sn4, gw4C, t1)
         check_port_notify([p1, p2, p3])
-        check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [gw2B, gw3B], t1)
-        check_router(rC, [gw3C], t1)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [rB, rC], [(gw3B, rB), (gw3C, rC)], [], t1)
@@ -3274,9 +3076,6 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet 3 from router C.
         remove_interface(rC, net3, sn3, gw3C, t1)
         check_port_notify()
-        check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [gw2B, gw3B], t1)
-        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
         check_net(net3, sn3, [rB], [(gw3B, rB)], [gw3C], t1)
@@ -3287,9 +3086,6 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet 2 from router B.
         remove_interface(rB, net2, sn2, gw2B, t1)
         check_port_notify()
-        check_router(rA, [gw1A, gw2A], t1)
-        check_router(rB, [gw3B], t1)
-        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA], [(gw2A, rA)], [gw2B], t1)
         check_net(net3, sn3, [rB], [(gw3B, rB)], [gw3C], t1)
@@ -3300,9 +3096,6 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet 2 from router A.
         remove_interface(rA, net2, sn2, gw2A, t1)
         check_port_notify([p2])
-        check_router(rA, [gw1A], t1)
-        check_router(rB, [gw3B], t1)
-        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
         check_net(net3, sn3, [rB], [(gw3B, rB)], [gw3C], t1)
@@ -3313,9 +3106,6 @@ class TestAimMapping(ApicAimTestCase):
         # Remove subnet 3 from router B.
         remove_interface(rB, net3, sn3, gw3B, t1)
         check_port_notify([p3])
-        check_router(rA, [gw1A], t1)
-        check_router(rB, [], None)
-        check_router(rC, [], None)
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
@@ -3327,9 +3117,6 @@ class TestAimMapping(ApicAimTestCase):
         # 1's default VRF.
         remove_interface(rA, net1, sn1, gw1A, t1)
         check_port_notify([p1])
-        check_router(rA, [], None)
-        check_router(rB, [], None)
-        check_router(rC, [], None)
         check_net(net1, sn1, [], [], [gw1A], t1)
         check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
         check_net(net3, sn3, [], [], [gw3B, gw3C], t1)
@@ -3800,137 +3587,6 @@ class TestSyncState(ApicAimTestCase):
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
             self._test_router('error')
-
-    def _test_router_interface_vrf(self, expected_state):
-        net_resp = self._make_network(self.fmt, 'net1', True)
-        subnet = self._make_subnet(
-            self.fmt, net_resp, '10.0.0.1', '10.0.0.0/24')['subnet']
-        router = self._make_router(self.fmt, 'test-tenant', 'router1')[
-            'router']
-        self.l3_plugin.add_router_interface(
-            n_context.get_admin_context(), router['id'],
-            {'subnet_id': subnet['id']})
-
-        router = self._show('routers', router['id'])['router']
-        self.assertEqual(expected_state, router['apic:synchronization_state'])
-
-        router = self._list(
-            'routers',
-            query_params=('id=%s' % router['id']))['routers'][0]
-        self.assertEqual(expected_state, router['apic:synchronization_state'])
-
-    def test_router_interface_vrf_synced(self):
-        with mock.patch('aim.aim_manager.AimManager.get_status',
-                        TestSyncState._get_synced_status):
-            self._test_router_interface_vrf('synced')
-
-    def test_router_interface_vrf_build(self):
-        def get_status(self, context, resource, create_if_absent=True):
-            return TestSyncState._get_pending_status_for_type(
-                context, resource, aim_resource.VRF)
-
-        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
-            self._test_router_interface_vrf('build')
-
-    def test_router_interface_vrf_error(self):
-        def get_status(self, context, resource, create_if_absent=True):
-            return TestSyncState._get_failed_status_for_type(
-                context, resource, aim_resource.VRF)
-
-        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
-            self._test_router_interface_vrf('error')
-
-    def _test_router_interface_subnet(self, expected_state):
-        net_resp = self._make_network(self.fmt, 'net1', True)
-        subnet = self._make_subnet(
-            self.fmt, net_resp, '10.0.0.1', '10.0.0.0/24')['subnet']
-        router = self._make_router(self.fmt, 'test-tenant', 'router1')[
-            'router']
-        self.l3_plugin.add_router_interface(
-            n_context.get_admin_context(), router['id'],
-            {'subnet_id': subnet['id']})
-
-        router = self._show('routers', router['id'])['router']
-        self.assertEqual(expected_state,
-                         router['apic:synchronization_state'])
-
-        router = self._list(
-            'routers',
-            query_params=('id=%s' % router['id']))['routers'][0]
-        self.assertEqual(expected_state, router['apic:synchronization_state'])
-
-        subnet = self._show('subnets', subnet['id'])['subnet']
-        self.assertEqual(expected_state, subnet['apic:synchronization_state'])
-
-        subnet = self._list(
-            'subnets', query_params=('id=%s' % subnet['id']))['subnets'][0]
-        self.assertEqual(expected_state, subnet['apic:synchronization_state'])
-
-    def test_router_interface_subnet_synced(self):
-        with mock.patch('aim.aim_manager.AimManager.get_status',
-                        TestSyncState._get_synced_status):
-            self._test_router_interface_subnet('synced')
-
-    def test_router_interface_subnet_build(self):
-        def get_status(self, context, resource, create_if_absent=True):
-            return TestSyncState._get_pending_status_for_type(
-                context, resource, aim_resource.Subnet)
-
-        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
-            self._test_router_interface_subnet('build')
-
-    def test_router_interface_subnet_error(self):
-        def get_status(self, context, resource, create_if_absent=True):
-            return TestSyncState._get_failed_status_for_type(
-                context, resource, aim_resource.Subnet)
-
-        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
-            self._test_router_interface_subnet('error')
-
-    def _test_router_interface_multiple_subnets(self, expected_state,
-                                                subnet2_attach=True):
-        net_resp = self._make_network(self.fmt, 'net1', True)
-
-        subnet1 = self._make_subnet(
-            self.fmt, net_resp, '10.0.0.1', '10.0.0.0/24')['subnet']
-
-        subnet2 = self._make_subnet(
-            self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24')['subnet']
-        sub_exp_sync_state = {}
-        sub_exp_sync_state[subnet1['id']] = expected_state
-        sub_exp_sync_state[subnet2['id']] = (expected_state if subnet2_attach
-                                            else 'N/A')
-
-        router = self._make_router(self.fmt, 'test-tenant', 'router1')[
-            'router']
-
-        self.l3_plugin.add_router_interface(
-            n_context.get_admin_context(), router['id'],
-            {'subnet_id': subnet1['id']})
-        if subnet2_attach:
-            self.l3_plugin.add_router_interface(
-                n_context.get_admin_context(), router['id'],
-                {'subnet_id': subnet2['id']})
-
-        router = self._show('routers', router['id'])['router']
-        self.assertEqual(expected_state,
-                         router['apic:synchronization_state'])
-
-        subnets = self._list('subnets')
-        for subnet in subnets['subnets']:
-            self.assertEqual(sub_exp_sync_state[subnet['id']],
-                             subnet['apic:synchronization_state'])
-
-    def test_router_interface_multiple_subnets_synced(self):
-        with mock.patch('aim.aim_manager.AimManager.get_status',
-                        TestSyncState._get_synced_status):
-            self._test_router_interface_multiple_subnets('synced')
-
-    def test_router_interface_multiple_subnets_one_attached(self):
-        with mock.patch('aim.aim_manager.AimManager.get_status',
-                        TestSyncState._get_synced_status):
-            self._test_router_interface_multiple_subnets('synced',
-                                                         subnet2_attach=False)
 
     def _test_external_network(self, expected_state, dn=None, msg=None):
         net = self._make_ext_network('net1', dn=dn)
