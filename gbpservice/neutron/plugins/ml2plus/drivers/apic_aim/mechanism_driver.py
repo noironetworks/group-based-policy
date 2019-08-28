@@ -1493,8 +1493,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self.aim.update(aim_ctx, contract, display_name=dname)
             self.aim.update(aim_ctx, subject, display_name=dname)
 
-            # REVISIT(rkukura): Refactor to share common code below with
-            # extend_router_dict.
             query = BAKERY(lambda s: s.query(
                 models_v2.IPAllocation))
             query += lambda q: q.join(
@@ -1593,9 +1591,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return
         LOG.debug("APIC AIM MD extending dict for router: %s", result)
 
-        # REVISIT(rkukura): Consider optimizing this method by
-        # persisting the router->VRF relationship.
-
         sync_state = cisco_apic.SYNC_SYNCED
         dist_names = {}
         aim_ctx = aim_context.AimContext(session)
@@ -1607,77 +1602,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         dist_names[a_l3.CONTRACT_SUBJECT] = subject.dn
         sync_state = self._merge_status(aim_ctx, sync_state, subject)
-
-        # REVISIT: Do we really need to include Subnet DNs in
-        # apic:distinguished_names and apic:synchronization_state?
-        # Eliminating these would reduce or potentially eliminate (if
-        # we persist the router->VRF mapping) the querying needed
-        # here.
-        unscoped_vrf = None
-        scope_ids = set()
-
-        query = BAKERY(lambda s: s.query(
-            models_v2.IPAllocation.ip_address,
-            models_v2.Subnet.cidr,
-            models_v2.Subnet.network_id,
-            models_v2.SubnetPool.address_scope_id,
-            db.NetworkMapping))
-        query += lambda q: q.join(
-            models_v2.Subnet,
-            models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
-        query += lambda q: q.outerjoin(
-            models_v2.SubnetPool,
-            models_v2.SubnetPool.id == models_v2.Subnet.subnetpool_id)
-        query += lambda q: q.outerjoin(
-            db.NetworkMapping,
-            db.NetworkMapping.network_id == models_v2.Subnet.network_id)
-        query += lambda q: q.join(
-            l3_db.RouterPort,
-            l3_db.RouterPort.port_id == models_v2.IPAllocation.port_id)
-        query += lambda q: q.filter(
-            l3_db.RouterPort.router_id == sa.bindparam('router_id'),
-            l3_db.RouterPort.port_type == n_constants.DEVICE_OWNER_ROUTER_INTF)
-        for intf in query(session).params(
-                router_id=router_db.id):
-            ip_address, subnet_cidr, net_id, scope_id, net_mapping = intf
-            if not net_mapping:
-                LOG.warning(
-                    "Mapping missing for network %s in extend_router_dict" %
-                    net_id)
-                continue
-            if net_mapping.bd_name:
-                bd = self._get_network_bd(net_mapping)
-                sn = self._map_subnet({'cidr': subnet_cidr}, ip_address, bd)
-                dist_names[intf.ip_address] = sn.dn
-                sync_state = self._merge_status(aim_ctx, sync_state, sn)
-            if scope_id:
-                scope_ids.add(scope_id)
-            else:
-                vrf = self._get_network_vrf(net_mapping)
-                if unscoped_vrf and unscoped_vrf.identity != vrf.identity:
-                    # This should never happen. If it does, it
-                    # indicates an inconsistency in the DB state
-                    # rather than any sort of user error. We log an
-                    # error to aid debugging in case such an
-                    # inconsistency somehow does occur.
-                    LOG.error("Inconsistent unscoped VRFs %s and %s for "
-                              "router %s.", vrf, unscoped_vrf, router_db)
-                unscoped_vrf = vrf
-        for scope_id in scope_ids:
-            addr_scope_mapping = self._get_address_scope_mapping(session,
-                                                                 scope_id)
-            if not addr_scope_mapping:
-                LOG.warning(
-                    "Mapping missing for address scope %s in "
-                    "extend_router_dict" % scope_id)
-                continue
-            vrf = self._get_address_scope_vrf(addr_scope_mapping)
-            dist_names[a_l3.SCOPED_VRF % scope_id] = vrf.dn
-            sync_state = self._merge_status(aim_ctx, sync_state, vrf)
-
-        if unscoped_vrf:
-            dist_names[a_l3.UNSCOPED_VRF] = unscoped_vrf.dn
-            sync_state = self._merge_status(aim_ctx, sync_state, unscoped_vrf)
 
         result[cisco_apic.DIST_NAMES] = dist_names
         result[cisco_apic.SYNC_STATE] = sync_state
