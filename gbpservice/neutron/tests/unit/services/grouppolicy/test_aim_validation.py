@@ -135,10 +135,10 @@ class TestNeutronMapping(AimValidationTestCase):
         # Test the AIM Subnet.
         self._test_aim_resource(sn, 'gw_ip_mask', '4.3.2.1/24')
 
-    def _test_unscoped_vrf(self, router_id):
-        # Get the router's unscoped AIM VRF.
-        router = self._show('routers', router_id)['router']
-        vrf_dn = router['apic:distinguished_names']['no_scope-VRF']
+    def _test_unscoped_vrf(self, net_id):
+        # Get the network's AIM VRF.
+        net = self._show('networks', net_id)['network']
+        vrf_dn = net['apic:distinguished_names']['VRF']
         vrf = aim_resource.VRF.from_dn(vrf_dn)
 
         # Test the AIM VRF.
@@ -758,6 +758,7 @@ class TestNeutronMapping(AimValidationTestCase):
         # Create shared network and unscoped subnet as tenant_1.
         net_resp = self._make_network(
             self.fmt, 'net1', True, tenant_id='tenant_1', shared=True)
+        net1_id = net_resp['network']['id']
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24',
             tenant_id='tenant_1')['subnet']
@@ -766,6 +767,7 @@ class TestNeutronMapping(AimValidationTestCase):
         # Create unshared network and unscoped subnet as tenant_2.
         net_resp = self._make_network(
             self.fmt, 'net2', True, tenant_id='tenant_2')
+        net2_id = net_resp['network']['id']
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.2.1', '10.0.2.0/24',
             tenant_id='tenant_2')['subnet']
@@ -804,7 +806,7 @@ class TestNeutronMapping(AimValidationTestCase):
 
         # Test AIM Subnet and VRF.
         self._test_routed_subnet(subnet2_id, '10.0.2.1')
-        self._test_unscoped_vrf(router_id)
+        self._test_unscoped_vrf(net2_id)
 
         # Add shared subnet to router.
         self.l3_plugin.add_router_interface(
@@ -815,7 +817,7 @@ class TestNeutronMapping(AimValidationTestCase):
         # Test AIM Subnets and VRF.
         self._test_routed_subnet(subnet2_id, '10.0.2.1')
         self._test_routed_subnet(subnet1_id, '10.0.1.1')
-        self._test_unscoped_vrf(router_id)
+        self._test_unscoped_vrf(net1_id)
 
     def test_subnet_overlap(self):
         # Create two routers.
