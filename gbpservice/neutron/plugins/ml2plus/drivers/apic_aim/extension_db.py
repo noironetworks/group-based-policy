@@ -13,6 +13,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from collections import defaultdict
+
 from neutron.db import models_v2
 from neutron_lib.db import model_base
 import sqlalchemy as sa
@@ -324,6 +326,24 @@ class ExtensionDbMixin(object):
                 cisco_apic_l3.EXTERNAL_CONSUMED_CONTRACTS:
                 [c['contract_name'] for c in db_contracts
                  if not c['provides']]}
+
+    def get_router_extn_db_bulk(self, session, router_ids):
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        db_contracts = (session.query(RouterExtensionContractDb).filter(
+            RouterExtensionContractDb.router_id.in_(router_ids)).all())
+
+        attr_dict = defaultdict(dict)
+        for db_contract in db_contracts:
+            router_id = db_contract['router_id']
+            p_contracts = attr_dict[router_id].setdefault(
+                cisco_apic_l3.EXTERNAL_PROVIDED_CONTRACTS, [])
+            c_contracts = attr_dict[router_id].setdefault(
+                cisco_apic_l3.EXTERNAL_CONSUMED_CONTRACTS, [])
+            if db_contract['provides']:
+                p_contracts.append(db_contract['contract_name'])
+            else:
+                c_contracts.append(db_contract['contract_name'])
+        return attr_dict
 
     def _update_list_attr(self, session, db_model, column,
                           new_values, **filters):
