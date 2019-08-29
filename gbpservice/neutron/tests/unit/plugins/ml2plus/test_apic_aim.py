@@ -451,6 +451,49 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.assertIsNotNone(sg_rule)
         return sg_rule
 
+    def _get_contract(self, contract_name, tenant_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        contract = aim_resource.Contract(tenant_name=tenant_name,
+                                         name=contract_name)
+        contract = self.aim_mgr.get(aim_ctx, contract)
+        self.assertIsNotNone(contract)
+        return contract
+
+    def _get_subject(self, subject_name, contract_name, tenant_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        subject = aim_resource.ContractSubject(tenant_name=tenant_name,
+                                               contract_name=contract_name,
+                                               name=subject_name)
+        subject = self.aim_mgr.get(aim_ctx, subject)
+        self.assertIsNotNone(subject)
+        return subject
+
+    def _check_router(self, router):
+        dns = copy.copy(router.get(DN))
+        aname = self.name_mapper.router(None, router['id'])
+
+        aim_contract = self._get_contract(aname, 'common')
+        self.assertEqual('common', aim_contract.tenant_name)
+        self.assertEqual(aname, aim_contract.name)
+        self.assertEqual(router['name'], aim_contract.display_name)
+        self.assertEqual('context', aim_contract.scope)  # REVISIT(rkukura)
+        self._check_dn_is_resource(dns, 'Contract', aim_contract)
+
+        aim_subject = self._get_subject('route', aname, 'common')
+        self.assertEqual('common', aim_subject.tenant_name)
+        self.assertEqual(aname, aim_subject.contract_name)
+        self.assertEqual('route', aim_subject.name)
+        self.assertEqual(router['name'], aim_subject.display_name)
+        self.assertEqual([], aim_subject.in_filters)
+        self.assertEqual([], aim_subject.out_filters)
+        self.assertEqual([self.driver.apic_system_id + '_AnyFilter'],
+                         aim_subject.bi_filters)
+        self._check_dn_is_resource(dns, 'ContractSubject', aim_subject)
+
+        self.assertFalse(dns)
+
     def _sg_rule_should_not_exist(self, sg_rule_name):
         session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
@@ -723,31 +766,12 @@ class TestAimMapping(ApicAimTestCase):
                                  name=epg_name)
         self.assertEqual([], epgs)
 
-    def _get_contract(self, contract_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        contract = aim_resource.Contract(tenant_name=tenant_name,
-                                         name=contract_name)
-        contract = self.aim_mgr.get(aim_ctx, contract)
-        self.assertIsNotNone(contract)
-        return contract
-
     def _contract_should_not_exist(self, contract_name):
         session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         contracts = self.aim_mgr.find(aim_ctx, aim_resource.Contract,
                                       name=contract_name)
         self.assertEqual([], contracts)
-
-    def _get_subject(self, subject_name, contract_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        subject = aim_resource.ContractSubject(tenant_name=tenant_name,
-                                               contract_name=contract_name,
-                                               name=subject_name)
-        subject = self.aim_mgr.get(aim_ctx, subject)
-        self.assertIsNotNone(subject)
-        return subject
 
     def _subject_should_not_exist(self, subject_name, contract_name):
         session = db_api.get_reader_session()
@@ -1021,30 +1045,6 @@ class TestAimMapping(ApicAimTestCase):
                     aim_sg_rule.icmp_type)
             else:
                 self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
-
-    def _check_router(self, router):
-        dns = copy.copy(router.get(DN))
-        aname = self.name_mapper.router(None, router['id'])
-
-        aim_contract = self._get_contract(aname, 'common')
-        self.assertEqual('common', aim_contract.tenant_name)
-        self.assertEqual(aname, aim_contract.name)
-        self.assertEqual(router['name'], aim_contract.display_name)
-        self.assertEqual('context', aim_contract.scope)  # REVISIT(rkukura)
-        self._check_dn_is_resource(dns, 'Contract', aim_contract)
-
-        aim_subject = self._get_subject('route', aname, 'common')
-        self.assertEqual('common', aim_subject.tenant_name)
-        self.assertEqual(aname, aim_subject.contract_name)
-        self.assertEqual('route', aim_subject.name)
-        self.assertEqual(router['name'], aim_subject.display_name)
-        self.assertEqual([], aim_subject.in_filters)
-        self.assertEqual([], aim_subject.out_filters)
-        self.assertEqual([self.driver.apic_system_id + '_AnyFilter'],
-                         aim_subject.bi_filters)
-        self._check_dn_is_resource(dns, 'ContractSubject', aim_subject)
-
-        self.assertFalse(dns)
 
     def _check_router_deleted(self, router):
         aname = self.name_mapper.router(None, router['id'])
@@ -5198,11 +5198,6 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual(['p1', 'p2'], sorted(rtr1[PROV]))
         self.assertEqual(['k'], rtr1[CONS])
 
-        # delete
-        self._delete('routers', rtr1['id'])
-        self.assertEqual({PROV: [], CONS: []},
-            extn.get_router_extn_db(session, rtr1['id']))
-
         # Simulate a prior existing router (i.e. no extension attrs exist)
         rtr2 = self._make_router(self.fmt, 'test-tenant', 'router2',
             arg_list=self.extension_attributes,
@@ -5226,6 +5221,26 @@ class TestExtensionAttributes(ApicAimTestCase):
             'routers', query_params=('id=%s' % rtr2['id']))['routers'][0]
         self.assertEqual(['p1', 'p2'], sorted(rtr2[PROV]))
         self.assertEqual([], rtr2[CONS])
+
+        # Test the full list which will invoke the bulk extension
+        rtrs = self._list('routers')['routers']
+        self.assertEqual(3, len(rtrs))
+        for rtr in rtrs:
+            self._check_router(rtr)
+            if rtr['id'] == rtr0['id']:
+                self.assertEqual([], sorted(rtr[PROV]))
+                self.assertEqual([], rtr[CONS])
+            elif rtr['id'] == rtr1['id']:
+                self.assertEqual(['p1', 'p2'], sorted(rtr1[PROV]))
+                self.assertEqual(['k'], rtr1[CONS])
+            elif rtr['id'] == rtr2['id']:
+                self.assertEqual(['p1', 'p2'], sorted(rtr[PROV]))
+                self.assertEqual([], rtr[CONS])
+
+        # delete
+        self._delete('routers', rtr1['id'])
+        self.assertEqual({PROV: [], CONS: []},
+            extn.get_router_extn_db(session, rtr1['id']))
 
     def test_address_scope_lifecycle(self):
         session = db_api.get_writer_session()

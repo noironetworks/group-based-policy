@@ -1617,25 +1617,79 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.aim.delete(aim_ctx, subject)
         self.aim.delete(aim_ctx, contract)
 
-    def extend_router_dict(self, session, router_db, result):
-        if result.get(api_plus.BULK_EXTENDED):
-            return
-        LOG.debug("APIC AIM MD extending dict for router: %s", result)
+    def extend_router_dict_bulk(self, session, results):
+        LOG.debug("APIC AIM MD extending dict bulk for router: %s",
+                  results)
 
-        sync_state = cisco_apic.SYNC_SYNCED
-        dist_names = {}
+        # Gather db objects
         aim_ctx = aim_context.AimContext(session)
+        aim_resources_aggregate = []
+        res_dict_by_aim_res_dn = {}
+        # template to track the status related info
+        # for each resource.
+        aim_status_track_template = {
+            SYNC_STATE_TMP: cisco_apic.SYNC_NOT_APPLICABLE,
+            AIM_RESOURCES_CNT: 0}
 
-        contract, subject = self._map_router(session, router_db)
+        for res_dict in results:
+            aim_resources = []
+            res_dict[cisco_apic.SYNC_STATE] = cisco_apic.SYNC_NOT_APPLICABLE
+            # Use a tmp field to aggregate the status across mapped
+            # AIM objects, we set the actual sync_state only if we
+            # are able to process all the status objects for these
+            # corresponding AIM resources. If any status object is not
+            # available then sync_state will be 'build'. On create,
+            # subnets start in 'N/A'. The tracking object is added
+            # along with the res_dict on the DN based res_dict_by_aim_res_dn
+            # dict which maintains the mapping from status objs to res_dict.
+            aim_status_track = copy.deepcopy(aim_status_track_template)
 
-        dist_names[a_l3.CONTRACT] = contract.dn
-        sync_state = self._merge_status(aim_ctx, sync_state, contract)
+            res_dict[cisco_apic.DIST_NAMES] = {}
+            res_dict_and_aim_status_track = (res_dict, aim_status_track)
+            dist_names = res_dict[cisco_apic.DIST_NAMES]
 
-        dist_names[a_l3.CONTRACT_SUBJECT] = subject.dn
-        sync_state = self._merge_status(aim_ctx, sync_state, subject)
+            contract, subject = self._map_router(session, res_dict)
+            dist_names[a_l3.CONTRACT] = contract.dn
+            aim_resources.append(contract)
+            res_dict_by_aim_res_dn[contract.dn] = res_dict_and_aim_status_track
+            dist_names[a_l3.CONTRACT_SUBJECT] = subject.dn
+            aim_resources.append(subject)
+            res_dict_by_aim_res_dn[subject.dn] = res_dict_and_aim_status_track
 
-        result[cisco_apic.DIST_NAMES] = dist_names
-        result[cisco_apic.SYNC_STATE] = sync_state
+            # Track the number of AIM resources in aim_status_track,
+            # decrement count each time we process a status obj related to
+            # the resource. If the count hits zero then we have processed
+            # the status objs for all of the associated AIM resources. Until
+            # this happens, the sync_state is held as 'build' (unless it has
+            # to be set to 'error').
+            aim_status_track[AIM_RESOURCES_CNT] = len(aim_resources)
+            aim_resources_aggregate.extend(aim_resources)
+
+        # Merge statuses
+        for status in self.aim.get_statuses(aim_ctx, aim_resources_aggregate):
+            res_dict, aim_status_track = res_dict_by_aim_res_dn.get(
+                status.resource_dn, ({}, {}))
+            if res_dict and aim_status_track:
+                aim_status_track[SYNC_STATE_TMP] = self._merge_status(
+                    aim_ctx,
+                    aim_status_track.get(SYNC_STATE_TMP,
+                        cisco_apic.SYNC_NOT_APPLICABLE),
+                    None, status=status)
+                aim_status_track[AIM_RESOURCES_CNT] -= 1
+                if (aim_status_track[AIM_RESOURCES_CNT] == 0 or
+                    (aim_status_track[SYNC_STATE_TMP] is
+                        cisco_apic.SYNC_ERROR)):
+                    # if this is zero then all the AIM resources corresponding,
+                    # to this neutron resource are processed and we can
+                    # accurately reflect the actual sync_state. Anytime we
+                    # encounter an error - we reflect that immediately even
+                    # if we are not done with the AIM resources processing.
+                    res_dict[cisco_apic.SYNC_STATE] = (
+                        aim_status_track[SYNC_STATE_TMP])
+
+    def extend_router_dict(self, session, router_db, result):
+        LOG.debug("APIC AIM MD extending dict for router: %s", result)
+        self.extend_router_dict_bulk(session, [result])
 
     def add_router_interface(self, context, router, port, subnets):
         LOG.debug("APIC AIM MD adding subnets %(subnets)s to router "
