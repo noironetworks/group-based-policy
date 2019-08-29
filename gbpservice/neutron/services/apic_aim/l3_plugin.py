@@ -14,7 +14,9 @@
 #    under the License.
 
 from neutron.api import extensions
+from neutron.db import _model_query as model_query
 from neutron.db import _resource_extend as resource_extend
+from neutron.db import _utils as db_utils
 from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import dns_db
@@ -35,10 +37,13 @@ from sqlalchemy import inspect
 from gbpservice._i18n import _
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
+from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
+from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
+
 
 LOG = logging.getLogger(__name__)
 
@@ -82,6 +87,9 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
     @staticmethod
     @resource_extend.extends([l3_def.ROUTERS])
     def _extend_router_dict_apic(router_res, router_db):
+        if router_res.get(api_plus.BULK_EXTENDED):
+            return
+
         LOG.debug("APIC AIM L3 Plugin extending router dict: %s", router_res)
         plugin = directory.get_plugin(constants.L3)
         session = inspect(router_db).session
@@ -91,6 +99,54 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         except Exception:
             with excutils.save_and_reraise_exception():
                 LOG.exception("APIC AIM extend_router_dict failed")
+
+    @staticmethod
+    @resource_extend.extends([l3_def.ROUTERS + '_BULK'])
+    def _extend_router_dict_bulk_apic(routers, _):
+        LOG.debug("APIC AIM L3 Plugin bulk extending router dict: %s",
+                  routers)
+        if not routers:
+            return
+        plugin = directory.get_plugin(constants.L3)
+        session = patch_neutron.get_current_session()
+        try:
+            plugin._md.extend_router_dict_bulk(session, routers)
+            plugin._include_router_extn_attr_bulk(session, routers)
+        except Exception:
+            with excutils.save_and_reraise_exception():
+                LOG.exception("APIC AIM _extend_router_dict_bulk failed")
+
+    def _make_routers_dict(self, routers, fields=None):
+        results = []
+        for router in routers:
+            res = self._make_router_dict(router, fields,
+                                         process_extensions=False)
+            res[api_plus.BULK_EXTENDED] = True
+            resource_extend.apply_funcs(l3_def.ROUTERS, res, router)
+            res.pop(api_plus.BULK_EXTENDED, None)
+            results.append(res)
+
+        resource_extend.apply_funcs(l3_def.ROUTERS + '_BULK',
+                                    results, None)
+        return results
+
+    # Overwrite the upstream implementation to take advantage
+    # of the bulk extension support.
+    @db_api.retry_if_session_inactive()
+    def get_routers(self, context, filters=None, fields=None,
+                    sorts=None, limit=None, marker=None,
+                    page_reverse=False):
+        marker_obj = db_utils.get_marker_obj(self, context, 'router',
+                                             limit, marker)
+        routers_db = model_query.get_collection(context, l3_db.Router,
+                                                dict_func=None,
+                                                filters=filters,
+                                                fields=fields,
+                                                sorts=sorts,
+                                                limit=limit,
+                                                marker_obj=marker_obj,
+                                                page_reverse=page_reverse)
+        return self._make_routers_dict(routers_db, fields)
 
     def create_router(self, context, router):
         LOG.debug("APIC AIM L3 Plugin creating router: %s", router)
@@ -147,6 +203,14 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
     def _include_router_extn_attr(self, session, router):
         attr = self.get_router_extn_db(session, router['id'])
         router.update(attr)
+
+    def _include_router_extn_attr_bulk(self, session, routers):
+        router_ids = [router['id'] for router in routers]
+        attr_dict = self.get_router_extn_db_bulk(session, router_ids)
+        for router in routers:
+            router.update(attr_dict[router['id']] if router['id'] in attr_dict
+                          else {l3_ext.EXTERNAL_PROVIDED_CONTRACTS: [],
+                                l3_ext.EXTERNAL_CONSUMED_CONTRACTS: []})
 
     def add_router_interface(self, context, router_id, interface_info):
         LOG.debug("APIC AIM L3 Plugin adding interface %(interface)s "
