@@ -4314,6 +4314,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             mapping = self._get_network_mapping(session, port['network_id'])
             epg = self._get_network_epg(mapping)
         aim_epg = self.aim.get(aim_ctx, epg)
+        # Verify that the aim_epg is present before proceeding further.
+        if not aim_epg:
+            return
         host_id = port[portbindings.HOST_ID]
         aim_hd_mappings = (self.aim.find(aim_ctx,
                                          aim_infra.HostDomainMappingV2,
