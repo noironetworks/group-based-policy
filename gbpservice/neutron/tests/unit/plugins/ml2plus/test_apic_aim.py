@@ -6638,6 +6638,8 @@ class TestSnatIpAllocation(ApicAimTestCase):
         alloc = self.driver.get_or_allocate_snat_ip(
             n_context.get_admin_context(), 'h0', ext_net)
         self.assertIsNotNone(alloc)
+        self.assertEqual("ACTIVE", self._get_snat_ports(sub2)[0]["status"])
+        self.assertTrue(self._get_snat_ports(sub2)[0]["admin_state_up"])
 
         return sub2, rtr, pvt_sub
 

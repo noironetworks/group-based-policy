@@ -3712,6 +3712,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return
             for snat_subnet in snat_subnets:
                 try:
+                    # REVISIT:  This is a temporary fix and needs to be redone.
+                    # We need to make sure that we do a proper bind.  Currently
+                    # the SNAT endpoint is created by looking at VM port bind.
                     attrs = {'device_id': host_or_vrf,
                              'device_owner': aim_cst.DEVICE_OWNER_SNAT_PORT,
                              'tenant_id': ext_network['tenant_id'],
@@ -3719,7 +3722,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                              'network_id': ext_network['id'],
                              'mac_address': n_constants.ATTR_NOT_SPECIFIED,
                              'fixed_ips': [{'subnet_id': snat_subnet.id}],
-                             'admin_state_up': False}
+                             'status': "ACTIVE",
+                             'admin_state_up': True}
                     port = self.plugin.create_port(plugin_context,
                                                    {'port': attrs})
                     if port and port['fixed_ips']:
