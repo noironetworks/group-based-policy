@@ -907,6 +907,29 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.aim.delete(aim_ctx, epg)
                 session.delete(mapping)
 
+    def _merge_aim_status_bulk(self, aim_ctx, aim_resources_aggregate,
+                               res_dict_by_aim_res_dn):
+        for status in self.aim.get_statuses(aim_ctx, aim_resources_aggregate):
+            res_dict, aim_status_track = res_dict_by_aim_res_dn.get(
+                status.resource_dn, ({}, {}))
+            if res_dict and aim_status_track:
+                aim_status_track[SYNC_STATE_TMP] = self._merge_status(
+                    aim_ctx,
+                    aim_status_track.get(SYNC_STATE_TMP,
+                        cisco_apic.SYNC_NOT_APPLICABLE),
+                    None, status=status)
+                aim_status_track[AIM_RESOURCES_CNT] -= 1
+                if (aim_status_track[AIM_RESOURCES_CNT] == 0 or
+                    (aim_status_track[SYNC_STATE_TMP] is
+                        cisco_apic.SYNC_ERROR)):
+                    # if this is zero then all the AIM resources corresponding,
+                    # to this neutron resource are processed and we can
+                    # accurately reflect the actual sync_state. Anytime we
+                    # encounter an error - we reflect that immediately even
+                    # if we are not done with the AIM resources processing.
+                    res_dict[cisco_apic.SYNC_STATE] = (
+                        aim_status_track[SYNC_STATE_TMP])
+
     def extend_network_dict_bulk(self, session, results, single=False):
         # Gather db objects
         aim_ctx = aim_context.AimContext(session)
@@ -996,27 +1019,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_status_track[AIM_RESOURCES_CNT] = len(aim_resources)
             aim_resources_aggregate.extend(aim_resources)
 
-        # Merge statuses
-        for status in self.aim.get_statuses(aim_ctx, aim_resources_aggregate):
-            res_dict, aim_status_track = res_dict_by_aim_res_dn.get(
-                status.resource_dn, ({}, {}))
-            if res_dict and aim_status_track:
-                aim_status_track[SYNC_STATE_TMP] = self._merge_status(
-                    aim_ctx,
-                    aim_status_track.get(SYNC_STATE_TMP,
-                        cisco_apic.SYNC_NOT_APPLICABLE),
-                    None, status=status)
-                aim_status_track[AIM_RESOURCES_CNT] -= 1
-                if (aim_status_track[AIM_RESOURCES_CNT] == 0 or
-                    (aim_status_track[SYNC_STATE_TMP] is
-                        cisco_apic.SYNC_ERROR)):
-                    # if this is zero then all the AIM resources corresponding,
-                    # to this neutron resource are processed and we can
-                    # accurately reflect the actual sync_state. Anytime we
-                    # encounter an error - we reflect that immediately even
-                    # if we are not done with the AIM resources processing.
-                    res_dict[cisco_apic.SYNC_STATE] = (
-                        aim_status_track[SYNC_STATE_TMP])
+        self._merge_aim_status_bulk(aim_ctx, aim_resources_aggregate,
+                                    res_dict_by_aim_res_dn)
 
     def extend_network_dict(self, session, network_db, result):
         if result.get(api_plus.BULK_EXTENDED):
@@ -1287,26 +1291,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_status_track[AIM_RESOURCES_CNT] = len(aim_resources)
             aim_resources_aggregate.extend(aim_resources)
 
-        for status in self.aim.get_statuses(aim_ctx, aim_resources_aggregate):
-            res_dict, aim_status_track = res_dict_by_aim_res_dn.get(
-                status.resource_dn, ({}, {}))
-            if res_dict and aim_status_track:
-                aim_status_track[SYNC_STATE_TMP] = self._merge_status(
-                    aim_ctx,
-                    aim_status_track.get(SYNC_STATE_TMP,
-                        cisco_apic.SYNC_NOT_APPLICABLE),
-                    None, status=status)
-                aim_status_track[AIM_RESOURCES_CNT] -= 1
-                if (aim_status_track[AIM_RESOURCES_CNT] == 0 or
-                    (aim_status_track[SYNC_STATE_TMP] is
-                        cisco_apic.SYNC_ERROR)):
-                    # if this is zero then all the AIM resources corresponding,
-                    # to this neutron resource are processed and we can
-                    # accurately reflect the actual sync_state. Anytime we
-                    # encounter an error - we reflect that immediately even
-                    # if we are not done with the AIM resources processing.
-                    res_dict[cisco_apic.SYNC_STATE] = (
-                        aim_status_track[SYNC_STATE_TMP])
+        self._merge_aim_status_bulk(aim_ctx, aim_resources_aggregate,
+                                    res_dict_by_aim_res_dn)
 
     def extend_subnet_dict(self, session, subnet_db, result):
         if result.get(api_plus.BULK_EXTENDED):
@@ -1665,27 +1651,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_status_track[AIM_RESOURCES_CNT] = len(aim_resources)
             aim_resources_aggregate.extend(aim_resources)
 
-        # Merge statuses
-        for status in self.aim.get_statuses(aim_ctx, aim_resources_aggregate):
-            res_dict, aim_status_track = res_dict_by_aim_res_dn.get(
-                status.resource_dn, ({}, {}))
-            if res_dict and aim_status_track:
-                aim_status_track[SYNC_STATE_TMP] = self._merge_status(
-                    aim_ctx,
-                    aim_status_track.get(SYNC_STATE_TMP,
-                        cisco_apic.SYNC_NOT_APPLICABLE),
-                    None, status=status)
-                aim_status_track[AIM_RESOURCES_CNT] -= 1
-                if (aim_status_track[AIM_RESOURCES_CNT] == 0 or
-                    (aim_status_track[SYNC_STATE_TMP] is
-                        cisco_apic.SYNC_ERROR)):
-                    # if this is zero then all the AIM resources corresponding,
-                    # to this neutron resource are processed and we can
-                    # accurately reflect the actual sync_state. Anytime we
-                    # encounter an error - we reflect that immediately even
-                    # if we are not done with the AIM resources processing.
-                    res_dict[cisco_apic.SYNC_STATE] = (
-                        aim_status_track[SYNC_STATE_TMP])
+        self._merge_aim_status_bulk(aim_ctx, aim_resources_aggregate,
+                                    res_dict_by_aim_res_dn)
 
     def extend_router_dict(self, session, router_db, result):
         LOG.debug("APIC AIM MD extending dict for router: %s", result)
