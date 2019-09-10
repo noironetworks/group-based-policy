@@ -328,13 +328,9 @@ class ExtensionDbMixin(object):
                  if not c['provides']]}
 
     def get_router_extn_db_bulk(self, session, router_ids):
-        query = BAKERY(lambda s: s.query(
-            RouterExtensionContractDb))
-        query += lambda q: q.filter(
-            RouterExtensionContractDb.router_id.in_(
-                sa.bindparam('router_ids', expanding=True)))
-        db_contracts = query(session).params(
-            router_ids=router_ids).all()
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        db_contracts = (session.query(RouterExtensionContractDb).filter(
+            RouterExtensionContractDb.router_id.in_(router_ids)).all())
 
         attr_dict = defaultdict(dict)
         for db_contract in db_contracts:
