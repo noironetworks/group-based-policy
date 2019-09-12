@@ -3312,15 +3312,6 @@ class TestAimMapping(ApicAimTestCase):
         self.assertTrue(sp3['is_implicit'])
 
     def test_dhcp_provisioning_blocks_inserted_on_update(self):
-        self._test_dhcp_provisioning_blocks_inserted_on_update()
-
-    def test_dhcp_provisioning_blocks_inserted_on_update_non_optimized(self):
-        self._test_dhcp_provisioning_blocks_inserted_on_update(optimized=True)
-
-    def _test_dhcp_provisioning_blocks_inserted_on_update(self,
-                                                          optimized=False):
-        # enable or disable optimized DHCP
-        self.driver.enable_dhcp_opt = optimized
         ctx = n_context.get_admin_context()
         plugin = directory.get_plugin()
 
@@ -3347,10 +3338,7 @@ class TestAimMapping(ApicAimTestCase):
                                    'add_provisioning_component') as ap:
                 port['port'].update(update_dict)
                 plugin.update_port(ctx, port['port']['id'], port)
-                if optimized:
-                    ap.assert_not_called()
-                else:
-                    ap.assert_called()
+                ap.assert_called()
 
         setattr(driver_context.PortContext, "host_agents", orig_host_agents)
         dhcp_agt_mock.stop()
