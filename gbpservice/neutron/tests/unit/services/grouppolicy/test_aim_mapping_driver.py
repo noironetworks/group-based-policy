@@ -5775,19 +5775,41 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         sub2 = self._make_subnet(self.fmt, net, '1.2.3.1', '1.2.3.0/24')[
             'subnet']
 
+        # Create similar net and subnets for a different
+        # tenant. Similar t2* resources, with the same addresses as
+        # those in the primary tenant, will be setup througout this
+        # test, to ensure they don't interfere.
+        t2net = self._make_network(self.fmt, 't2net1', True, tenant_id='t2')
+        t2sub1 = self._make_subnet(self.fmt, t2net, '10.0.0.1', '10.0.0.0/24',
+                                   tenant_id='t2')['subnet']
+        t2sub2 = self._make_subnet(self.fmt, t2net, '1.2.3.1', '1.2.3.0/24',
+                                   tenant_id='t2')['subnet']
+
         # create 2 ports configured with the same allowed-addresses
         p1 = self._make_port(self.fmt, net['network']['id'],
                              arg_list=('allowed_address_pairs',),
                              device_owner='compute:',
                              fixed_ips=[{'subnet_id': sub1['id']}],
                              allowed_address_pairs=allow_addr)['port']
+        t2p1 = self._make_port(self.fmt, t2net['network']['id'],
+                               arg_list=('allowed_address_pairs',),
+                               device_owner='compute:',
+                               fixed_ips=[{'subnet_id': t2sub1['id']}],
+                               allowed_address_pairs=allow_addr)['port']
         p2 = self._make_port(self.fmt, net['network']['id'],
                              arg_list=('allowed_address_pairs',),
                              device_owner='compute:',
                              fixed_ips=[{'subnet_id': sub1['id']}],
                              allowed_address_pairs=allow_addr)['port']
+        t2p2 = self._make_port(self.fmt, t2net['network']['id'],
+                               arg_list=('allowed_address_pairs',),
+                               device_owner='compute:',
+                               fixed_ips=[{'subnet_id': t2sub1['id']}],
+                               allowed_address_pairs=allow_addr)['port']
         self._bind_port_to_host(p1['id'], 'h1')
+        self._bind_port_to_host(t2p1['id'], 'h1')
         self._bind_port_to_host(p2['id'], 'h2')
+        self._bind_port_to_host(t2p2['id'], 'h2')
         # Call agent => plugin RPC to get the details for each port. The
         # results should only have the configured AAPs, with none of them
         # active.
@@ -5806,6 +5828,10 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         ip_owner_info = {'port': p1['id'],
                          'ip_address_v4': owned_addr[0],
                          'network_id': p1['network_id']}
+        self.mech_driver.update_ip_owner(ip_owner_info)
+        ip_owner_info = {'port': t2p1['id'],
+                         'ip_address_v4': owned_addr[0],
+                         'network_id': t2p1['network_id']}
         self.mech_driver.update_ip_owner(ip_owner_info)
         # Call RPC sent by the agent to get the details for p1
         details = self.mech_driver.get_gbp_details(
@@ -5840,6 +5866,10 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                          'ip_address_v4': owned_addr[1],
                          'network_id': p2['network_id']}
         self.mech_driver.update_ip_owner(ip_owner_info)
+        ip_owner_info = {'port': t2p2['id'],
+                         'ip_address_v4': owned_addr[1],
+                         'network_id': t2p2['network_id']}
+        self.mech_driver.update_ip_owner(ip_owner_info)
         # Call RPC sent by the agent to get the details for p2
         details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
@@ -5853,22 +5883,40 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         # floating-IPs. Verify that FIP is "stolen" by p1 and p2
         net_ext, rtr, _ = self._setup_external_network(
             'l1', dn='uni/tn-t1/out-l1/instP-n1')
+        t2net_ext, t2rtr, _ = self._setup_external_network(
+            'l1', dn='uni/tn-t2/out-l1/instP-n1', router_tenant='t2')
         p3 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:',
                              fixed_ips=[{'subnet_id': sub2['id'],
                                          'ip_address': '1.2.3.250'}])['port']
+        t2p3 = self._make_port(self.fmt, t2net['network']['id'],
+                               device_owner='compute:',
+                               fixed_ips=[{'subnet_id': t2sub2['id'],
+                                           'ip_address': '1.2.3.250'}])['port']
         p4 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:',
                              fixed_ips=[{'subnet_id': sub2['id'],
                                          'ip_address': '1.2.3.251'}])['port']
+        t2p4 = self._make_port(self.fmt, t2net['network']['id'],
+                               device_owner='compute:',
+                               fixed_ips=[{'subnet_id': t2sub2['id'],
+                                           'ip_address': '1.2.3.251'}])['port']
         self.l3_plugin.add_router_interface(
             self._neutron_admin_context, rtr['id'], {'subnet_id': sub1['id']})
         self.l3_plugin.add_router_interface(
+            self._neutron_admin_context, t2rtr['id'],
+            {'subnet_id': t2sub1['id']})
+        self.l3_plugin.add_router_interface(
             self._neutron_admin_context, rtr['id'], {'subnet_id': sub2['id']})
+        self.l3_plugin.add_router_interface(
+            self._neutron_admin_context, t2rtr['id'],
+            {'subnet_id': t2sub2['id']})
         fip1 = self._make_floatingip(self.fmt, net_ext['id'],
                                      port_id=p3['id'])['floatingip']
+        self._make_floatingip(self.fmt, t2net_ext['id'], port_id=t2p3['id'])
         fip2 = self._make_floatingip(self.fmt, net_ext['id'],
                                      port_id=p4['id'])['floatingip']
+        self._make_floatingip(self.fmt, t2net_ext['id'], port_id=t2p4['id'])
         details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
