@@ -673,12 +673,13 @@ class ApicRpcHandlerMixin(object):
         query += lambda q: q.outerjoin(
             models_v2.IPAllocation,
             models_v2.IPAllocation.ip_address ==
-            ha_ip_db.HAIPAddressToPortAssocation.ha_ip_address and
-            models_v2.IPAllocation.network_id ==
-            sa.bindparam('network_id'))
+            ha_ip_db.HAIPAddressToPortAssocation.ha_ip_address)
         query += lambda q: q.filter(
             ha_ip_db.HAIPAddressToPortAssocation.port_id ==
-            sa.bindparam('port_id'))
+            sa.bindparam('port_id'),
+            sa.or_(models_v2.IPAllocation.network_id.is_(None),
+                   models_v2.IPAllocation.network_id ==
+                   sa.bindparam('network_id')))
         return [EndpointOwnedIpInfo._make(row) for row in
                 query(session).params(
                     port_id=port_id,
