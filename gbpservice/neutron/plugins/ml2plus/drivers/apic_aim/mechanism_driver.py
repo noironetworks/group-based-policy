@@ -489,7 +489,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             conn_track='normal')
         self.aim.create(aim_ctx, dhcp6_ingress_rule, overwrite=True)
 
-        # Need this rule for the SLAAC traffic to go through
+        # Need ICMPv6 rules for the SLAAC traffic to go through
         dname = aim_utils.sanitize_display_name(
             'DefaultSecurityGroupIcmp6IngressRule')
         icmp6_ingress_rule = aim_resource.SecurityGroupRule(
@@ -501,8 +501,24 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             direction='ingress',
             ethertype='ipv6',
             ip_protocol='icmpv6',
+            conn_track='normal',
             remote_ips=['::/0'])
         self.aim.create(aim_ctx, icmp6_ingress_rule, overwrite=True)
+
+        dname = aim_utils.sanitize_display_name(
+            'DefaultSecurityGroupIcmp6EgressRule')
+        icmp6_egress_rule = aim_resource.SecurityGroupRule(
+            tenant_name=COMMON_TENANT_NAME,
+            security_group_name=sg_name,
+            security_group_subject_name='default',
+            name='icmp6_egress',
+            display_name=dname,
+            direction='egress',
+            ethertype='ipv6',
+            ip_protocol='icmpv6',
+            conn_track='normal',
+            remote_ips=['::/0'])
+        self.aim.create(aim_ctx, icmp6_egress_rule, overwrite=True)
 
     def _setup_keystone_notification_listeners(self):
         targets = [oslo_messaging.Target(
