@@ -63,7 +63,7 @@ class ValidationManager(object):
         # REVISIT: Validate configuration.
 
         # Load project names from Keystone.
-        self.md.project_name_cache.load_projects()
+        self.md.project_details_cache.load_projects()
 
         # Start transaction.
         #
