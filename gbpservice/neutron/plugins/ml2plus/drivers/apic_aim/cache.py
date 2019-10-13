@@ -33,11 +33,11 @@ ksc_session.Session.register_conf_options(cfg.CONF, AUTH_GROUP)
 ksc_auth.register_conf_options(cfg.CONF, AUTH_GROUP)
 
 
-class ProjectNameCache(object):
-    """Cache of Keystone project ID to project name mappings."""
+class ProjectDetailsCache(object):
+    """Cache of Keystone project ID to project details mappings."""
 
     def __init__(self):
-        self.project_names = {}
+        self.project_details = {}
         self.keystone = None
         self.gbp = None
 
@@ -71,7 +71,7 @@ class ProjectNameCache(object):
         inside a transaction with a project_id not already in the
         cache.
         """
-        if project_id and project_id not in self.project_names:
+        if project_id and project_id not in self.project_details:
             self.load_projects()
 
     def load_projects(self):
@@ -81,29 +81,45 @@ class ProjectNameCache(object):
         projects = self.keystone.projects.list()
         LOG.debug("Received projects: %s", projects)
         for project in projects:
-            self.project_names[project.id] = project.name
+            self.project_details[project.id] = (project.name,
+                project.description)
 
-    def get_project_name(self, project_id):
-        """Get name of project from cache.
+    def get_project_details(self, project_id):
+        """Get name and descr of project from cache.
 
         :param project_id: ID of the project
 
-        Get the name of the project identified by project_id from the
-        cache. If the cache contains project_id, the project's name is
-        returned. If not, None is returned.
+        If the cache contains project_id, a tuple with
+        project name and description is returned
+        else a tuple (None,None) is returned
         """
-        return self.project_names.get(project_id)
+        if self.project_details.get(project_id):
+            return self.project_details[project_id]
+        return ('', '')
 
-    def update_project_name(self, project_id):
+    def update_project_details(self, project_id):
+        """Update project name and description from keystone.
+
+        :param project_id: ID of the project
+
+        Get the name and description of the project identified by
+        project_id from the keystone. If the value in cache doesn't
+        match values in keystone, update the cache and return 1,
+        to indicate that cache has been updated
+        """
         if self.keystone is None:
             self._get_keystone_client()
         if self.keystone:
-            LOG.debug("Calling project API")
             project = self.keystone.projects.get(project_id)
-            # only return project name when there is a change
-            if project and self.project_names.get(project_id) != project.name:
-                self.project_names[project.id] = project.name
-                return project.name
+            if project:
+                prj_details = self.get_project_details(project_id)
+                if (prj_details[0] != project.name or
+                    prj_details[1] != project.description):
+                    self.project_details[project_id] = (
+                        project.name, project.description)
+                    LOG.debug("Project updated %s " % (
+                        str(self.project_details[project_id])))
+                    return self.project_details[project_id]
         return None
 
     def purge_gbp(self, project_id):

@@ -161,10 +161,11 @@ class KeystoneNotificationEndpoint(object):
                  "tenant %(tenant_id)s",
                  {'event_type': event_type,
                   'tenant_id': tenant_id})
+
         if event_type == 'identity.project.updated':
-            new_project_name = (self._driver.project_name_cache.
-                                update_project_name(tenant_id))
-            if not new_project_name:
+            prj_details = (self._driver.project_details_cache.
+                    update_project_details(tenant_id))
+            if not prj_details:
                 return None
 
             # we only update tenants which have been created in APIC. For other
@@ -177,8 +178,9 @@ class KeystoneNotificationEndpoint(object):
             if not self._driver.aim.get(aim_ctx, tenant):
                 return None
 
-            self._driver.aim.update(aim_ctx, tenant,
-                display_name=aim_utils.sanitize_display_name(new_project_name))
+            disp_name = aim_utils.sanitize_display_name(prj_details[0])
+            self._driver.aim.update(aim_ctx, tenant, display_name
+                    = disp_name, descr=prj_details[1])
             return oslo_messaging.NotificationResult.HANDLED
 
         if event_type == 'identity.project.deleted':
@@ -189,7 +191,7 @@ class KeystoneNotificationEndpoint(object):
             # of the gbp/neutron purge on the server side instead of
             # using gbp/neutron client API to do it which is not so
             # efficient.
-            self._driver.project_name_cache.purge_gbp(tenant_id)
+            self._driver.project_details_cache.purge_gbp(tenant_id)
 
             # delete the tenant and AP in AIM also
             session = db_api.get_writer_session()
@@ -212,7 +214,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def initialize(self):
         LOG.info("APIC AIM MD initializing")
-        self.project_name_cache = cache.ProjectNameCache()
+        self.project_details_cache = cache.ProjectDetailsCache()
         self.name_mapper = apic_mapper.APICNameMapper()
         self.aim = aim_manager.AimManager()
         self._core_plugin = None
@@ -541,7 +543,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # mapping AIM resources under some actual Tenant.
             return
 
-        self.project_name_cache.ensure_project(project_id)
+        self.project_details_cache.ensure_project(project_id)
 
         # TODO(rkukura): Move the following to calls made from
         # precommit methods so AIM Tenants, ApplicationProfiles, and
@@ -549,13 +551,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         with db_api.context_manager.writer.using(plugin_context):
             session = plugin_context.session
             tenant_aname = self.name_mapper.project(session, project_id)
-            project_name = self.project_name_cache.get_project_name(project_id)
-            if project_name is None:
-                project_name = ''
+            project_details = (self.project_details_cache.
+                get_project_details(project_id))
             aim_ctx = aim_context.AimContext(session)
             tenant = aim_resource.Tenant(
-                name=tenant_aname, descr=self.apic_system_id,
-                display_name=aim_utils.sanitize_display_name(project_name))
+                name=tenant_aname, descr=project_details[1], display_name=
+                aim_utils.sanitize_display_name(project_details[0]))
             # NOTE(ivar): by overwriting the existing tenant, we make sure
             # existing deployments will update their description value. This
             # however negates any change to the Tenant object done by direct
@@ -5577,10 +5578,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 mgr.expected_session, project_id)
 
             tenant = aim_resource.Tenant(name=tenant_name)
-            project_name = (
-                self.project_name_cache.get_project_name(project_id) or '')
-            tenant.display_name = aim_utils.sanitize_display_name(project_name)
-            tenant.descr = self.apic_system_id
+            project_details = self.project_details_cache.get_project_details(
+                project_id)
+            tenant.display_name = aim_utils.sanitize_display_name(
+                project_details[0])
+            tenant.descr = project_details[1]
             tenant.monitored = False
             mgr.expect_aim_resource(tenant)
 
