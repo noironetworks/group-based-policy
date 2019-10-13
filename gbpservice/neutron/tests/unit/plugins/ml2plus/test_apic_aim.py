@@ -156,23 +156,45 @@ TEST_TENANT_NAMES = {
 
 
 # REVISIT(rkukura): Use mock for this instead?
-class FakeTenant(object):
-    def __init__(self, id, name):
+class FakeProject(object):
+    def __init__(self, id, name, description=''):
         self.id = id
         self.name = name
+        self.description = description
 
 
 class FakeProjectManager(object):
+    _instance = None
+
+    def __init__(self):
+        self._projects = {k: FakeProject(k, v)
+                          for k, v in TEST_TENANT_NAMES.items()}
+
     def list(self):
-        return [FakeTenant(k, v) for k, v in six.iteritems(TEST_TENANT_NAMES)]
+        return self._projects.values()
 
     def get(self, project_id):
-        return FakeTenant('test-tenant', 'new_name')
+        return self._projects.get(project_id)
+
+    @classmethod
+    def reset(cls):
+        cls._instance = None
+
+    @classmethod
+    def get_instance(cls):
+        if not cls._instance:
+            cls._instance = FakeProjectManager()
+        return cls._instance
+
+    @classmethod
+    def set(cls, project_id, name, description=''):
+        cls.get_instance()._projects[project_id] = FakeProject(
+            project_id, name, description)
 
 
 class FakeKeystoneClient(object):
     def __init__(self, **kwargs):
-        self.projects = FakeProjectManager()
+        self.projects = FakeProjectManager.get_instance()
 
 
 class AimSqlFixture(fixtures.Fixture):
@@ -283,6 +305,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
         self.validation_mgr = av.ValidationManager()
 
+        FakeProjectManager.reset()
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = FakeKeystoneClient
         self.plugin = directory.get_plugin()
@@ -1984,22 +2007,68 @@ class TestAimMapping(ApicAimTestCase):
         self.driver.aim.get = mock.Mock(return_value=True)
         self.driver.aim.update = mock.Mock()
         self.driver.aim.delete = mock.Mock()
-        self.driver.project_name_cache.purge_gbp = mock.Mock()
+        self.driver.project_details_cache.purge_gbp = mock.Mock()
         payload = {}
-        payload['resource_info'] = 'test-tenant'
+        payload['resource_info'] = 'test-tenant-update'
         keystone_ep = md.KeystoneNotificationEndpoint(self.driver)
 
-        # first test with project.updated event
+        tenant_name = self.name_mapper.project(None, 'test-tenant-update')
+        tenant = aim_resource.Tenant(name=tenant_name)
+
+        # Test project.updated event. Update both name and description.
+        FakeProjectManager.set('test-tenant-update',
+            'new-tenant', 'new-descr')
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
+        assert(self.driver.aim.update.call_args_list[0] == mock.call(
+            mock.ANY, tenant, display_name='new-tenant', descr = 'new-descr'))
+
+        # Test project.updated event. Update only the project name.
+        FakeProjectManager.set('test-tenant-update', 'name123', 'new-descr')
+        keystone_ep.info(None, None, 'identity.project.updated', payload, None)
+        assert(self.driver.aim.update.call_args_list[1] == mock.call(
+            mock.ANY, tenant, display_name='name123', descr = 'new-descr'))
+
+        # Test project.updated event. Update only the project description.
+        FakeProjectManager.set('test-tenant-update', 'name123', 'descr123')
+        keystone_ep.info(None, None, 'identity.project.updated', payload, None)
+        assert(self.driver.aim.update.call_args_list[2] == mock.call(
+            mock.ANY, tenant, display_name='name123', descr='descr123'))
+
+        # Test project.updated event. Clear the project description.
+        FakeProjectManager.set('test-tenant-update', 'name123', '')
+        keystone_ep.info(None, None, 'identity.project.updated', payload, None)
+        assert(self.driver.aim.update.call_args_list[3] == mock.call(
+            mock.ANY, tenant, display_name='name123', descr=''))
+
+        # Test project.updated event. Update project name and description.
+        FakeProjectManager.set('test-tenant-update', 'prj1', 'prj2')
+        keystone_ep.info(None, None, 'identity.project.updated', payload, None)
+        assert(self.driver.aim.update.call_args_list[4] == mock.call(
+            mock.ANY, tenant, display_name='prj1', descr='prj2'))
+
+        # Test project.updated event. Add new tenant.
+        FakeProjectManager.set('test-tenant-new', 'add-tenant', 'add-descr')
+        self.driver.project_details_cache.project_details[
+            'test-tenant-new'] = ['new-tenant', 'new-descr']
+        tenant_name = self.name_mapper.project(None, 'test-tenant-new')
+        tenant = aim_resource.Tenant(name=tenant_name)
+        payload['resource_info'] = 'test-tenant-new'
+        keystone_ep.info(None, None, 'identity.project.updated', payload, None)
+        assert(self.driver.aim.update.call_args_list[5] == mock.call(
+            mock.ANY, tenant, display_name='add-tenant', descr='add-descr'))
+
+        # Test project.updated event. No change in name or description.
+        payload['resource_info'] = 'test-tenant-new'
+        keystone_ep.info(None, None, 'identity.project.updated', payload, None)
+        assert(len(self.driver.aim.update.call_args_list) == 6)
+
+        # Test with project.deleted event.
+        payload['resource_info'] = 'test-tenant'
         tenant_name = self.name_mapper.project(None, 'test-tenant')
         tenant = aim_resource.Tenant(name=tenant_name)
-        self.driver.aim.update.assert_called_once_with(
-            mock.ANY, tenant, display_name='new_name')
-
-        # test again with project.deleted event
         self.driver.enable_keystone_notification_purge = True
         keystone_ep.info(None, None, 'identity.project.deleted', payload, None)
-        self.driver.project_name_cache.purge_gbp.assert_called_once_with(
+        self.driver.project_details_cache.purge_gbp.assert_called_once_with(
                                                                 'test-tenant')
         tenant = aim_resource.Tenant(name=tenant_name)
         exp_calls = [
