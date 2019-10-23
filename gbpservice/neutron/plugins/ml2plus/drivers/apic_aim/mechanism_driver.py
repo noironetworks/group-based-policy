@@ -4588,14 +4588,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         :param port:
         :return:
         """
-        # TODO(ivar): at the moment, it's likely that this method won't
-        # return anything unique for the specific port. This is because we
-        # don't require users to specify domain mappings, and even if we did,
-        # such mappings are barely scoped by host, and each host could have
-        # at the very least one VMM and one Physical domain referring to it
-        # (HPB). However, every Neutron port can actually belong only to a
-        # single domain. We should implement a way to unequivocally retrieve
-        # that information.
         session = plugin_context.session
         aim_ctx = aim_context.AimContext(session)
         if self._is_port_bound(port):
@@ -4606,10 +4598,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             self.aim.find(aim_ctx,
                                           aim_infra.HostDomainMappingV2,
                                           host_name=DEFAULT_HOST_DOMAIN))
+
             if not dom_mappings:
                 # If there's no direct mapping, get all the existing domains in
                 # AIM.
                 vmms, phys = self.get_aim_domains(aim_ctx)
+                # Since supporting workflows with VMM domains is WIP, this is
+                # left as is for now even if it not yet relevant.
                 for vmm in vmms:
                     dom_mappings.append(
                         aim_infra.HostDomainMappingV2(
@@ -4620,9 +4615,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         aim_infra.HostDomainMappingV2(
                             domain_type='PhysDom', domain_name=phy['name'],
                             host_name=DEFAULT_HOST_DOMAIN))
-            if not dom_mappings or len(dom_mappings) > 1:
+            if not dom_mappings:
                 return None, None
-            return dom_mappings[0].domain_type, dom_mappings[0].domain_name
+
+            port_context = self.plugin.get_bound_port_context(
+                plugin_context, port['id'], host_id)
+            if self._use_static_path(port_context.bottom_bound_segment):
+                phys = [{'domain_name': x.domain_name,
+                         'domain_type': x.domain_type}
+                        for x in dom_mappings
+                        if x.domain_type == 'PhysDom']
+                # Ensure that we only have one PhysDom
+                if len(phys) == 1:
+                    return phys[0]['domain_type'], phys[0]['domain_name']
+            # We do not support the workflow on VMM Domains yet - WIP.
         return None, None
 
     def _add_network_mapping_and_notify(self, context, network_id, bd, epg,

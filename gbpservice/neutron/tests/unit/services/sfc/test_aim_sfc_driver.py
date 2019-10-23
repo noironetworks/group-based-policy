@@ -612,6 +612,35 @@ class TestPortPair(TestAIMServiceFunctionChainingBase):
                               expected_res_status=400)
         # Ports with no domain
 
+    def test_port_pair_validation_host_on_vmm_and_phys_domains(self):
+
+        # hosts h1 & h2 on physdom already
+
+        # create vmm domain and put all hosts on it.
+        self.vmmdom = aim_res.VMMDomain(type='OpenStack', name='vmm1')
+        self.aim_mgr.create(self._aim_context, self.vmmdom)
+        self.aim_mgr.create(
+            self._aim_context, aim_infra.HostDomainMappingV2(
+                host_name='h1', domain_name=self.vmmdom.name,
+                domain_type='OpenStack'))
+        self.aim_mgr.create(
+            self._aim_context, aim_infra.HostDomainMappingV2(
+                host_name='h2', domain_name=self.vmmdom.name,
+                domain_type='OpenStack'))
+
+        net1 = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
+        net2 = self._make_network(self.fmt, 'net2', True)
+        self._make_subnet(self.fmt, net1, '192.168.1.1', '192.168.1.0/24')
+        p1 = self._make_port(self.fmt, net1['network']['id'])['port']
+        p2 = self._make_port(self.fmt, net2['network']['id'])['port']
+
+        self._bind_port_to_host(p1['id'], 'h1')
+        self._bind_port_to_host(p2['id'], 'h2')
+
+        self.create_port_pair(ingress=p1['id'], egress=p2['id'],
+                              expected_res_status=201)
+
     def test_port_pair_validation_no_domain(self):
         self.aim_mgr.delete(self._aim_context, self.physdom)
         net1 = self._make_network(self.fmt, 'net1', True)
