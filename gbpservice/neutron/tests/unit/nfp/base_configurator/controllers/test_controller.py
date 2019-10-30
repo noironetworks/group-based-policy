@@ -21,6 +21,10 @@ import zlib
 
 from gbpservice.nfp.pecan import constants
 
+import six
+if six.PY3:
+    from importlib import reload
+
 setattr(pecan, 'mode', constants.base)
 
 
