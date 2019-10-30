@@ -10,6 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import io
+
 from gbpclient.v2_0 import client as gbp_client
 from keystoneauth1.identity import v2
 from keystoneauth1.identity import v3
@@ -497,7 +499,7 @@ class NovaClient(OpenstackApi):
         if config_drive is True:
             kwargs.update(config_drive=True)
         if userdata is not None and \
-                (type(userdata) is str or type(userdata) is file):
+                (type(userdata) is str or type(userdata) is io.IOBase):
             kwargs.update(userdata=userdata)
         if metadata is not None and type(metadata) is dict and metadata != {}:
             kwargs.update(meta=metadata)
