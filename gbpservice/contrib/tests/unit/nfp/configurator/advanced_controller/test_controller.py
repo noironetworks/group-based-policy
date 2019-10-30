@@ -33,6 +33,10 @@ setattr(pecan, 'mode', constants.advanced)
 
 from gbpservice.contrib.nfp.configurator.advanced_controller import controller
 from gbpservice.nfp.pecan.api import root_controller
+
+import six
+if six.PY3:
+    from importlib import reload
 reload(root_controller)
 pika.BlockingConnection = mock.MagicMock(return_value=None)
 
