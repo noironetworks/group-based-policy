@@ -67,6 +67,9 @@ from gbpservice.neutron.tests.unit.services.grouppolicy import (
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_neutron_resources_driver as test_nr_base)
 
+import six
+if six.PY3:
+    unicode = str
 
 ML2PLUS_PLUGIN = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 DEFAULT_FILTER_ENTRY = {'arp_opcode': u'unspecified',

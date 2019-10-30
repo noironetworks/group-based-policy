@@ -70,6 +70,8 @@ from gbpservice.neutron.services.grouppolicy import group_policy_context
 from gbpservice.neutron.services.grouppolicy import plugin as gbp_plugin
 
 
+if six.PY3:
+    from functools import reduce
 HOST_SNAT_POOL = 'host-snat-pool-for-internal-use'
 HOST_SNAT_POOL_PORT = 'host-snat-pool-port-for-internal-use'
 DEVICE_OWNER_SNAT_PORT = 'host-snat-pool-port-device-owner-internal-use'

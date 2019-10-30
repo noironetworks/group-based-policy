@@ -27,6 +27,10 @@ and also converting to dictionaries.
 
 from gbpservice.contrib.nfp.configurator.lib import lbv2_constants as l_const
 
+import six
+if six.PY3:
+    unicode = str
+
 
 class BaseDataModel(object):
 

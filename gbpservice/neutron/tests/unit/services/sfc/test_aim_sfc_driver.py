@@ -34,6 +34,10 @@ from gbpservice.neutron.tests.unit.services.grouppolicy import (
 
 LOG = logging.getLogger(__name__)
 
+import six
+if six.PY3:
+    from importlib import reload
+
 
 class Rollback(Exception):
     pass
