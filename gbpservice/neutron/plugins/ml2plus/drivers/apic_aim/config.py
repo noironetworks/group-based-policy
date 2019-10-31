@@ -41,6 +41,11 @@ apic_opts = [
                 help=("This will enable purging all the resources including "
                       "the tenant once a keystone project.deleted "
                       "notification is received.")),
+    cfg.BoolOpt('enable_neutronclient_internal_ep_interface',
+                default=False,
+                help=("Set to True to use the internal endpoint interface "
+                      "while initializing the neutron client. By default its "
+                      "using the public interface.")),
     cfg.BoolOpt('enable_iptables_firewall',
                 default=False,
                 help=("This will enable the iptables firewall implementation "
