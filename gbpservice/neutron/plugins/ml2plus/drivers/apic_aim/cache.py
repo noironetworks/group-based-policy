@@ -40,6 +40,8 @@ class ProjectNameCache(object):
         self.project_names = {}
         self.keystone = None
         self.gbp = None
+        self.enable_neutronclient_internal_ep_interface = (
+            cfg.CONF.ml2_apic_aim.enable_neutronclient_internal_ep_interface)
 
     def _get_keystone_client(self):
         # REVISIT: It seems load_from_conf_options() and
@@ -56,7 +58,11 @@ class ProjectNameCache(object):
         LOG.debug("Got session: %s", session)
         self.keystone = ksc_client.Client(session=session)
         LOG.debug("Got keystone client: %s", self.keystone)
-        self.gbp = gbp_client.Client(session=session)
+        endpoint_type = 'publicURL'
+        if self.enable_neutronclient_internal_ep_interface:
+            endpoint_type = 'internalURL'
+        self.gbp = gbp_client.Client(session=session,
+                                     endpoint_type=endpoint_type)
         LOG.debug("Got gbp client: %s", self.gbp)
 
     def ensure_project(self, project_id):
