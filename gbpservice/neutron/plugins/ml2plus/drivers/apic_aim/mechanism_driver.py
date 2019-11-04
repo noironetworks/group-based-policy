@@ -1134,9 +1134,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_id = current['network_id']
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
-        is_ext = network_db.external is not None
-        session = context._plugin_context.session
 
+        # This should apply to both external and internal networks
+        if current['host_routes'] != original['host_routes']:
+            affected_port_ids = self._get_compute_dhcp_ports_in_subnets(
+                                        session, [current['id']])
+            self._notify_port_update_bulk(context._plugin_context,
+                                          affected_port_ids)
+
+        is_ext = network_db.external is not None
         if is_ext:
             # We have to allow this upon a customer request.
             if (original[cisco_apic.SNAT_HOST_POOL] !=
@@ -1160,13 +1166,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if current['gateway_ip']:
                     ns.create_subnet(aim_ctx, l3out,
                                      self._subnet_to_gw_ip_mask(current))
-        elif current['name'] != original['name']:
+            return
+
+        if current['name'] != original['name']:
             # Nothing to be done for SVI network.
             if self._is_svi(context.network.current):
                 return
-
             bd = self._get_network_bd(network_db.aim_mapping)
-
             for gw_ip, router_id in self._subnet_router_ips(session,
                                                             current['id']):
                 router_db = self.l3_plugin._get_router(context._plugin_context,
@@ -1174,7 +1180,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 dname = aim_utils.sanitize_display_name(
                     router_db.name + "-" +
                     (current['name'] or current['cidr']))
-
                 sn = self._map_subnet(current, gw_ip, bd)
                 self.aim.update(aim_ctx, sn, display_name=dname)
 
