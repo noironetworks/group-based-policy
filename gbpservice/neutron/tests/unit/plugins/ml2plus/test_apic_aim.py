@@ -1573,6 +1573,20 @@ class TestAimMapping(ApicAimTestCase):
         port['dns_name'] = ''
         port_calls = [mock.call(mock.ANY, port)]
 
+        fixed_ips = [{'subnet_id': subnet1_id, 'ip_address': '10.0.1.101'}]
+        port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
+        port = self._bind_port_to_host(port['id'], 'host2')['port']
+        port['dns_name'] = ''
+        port_calls.append(mock.call(mock.ANY, port))
+
+        # The update to host_routes should trigger the port updates
+        data = {'subnet': {'host_routes':
+                           [{'nexthop': '1.1.1.1',
+                            'destination': '1.1.1.0/24'}]}}
+        subnet = self._update('subnets', subnet1_id, data)['subnet']
+        self._check_subnet(subnet, net, [], [gw1_ip])
+        mock_notif.assert_has_calls(port_calls, any_order=True)
+
         # Create subnet2.
         if not is_svi:
             gw2_ip = '10.0.2.1'
@@ -1613,9 +1627,11 @@ class TestAimMapping(ApicAimTestCase):
             self._check_subnet(subnet, net, [], [gw2_ip])
 
         # Test subnet update.
+        mock_notif.reset_mock()
         data = {'subnet': {'name': 'newnameforsubnet'}}
         subnet = self._update('subnets', subnet1_id, data)['subnet']
         self._check_subnet(subnet, net, [(gw1_ip, router)], [])
+        mock_notif.assert_not_called()
 
         # Test router update.
         data = {'router': {'name': 'newnameforrouter'}}
@@ -6797,8 +6813,10 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self.assertEqual(0, len(dyn_segments))
 
     def _do_test_port_lifecycle(self, external_net=False):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
+        self.driver.notifier.port_update = mock_notif
 
+        aim_ctx = aim_context.AimContext(self.db_session)
         if external_net:
             net1 = self._make_ext_network('net1',
                                           dn=self.dn_t1_l1_n1)
@@ -6829,6 +6847,15 @@ class TestPortVlanNetwork(ApicAimTestCase):
                       'host': 'h1'}],
                     epg.static_paths)
                 self._validate()
+
+                # The update to host_routes should trigger the port updates
+                port_calls = [mock.call(mock.ANY, p1['port'])]
+                data = {'subnet': {'host_routes':
+                                   [{'nexthop': '1.1.1.1',
+                                    'destination': '1.1.1.0/24'}]}}
+                self._update('subnets', sub1['subnet']['id'],
+                             data)['subnet']
+                mock_notif.assert_has_calls(port_calls, any_order=True)
 
                 # move port to host h2
                 p1 = self._bind_port_to_host(p1['port']['id'], 'h2')
