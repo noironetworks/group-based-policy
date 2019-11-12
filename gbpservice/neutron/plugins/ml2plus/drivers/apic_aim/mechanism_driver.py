@@ -112,6 +112,7 @@ SYNC_STATE_TMP = 'synchronization_state_tmp'
 AIM_RESOURCES_CNT = 'aim_resources_cnt'
 
 SUPPORTED_VNIC_TYPES = [portbindings.VNIC_NORMAL,
+                        portbindings.VNIC_BAREMETAL,
                         portbindings.VNIC_DIRECT]
 
 AGENT_TYPE_DVS = 'DVS agent'
@@ -128,6 +129,7 @@ LEGACY_SNAT_NET_NAME_PREFIX = 'host-snat-network-for-internal-use-'
 LEGACY_SNAT_SUBNET_NAME = 'host-snat-pool-for-internal-use'
 LEGACY_SNAT_PORT_NAME = 'host-snat-pool-port-for-internal-use'
 LEGACY_SNAT_PORT_DEVICE_OWNER = 'host-snat-pool-port-device-owner-internal-use'
+LL_INFO = 'local_link_information'
 
 # TODO(kentwu): Move this to AIM utils maybe to avoid adding too much
 # APIC logic to the mechanism driver
@@ -2248,11 +2250,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                      self._opflex_bind_port):
                 return
 
+        if self._is_baremetal_vnic_type(context.current):
+            self._bind_baremetal_vnic(context)
+            return
+
         # If we reached here, it means that either there is no active opflex
-        # agent running on the host, or the agent on the host is not
-        # configured for this physical network. Treat the host as a physical
-        # node (i.e. has no OpFlex agent running) and try binding
-        # hierarchically if the network-type is OpFlex.
+        # agent running on the host, this was not a baremetal VNIC, or the
+        # agent on the host is not configured for this physical network.
+        # Treat the host as a physical node (i.e. has no OpFlex agent running)
+        # and try binding hierarchically if the network-type is OpFlex.
         self._bind_physical_node(context)
 
     def _update_sg_rule_with_remote_group_set(self, context, port):
@@ -2784,12 +2790,61 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             VIF_TYPE_DVS, vif_details)
         return True
 
+    def _is_baremetal_vnic_type(self, port):
+        return port.get(portbindings.VNIC_TYPE) == portbindings.VNIC_BAREMETAL
+
+    def _bind_baremetal_vnic(self, context):
+        """Bind ports with VNIC type of baremtal.
+
+        :param context : Port context instance
+
+        Support binding baremetal VNIC types to networks that have
+        an opflex type static segment, or networks with vlan segments.
+        For vlan type segments, these can be static segments or dynamically
+        created segments from HPB. The topology information for the port
+        should contain the physical_network that the baremetal VNIC is
+        connected to. This is used to match the segment when binding
+        the port to vlan type segments, and as the physical_network
+        when creating dynamic vlan type segments for HPB.
+        """
+        if not self._is_baremetal_port_bindable(context.current):
+            return False
+        _, _, physnet, _ = self._get_baremetal_topology(context.current)
+        # First attempt binding vlan type segments, in order to avoid
+        # dynamically allocating vlan segments if they're not needed.
+        for seg in context.segments_to_bind:
+            net_type = seg[api.NETWORK_TYPE]
+            physical_network = seg[api.PHYSICAL_NETWORK]
+            if (physical_network == physnet and
+                    self._is_supported_non_opflex_type(net_type)):
+                # VLAN segments already have a segmentation ID, so we can
+                # complete the binding.
+                context.set_binding(seg[api.ID],
+                    portbindings.VIF_TYPE_OTHER, {},
+                    status=n_constants.PORT_STATUS_ACTIVE)
+                return True
+        # Baremetal vnics can only be connected to opflex networks
+        # using VLANs. We use Hierarchical Port Binding (HPB) for
+        # networks that have an opflex type static segment in order
+        # to allocate a VLAN for use with the static path that enables
+        # connectivity for the baremetal vnic.
+        for seg in context.segments_to_bind:
+            net_type = seg[api.NETWORK_TYPE]
+            physical_network = seg[api.PHYSICAL_NETWORK]
+            if self._is_opflex_type(net_type):
+                seg_args = {api.NETWORK_TYPE: n_constants.TYPE_VLAN,
+                            api.PHYSICAL_NETWORK: physnet}
+                dyn_seg = context.allocate_dynamic_segment(seg_args)
+                LOG.info('Allocated dynamic-segment %(s)s for port %(p)s',
+                         {'s': dyn_seg, 'p': context.current['id']})
+                context.continue_binding(seg[api.ID], [dyn_seg])
+                return True
+        return False
+
     def _bind_physical_node(self, context):
         # Bind physical nodes hierarchically by creating a dynamic segment.
         for segment in context.segments_to_bind:
             net_type = segment[api.NETWORK_TYPE]
-            # TODO(amitbose) For ports on baremetal (Ironic) hosts, use
-            # binding:profile to decide if dynamic segment should be created.
             if self._is_opflex_type(net_type):
                 # TODO(amitbose) Consider providing configuration options
                 # for picking network-type and physical-network name
@@ -4111,6 +4166,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         nodes = []
         node_paths = []
         match = self.port_desc_re.match(path)
+        # The L3 Out model requires all the nodes supporting an L3
+        # Out are configured under the L3 Out's node profile. In the
+        # case where the static path is a VPC, then both nodes used
+        # in the VPC must be added, so their IDs must be extracted
+        # from the static path.
         if match:
             pod_id, switch, module, port = match.group(1, 2, 3, 4)
             nodes.append(switch)
@@ -4285,29 +4345,179 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                   epg, epg.static_paths)
         self.aim.update(aim_ctx, epg, static_paths=epg.static_paths)
 
-    def _get_static_ports(self, plugin_context, host, segment):
-        """Get StaticPort objects for a host and segment.
+    def _get_static_ports(self, plugin_context, host, segment, port=None):
+        """Get StaticPort objects for ACI.
+
+        :param plugin_context : plugin context
+        :param host : host ID for the static port
+        :param segment : bound segment of this host
+        :param port : port instance
+        :returns: List of zero or more static port objects
 
         This method should be called when a neutron port requires
         static port configuration state for an interface profile in
-        a L3 Out policy or for an Endpoint Group. This is retrieved
-        from the HostLink entries in the AIM database. The information is
-        only available on bound ports, as the encapsulation information
-        must also be available. The method should only be called by code
-        that has an active DB transaction, as it makes use of the session
-        from the plugin_context.
+        a L3 Out policy or for an Endpoint Group. There are two
+        sources of this information:
+           o from binding:profile when the port has a vnic_type
+             of "baremetal"
+           o from the HostLink entries in the AIM database
+        The information is only available on bound ports, as the
+        encapsulation information must also be available. The method
+        should only be called by code that has an active DB transaction,
+        as it makes use of the session from the plugin_context.
         """
         encap = self._segment_to_vlan_encap(segment)
         if not encap:
             return []
-        # Return qualifying entries from the host links table in AIM.
-        session = plugin_context.session
-        aim_ctx = aim_context.AimContext(db_session=session)
-        host_links = self.aim.find(aim_ctx,
-                                   aim_infra.HostLink, host_name=host)
-        return [StaticPort(host_link, encap, 'regular') for host_link in
-                self._filter_host_links_by_segment(session,
-                                                   segment, host_links)]
+        if port and self._is_baremetal_vnic_type(port) and (
+                self._is_baremetal_port_bindable(port)):
+            # The local_link_information should be populated, and
+            # will have the static path.
+            sp, ifs, pn, pd = self._get_baremetal_topology(port)
+
+            hlink = aim_infra.HostLink(host_name='',
+                                       interface_name='', path=sp)
+            return [StaticPort(hlink, encap, 'untagged')]
+        else:
+            # If it's not baremetal, return qualifying entries from the
+            # host links table in AIM, with the host links by segments
+            # filtering applied
+            session = plugin_context.session
+            aim_ctx = aim_context.AimContext(db_session=session)
+            host_links = self.aim.find(aim_ctx,
+                                       aim_infra.HostLink, host_name=host)
+            return [StaticPort(host_link, encap, 'regular') for host_link in
+                    self._filter_host_links_by_segment(session,
+                                                       segment, host_links)]
+
+    def _is_baremetal_port_bindable(self, port):
+        """Verify that a port is a valid baremetal port.
+
+        :param port : Port instance
+        :returns: True if bindable baremetal vnic, False otherwise
+
+        The binding is valid for a baremetal port which has valid topology
+        information in the local_link_information list contained inside the
+        binding:profile.
+        """
+        if self._is_baremetal_vnic_type(port):
+            if any(self._get_baremetal_topology(port)):
+                return True
+        return False
+
+    def _get_baremetal_topology(self, port):
+        """Return topology information for a port of vnic_type baremetal.
+
+        :param port : Port instance
+        :returns: Tuple of topology information
+
+        Get the topology information relevant to a port that has a
+        vnic_type of baremetal. Topology is stored in the binding:profile
+        member of the port object, using the local_link_infomration list.
+
+        If there is more than one entry in the local_link_information list,
+        then the port corresponds to a VPC. In this case, properties that
+        should be the same for both entries are checked (e.g. static_path).
+        Some properties, such as port_id and switch_id, are allowed to be
+        different (and in the case of VPC should be different).
+
+        Currently returns a tuple with the format:
+
+            (static_path, interfaces, physical_network, physical_domain)
+
+        where:
+            static_path: DN to use for static path
+            interfaces: list of tuples, where each tuple has a string
+                        for the leaf interface name and a string for the
+                        leaf interface's MAC address
+            physical_network: physical network that the interfaces belong to
+            physical_domain: physical domain that the interfaces belong to
+
+        If the topology information is invalid, a tuple of None values
+        is  returned instead.
+        """
+        # REVISIT: Add checks for trunk parent and sub-ports.
+        interfaces = []
+        static_path = None
+        physical_domain = None
+        physical_network = None
+        lli_list = port.get(portbindings.PROFILE, {}).get(LL_INFO, [])
+        for lli_idx in range(len(lli_list)):
+            # 2 entries is VPC, one is single link. Others are
+            # invalid.
+            if lli_idx > 1:
+                LOG.error("Invalid topology: port %(port)s has more than "
+                          "two elements in the binding:profile's "
+                          "local_link_information array.",
+                          {'port': port['id']})
+                return (None, None, None, None)
+            lli = lli_list[lli_idx]
+            mac = lli.get('switch_id')
+            interface = lli.get('port_id')
+            switch_info = lli.get('switch_info', '')
+            # switch_info must be a string of a comma-separated
+            # key-value pairs in order to be valid.
+            info_dict = {}
+            for kv_pair in switch_info.split(","):
+                if ":" in kv_pair:
+                    key, value = kv_pair.split(':', 1)
+                    info_dict[key] = value
+            if info_dict.get('apic_dn'):
+                dn = info_dict['apic_dn']
+                # If it's a VPC, the static paths should match.
+                if static_path and dn != static_path:
+                    LOG.error("Invalid topology: port %(port)s has "
+                              "inconsistently configured switch_info inside "
+                              "the binding:profile's link_local_information "
+                              "elements [apic_dn's: %(dn1)s:%(dn2)s]. The "
+                              "switch_info field must be identical for all "
+                              "ports used within a portgroup for a baremetal "
+                              "VNIC.", {'port': port['id'],
+                               'dn1': static_path, 'dn2': dn})
+                    return (None, None, None, None)
+                static_path = dn
+                if mac or interface:
+                    interfaces.append((interface, mac))
+            if info_dict.get(api.PHYSICAL_NETWORK):
+                physnet = info_dict[api.PHYSICAL_NETWORK]
+                # If it's a VPC, physical_networks should match.
+                if physical_network and physnet != physical_network:
+                    LOG.error("Invalid topology: port %(port)s has "
+                              "inconsistently configured switch_info inside "
+                              "the binding:profile's link_local_information "
+                              "elements [physical_network: %(pn1)s:%(pn2)s]. "
+                              "The switch_info field must be identical for "
+                              "all ports used within a portgroup for a "
+                              "baremetal VNIC.",
+                              {'port': port['id'], 'pn1': physical_network,
+                               'pn2': physnet})
+                    return (None, None, None, None)
+                physical_network = physnet
+            if info_dict.get('physical_domain'):
+                pd = info_dict['physical_domain']
+                # If it's a VPC, physical_domains should match.
+                if physical_domain and pd != physical_domain:
+                    LOG.error("Invalid topology: port %(port)s has "
+                              "inconsistently configured switch_info inside "
+                              "the binding:profile's link_local_information "
+                              "elements [physical_domain: %(pd1)s:%(pd2)s]. "
+                              "The switch_info field must be identical for "
+                              "all ports used within a portgroup for a "
+                              "baremetal VNIC.",
+                              {'port': port['id'], 'pd1': physical_domain,
+                              'pn2': pd})
+                    return (None, None, None, None)
+                physical_domain = pd
+
+        # We at least need the static path and physical_network
+        if not static_path or not physical_network:
+            LOG.warning("Invalid topology: port %(port)s does not contain "
+                        "required topology information in the "
+                        "binding:profile's local_link_information array.",
+                        {'port': port['id']})
+            return (None, None, None, None)
+
+        return (static_path, interfaces, physical_network, physical_domain)
 
     def _update_static_path(self, port_context, host=None, segment=None,
                             remove=False):
@@ -4337,7 +4547,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return
 
         static_ports = self._get_static_ports(port_context._plugin_context,
-                                              host, segment)
+                                              host, segment,
+                                              port=port_context.current)
         for static_port in static_ports:
             if self._is_svi(port_context.network.current):
                 l3out, _, _ = self._get_aim_external_objects(
@@ -4452,6 +4663,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         vmms = aim_epg.vmm_domains
                         self.aim.update(aim_ctx, epg, vmm_domains=vmms)
             else:
+                # For baremetal VNIC types, there may be additional topology
+                # information in the binding:profile from Ironic. This may
+                # include the PhysDom name in ACI, which can be used to
+                # disambiguate interfaces on the same host through matching
+                # by PhysDom.
+                if self._is_baremetal_vnic_type(port):
+                    _, _, _, physdom = self._get_baremetal_topology(port)
+                    if physdom:
+                        aim_hd_mappings = [aim_infra.HostDomainMappingV2(
+                                domain_type='PhysDom', domain_name=physdom,
+                                host_name=host_id)]
                 # Get all the Physical domains. We either get domains
                 # from a lookup of the HostDomainMappingV2
                 # table, or we get all the applicable Physical
@@ -4498,6 +4720,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_hd_mappings = self.aim.find(aim_ctx,
                                             aim_infra.HostDomainMappingV2,
                                             host_name=host_id)
+            # For baremetal VNIC types, there may be additional topology
+            # information in the binding:profile from Ironic. This may
+            # include the PhysDom name in ACI, which can be used to
+            # disambiguate interfaces on the same host through matching
+            # by PhysDom.
+            if self._is_baremetal_vnic_type(port):
+                _, _, _, physdom = self._get_baremetal_topology(port)
+                if physdom:
+                    aim_hd_mappings = [aim_infra.HostDomainMappingV2(
+                            domain_type='PhysDom', domain_name=physdom,
+                            host_name=host_id)]
             if not aim_hd_mappings:
                 return
 

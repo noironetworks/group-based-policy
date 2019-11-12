@@ -18,6 +18,7 @@ import datetime
 import fixtures
 import mock
 import netaddr
+import re
 import six
 from sqlalchemy.orm import exc as sql_exc
 import testtools
@@ -409,10 +410,18 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
     def _check_ip_in_cidr(self, ip_addr, cidr):
         self.assertTrue(netaddr.IPAddress(ip_addr) in netaddr.IPNetwork(cidr))
 
-    def _bind_port_to_host(self, port_id, host):
+    def _make_baremetal_port(self, project_id, net_id):
+        data = {'port': {'network_id': net_id,
+                         portbindings.VNIC_TYPE: 'baremetal',
+                         'project_id': project_id}}
+        req = self.new_create_request('ports', data, self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def _bind_port_to_host(self, port_id, host, **kwargs):
         data = {'port': {'binding:host_id': host,
                          'device_owner': 'compute:',
                          'device_id': 'someid'}}
+        data['port'].update(kwargs)
         req = self.new_update_request('ports', data, port_id,
                                       self.fmt)
         return self.deserialize(self.fmt, req.get_response(self.api))
@@ -4847,6 +4856,127 @@ class TestPortBinding(ApicAimTestCase):
                               ('vhu' + port_id)[:14])},
                          port['binding:vif_details'])
 
+    def test_bind_baremetal_opflex(self):
+        self._test_bind_baremetal()
+
+    def test_bind_baremetal_vlan(self):
+        self._test_bind_baremetal(network_type=u'vlan', physnet=u'physnet2')
+
+    def test_bind_baremetal_vlan_svi(self):
+        self._test_bind_baremetal(network_type=u'vlan',
+                                  is_svi=True, physnet=u'physnet2')
+
+    def _test_bind_baremetal(self, network_type=u'opflex', is_svi=False,
+                             physnet=u'physnet1'):
+        # Do positive and negative port binding testing, using the
+        # different information in the binding profile.
+        def validate_binding(port):
+            self.assertEqual('baremetal', port[portbindings.VNIC_TYPE])
+            self.assertEqual(kwargs[portbindings.PROFILE],
+                             port[portbindings.PROFILE])
+            self.assertEqual({}, port[portbindings.VIF_DETAILS])
+            self.assertEqual('other', port[portbindings.VIF_TYPE])
+        kwargs = {'provider:network_type': network_type,
+                  'provider:physical_network': physnet}
+        if is_svi:
+            kwargs.update({'apic:svi': 'True'})
+        arg_list = self.extension_attributes + ('provider:physical_network',)
+        net = self._make_network(self.fmt, 'net1', True,
+                                 arg_list=arg_list, **kwargs)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_baremetal_port(net['network']['tenant_id'],
+                                         net['network']['id'])['port']
+        port_id = port['id']
+        # Negative test case: No binding:profile.
+        kwargs = {}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        self.assertEqual(port[portbindings.VIF_TYPE],
+                         portbindings.VIF_TYPE_BINDING_FAILED)
+        # Negative test case: Empty binding:profile.
+        kwargs = {portbindings.PROFILE: {}}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        self.assertEqual(port[portbindings.VIF_TYPE],
+                         portbindings.VIF_TYPE_BINDING_FAILED)
+        # Negative test case: Empty local_link_information.
+        kwargs = {portbindings.PROFILE: {
+            'local_link_information': []}}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        self.assertEqual(port[portbindings.VIF_TYPE],
+                         portbindings.VIF_TYPE_BINDING_FAILED)
+        # Negative test case: APIC DN but no physnet.
+        kwargs = {portbindings.PROFILE: {
+            'local_link_information': [
+                {"switch_info":
+                 "apic_dn:topology/pod-1/paths-501/pathep-[eth1/1]"}]}}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        self.assertEqual(port[portbindings.VIF_TYPE],
+                         portbindings.VIF_TYPE_BINDING_FAILED)
+        # Negative test case: APIC DN with port and switch IDs, no physnet.
+        kwargs = {portbindings.PROFILE: {
+            'local_link_information': [
+                {"switch_info":
+                 "apic_dn:topology/pod-1/paths-501/pathep-[eth1/1],",
+                 "port_id": "Eth1/1", "switch_id": "00:c0:4a:21:23:24"}
+                 ]}}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        self.assertEqual(port[portbindings.VIF_TYPE],
+                         portbindings.VIF_TYPE_BINDING_FAILED)
+        # Negative test case: all info, but not key/value pairs
+        kwargs = {portbindings.PROFILE: {
+            'local_link_information': [
+                {"switch_info":
+                 "topology/pod-1/paths-501/pathep-[eth1/1],"
+                 "physnet1,pdom_physnet1",
+                 "port_id": "Eth1/1", "switch_id": "00:c0:4a:21:23:24"}
+                 ]}}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        self.assertEqual(port[portbindings.VIF_TYPE],
+                         portbindings.VIF_TYPE_BINDING_FAILED)
+        # Positive test case: missing physdom
+        kwargs = {portbindings.PROFILE: {
+            'local_link_information': [
+                {"switch_info":
+                 "apic_dn:topology/pod-1/paths-501/pathep-[eth1/1],"
+                 "physical_network:physnet2",
+                 "port_id": "Eth1/1", "switch_id": "00:c0:4a:21:23:24"}
+                 ]}}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        validate_binding(port)
+        # Positive test case: interface information absent
+        kwargs = {portbindings.PROFILE: {
+            'local_link_information': [
+                {"switch_info":
+                 "apic_dn:topology/pod-1/paths-501/pathep-[eth1/1],"
+                 "physical_network:physnet2,physdom:pdom_physnet1"}
+                 ]}}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        validate_binding(port)
+        # Positive test case all parameters
+        kwargs = {portbindings.PROFILE: {
+            'local_link_information': [
+                {"switch_info":
+                 "apic_dn:topology/pod-1/paths-501/pathep-[eth1/1],"
+                 "physical_network:physnet2,physdom:pdom_physnet1",
+                 "port_id": "Eth1/1", "switch_id": "00:c0:4a:21:23:24"}
+                 ]}}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        validate_binding(port)
+
+        # opflex: Positive test case: all info, but wrong physnet
+        # others: Negative test case: all info, but wrong physnet
+        kwargs = {portbindings.PROFILE: {
+            'local_link_information': [
+                {"switch_info":
+                 "apic_dn:topology/pod-1/paths-501/pathep-[eth1/1],"
+                 "physical_network:physnet3",
+                 "port_id": "Eth1/1", "switch_id": "00:c0:4a:21:23:24"}
+                 ]}}
+        port = self._bind_port_to_host(port_id, 'host1', **kwargs)['port']
+        if network_type == u'opflex':
+            validate_binding(port)
+        else:
+            self.assertEqual(port[portbindings.VIF_TYPE],
+                             portbindings.VIF_TYPE_BINDING_FAILED)
     # TODO(rkukura): Add tests for opflex, local and unsupported
     # network_type values.
 
@@ -7068,7 +7198,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 name=self.name_mapper.network(None, network['id']))
         return epg
 
-    def _check_binding(self, port_id, expected_binding_info=None):
+    def _check_binding(self, port_id, expected_binding_info=None,
+                       top_bound_physnet=None, bottom_bound_physnet=None):
         port_context = self.plugin.get_bound_port_context(
             n_context.get_admin_context(), port_id)
         self.assertIsNotNone(port_context)
@@ -7077,8 +7208,17 @@ class TestPortVlanNetwork(ApicAimTestCase):
                         for bl in port_context.binding_levels]
         self.assertEqual(expected_binding_info or self.expected_binding_info,
                          binding_info)
-        self.assertEqual(port_context.top_bound_segment['physical_network'],
-                         port_context.bottom_bound_segment['physical_network'])
+        if top_bound_physnet:
+            self.assertEqual(top_bound_physnet, port_context.
+                             top_bound_segment['physical_network'])
+        if bottom_bound_physnet:
+            self.assertEqual(bottom_bound_physnet, port_context.
+                             bottom_bound_segment['physical_network'])
+        if not (top_bound_physnet and bottom_bound_physnet):
+            self.assertEqual(port_context.
+                             top_bound_segment['physical_network'],
+                             port_context.
+                             bottom_bound_segment['physical_network'])
         return port_context.bottom_bound_segment['segmentation_id']
 
     def _check_no_dynamic_segment(self, network_id):
@@ -8674,6 +8814,77 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                              set(self._doms(epg1.physical_domains,
                                             with_type=False)))
 
+    def test_baremetal_vnic_2_nics_single_host(self):
+        # Verify that the domain association and static
+        # path information is correctly used in the case
+        # where a single host has two NICs, which are
+        # handled as two separate bindings.
+        expected_binding_info = [('apic_aim', 'opflex'),
+                                 ('apic_aim', 'vlan')]
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
+        net1 = self._make_network(
+            self.fmt, 'net1', True,
+            arg_list=('provider:physical_network', 'provider:network_type'),
+            **{'provider:physical_network': 'physnet3',
+               'provider:network_type': 'opflex'})['network']
+        epg1 = self._net_2_epg(net1)
+        bm_path1 = 'topology/pod-1/paths-102/pathep-[eth1/1]'
+
+        with self.subnet(network={'network': net1}):
+
+            p1 = self._make_baremetal_port(net1['tenant_id'],
+                                           net1['id'])['port']
+            switch_info = ("apic_dn:" + bm_path1 +
+                ',physical_network:physnet3' +
+                ',physical_domain:ph1')
+            kwargs = {portbindings.PROFILE: {
+                'local_link_information': [
+                    {"switch_info": switch_info,
+                     "port_id": 'bm1',
+                     "switch_id": "00:c0:4a:21:23:24"}
+                     ]}}
+            p1 = self._bind_port_to_host(p1['id'], 'h1', **kwargs)['port']
+            vlan_p1 = self._check_binding(p1['id'],
+                expected_binding_info=expected_binding_info)
+            static_path_1 = {'path': bm_path1, 'encap': 'vlan-%s' % vlan_p1,
+                             'mode': 'untagged'}
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertEqual([static_path_1],
+                             epg1.static_paths)
+            self.assertEqual(set([]),
+                             set(self._doms(epg1.vmm_domains)))
+            self.assertEqual(set(['ph1']),
+                             set(self._doms(epg1.physical_domains,
+                                            with_type=False)))
+            p2 = self._make_baremetal_port(net1['tenant_id'],
+                                           net1['id'])['port']
+            bm_path2 = 'topology/pod-1/paths-101/pathep-[eth1/2]'
+            switch_info = ("apic_dn:" + bm_path2 +
+                ',physical_network:physnet2' +
+                ',physical_domain:ph2')
+            kwargs = {portbindings.PROFILE: {
+                'local_link_information': [
+                    {"switch_info": switch_info,
+                     "port_id": 'bm2',
+                     "switch_id": "00:c0:4a:21:23:24"}
+                     ]}}
+            p2 = self._bind_port_to_host(p2['id'], 'h1', **kwargs)['port']
+            vlan_p2 = self._check_binding(p2['id'],
+                expected_binding_info=expected_binding_info,
+                top_bound_physnet='physnet3',
+                bottom_bound_physnet='physnet2')
+            static_path_2 = {'path': bm_path2, 'encap': 'vlan-%s' % vlan_p2,
+                             'mode': 'untagged'}
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertIn(static_path_1, epg1.static_paths)
+            self.assertIn(static_path_2, epg1.static_paths)
+            self.assertEqual(set([]),
+                             set(self._doms(epg1.vmm_domains)))
+            self.assertEqual(set(['ph1', 'ph2']),
+                             set(self._doms(epg1.physical_domains,
+                                            with_type=False)))
+
     def test_no_host_domain_mappings(self):
         aim_ctx = aim_context.AimContext(self.db_session)
         self.aim_mgr.create(aim_ctx,
@@ -8960,6 +9171,228 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
             mechanism_drivers=['logger', 'apic_aim'])
         self.expected_binding_info = [('apic_aim', 'opflex'),
                                       ('apic_aim', 'vlan')]
+
+    def test_bind_baremetal_with_default_domain_mapping(self,
+                                                        net_type='opflex',
+                                                        is_svi=False):
+        apic_dn_1 = 'topology/pod-1/paths-101/pathep-[eth1/34]'
+        apic_dn_2 = 'topology/pod-1/paths-102/pathep-[eth1/34]'
+        info = [{'local_link_information': [
+                    {'port_id': 'Eth1/34',
+                     'switch_id': '00:c0:4a:21:23:24',
+                     'switch_info': 'apic_dn:' + apic_dn_1 +
+                     ',physical_network:physnet3'}]},
+                {'local_link_information': [
+                    {'port_id': 'Eth1/34',
+                     'switch_id': '00:c0:4a:21:23:25',
+                     'switch_info': 'apic_dn:' + apic_dn_2 +
+                     ',physical_network:physnet3'}]}]
+        self._test_bind_baremetal_with_default_domain_mapping(info,
+            net_type=net_type, is_svi=is_svi)
+
+    def test_bind_baremetal_vlan_with_default_domain_mapping(self):
+        self.test_bind_baremetal_with_default_domain_mapping(net_type='vlan',
+                                                             is_svi=False)
+
+    def test_bind_baremetal_svi_with_default_domain_mapping(self):
+        self.test_bind_baremetal_with_default_domain_mapping(net_type='vlan',
+                                                             is_svi=True)
+
+    def test_bind_baremetal_vpc_with_default_domain_mapping(self,
+                                                            net_type='opflex',
+                                                            is_svi=False):
+        port_group_1 = '[po-101-1-34-and-102-1-34]'
+        apic_dn_1 = 'topology/pod-1/protpaths-101-102/pathep-%s' % port_group_1
+        port_group_2 = '[po-101-1-35-and-102-1-35]'
+        apic_dn_2 = 'topology/pod-1/protpaths-101-102/pathep-%s' % port_group_2
+        # VPCs require port groups in Ironic, which creates
+        # two entries in the local_link_information array
+        # (one for each Ironic port in the port group),
+        # as well as the local_group_information from
+        # the port group.
+        info = [{'local_link_information': [
+                    {'port_id': 'Eth1/34',
+                     'switch_id': '00:c0:4a:21:23:24',
+                     'switch_info': 'apic_dn:' + apic_dn_1 +
+                     ',physical_network:physnet3'},
+                    {'port_id': 'Eth1/34',
+                     'switch_id': "00:c0:4a:21:23:25",
+                     'switch_info': 'apic_dn:' + apic_dn_1 +
+                     ',physical_network:physnet3'}],
+                 'local_group_information': {
+                     'id': 'a4b43644-0cff-4194-9104-ca1aa5d4393e',
+                     'name': 'pg-foo',
+                     'bond_mode': '802.3ad',
+                     'bond_properties': {
+                         'foo': 'bar',
+                         'bee': 'bop'}}},
+                {'local_link_information': [
+                    {'port_id': 'Eth1/35',
+                     'switch_id': '00:c0:4a:21:23:24',
+                     'switch_info': 'apic_dn:' + apic_dn_2 +
+                     ',physical_network:physnet3'},
+                    {'port_id': 'Eth1/35',
+                     'switch_id': "00:c0:4a:21:23:25",
+                     'switch_info': 'apic_dn:' + apic_dn_2 +
+                     ',physical_network:physnet3'}],
+                 'local_group_information': {
+                     'id': 'abb75c0e-a116-4e9f-80b1-3e0962d34601',
+                     'name': 'pg-foo',
+                     'bond_mode': '802.3ad',
+                     'bond_properties': {
+                         'foo': 'bar',
+                         'bee': 'bop'}}}]
+        self._test_bind_baremetal_with_default_domain_mapping(info,
+            net_type=net_type, is_svi=is_svi)
+
+    def test_bind_baremetal_vlan_vpc_with_default_domain_mapping(self):
+        self.test_bind_baremetal_vpc_with_default_domain_mapping(
+            net_type='vlan', is_svi=False)
+
+    def test_bind_baremetal_svi_vpc_with_default_domain_mapping(self):
+        self.test_bind_baremetal_vpc_with_default_domain_mapping(
+            net_type='vlan', is_svi=True)
+
+    def _test_bind_baremetal_with_default_domain_mapping(self, info,
+                                                         net_type='opflex',
+                                                         is_svi=False):
+        # Verify that the EPG gets associated with the default physdom
+        # from the domain mapping table, and that the static path gets
+        # configured in the EPG. Also ensure that things get cleaned
+        # up once ports are unbound.
+
+        def parse_switch_info(binding_profile):
+            # In the case of VPCs, the switch info will be the same between
+            # both entries, so we can just use the first.
+            lli = binding_profile['local_link_information'][0]
+            switch_info = lli['switch_info']
+            kv_dict = {}
+            for k_v in switch_info.split(',', 1):
+                k, v = k_v.split(':', 1)
+                kv_dict[k] = v
+            # Extract the nodes from the path, so we can construct the node
+            # path needed to look them up in AIM.
+            node_paths = []
+            node_re = re.compile(md.ACI_PORT_DESCR_FORMATS)
+            vpc_node_re = re.compile(md.ACI_VPCPORT_DESCR_FORMAT)
+            match = node_re.match(kv_dict['apic_dn'])
+            vpc_match = vpc_node_re.match(kv_dict['apic_dn'])
+            if match:
+                pod_id, switch = match.group(1, 2)
+                node_paths.append(md.ACI_CHASSIS_DESCR_STRING % (pod_id,
+                                                                 switch))
+            elif vpc_match:
+                pod_id, switch1, switch2 = vpc_match.group(1, 2, 3)
+                for switch in (switch1, switch2):
+                    node_paths.append(md.ACI_CHASSIS_DESCR_STRING % (pod_id,
+                                                                     switch))
+            kv_dict['node_paths'] = node_paths
+            return kv_dict
+
+        def validate_static_path_and_doms(aim_ctx, is_svi, net, kv_dict,
+                                          physical_domain, vlan, delete=False):
+            static_path = {'path': kv_dict['apic_dn'],
+                           'encap': 'vlan-%s' % vlan, 'mode': 'untagged'}
+            if is_svi:
+                ext_net = aim_resource.ExternalNetwork.from_dn(
+                    net[DN]['ExternalNetwork'])
+                for node_path in kv_dict['node_paths']:
+                    l3out_node = aim_resource.L3OutNode(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        node_path=node_path)
+                    l3out_node = self.aim_mgr.get(aim_ctx, l3out_node)
+                    self.assertIsNotNone(l3out_node)
+                    l3out_if = aim_resource.L3OutInterface(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
+                        interface_path=static_path['path'])
+                    l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
+                    if delete:
+                        self.assertIsNone(l3out_if)
+                    else:
+                        self.assertEqual(l3out_if.encap, 'vlan-%s' % vlan)
+                        self.assertEqual(l3out_if.secondary_addr_a_list,
+                                         [{'addr': '10.0.0.1/24'}])
+            else:
+                epg = self._net_2_epg(net)
+                epg = self.aim_mgr.get(aim_ctx, epg)
+                if delete:
+                    doms = []
+                else:
+                    doms = [physical_domain]
+                self.assertEqual(set(doms),
+                                 set(self._doms(epg.physical_domains,
+                                                with_type=False)))
+
+                self.assertEqual([static_path], epg.static_paths)
+
+        if net_type == 'vlan':
+            expected_binding_info = [('apic_aim', 'vlan')]
+        else:
+            expected_binding_info = None
+        physical_domain = 'phys1'
+        physical_network = 'physnet3'
+        aim_ctx = aim_context.AimContext(self.db_session)
+        hd_mapping = aim_infra.HostDomainMappingV2(host_name='*',
+                                                   domain_name=physical_domain,
+                                                   domain_type='PhysDom')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+        net_arg_list = ('provider:physical_network', 'provider:network_type')
+        net_kwargs = {'provider:physical_network': physical_network,
+                      'provider:network_type': net_type}
+        if is_svi:
+            net_arg_list += (SVI,)
+            net_kwargs.update({SVI: 'True'})
+        net1 = self._make_network(
+            self.fmt, 'net1', True,
+            arg_list=net_arg_list, **net_kwargs)['network']
+        # Bind the port using a single interface or VPC on one physnet.
+        with self.subnet(network={'network': net1}):
+            p1 = self._make_baremetal_port(net1['tenant_id'],
+                                           net1['id'])['port']
+            kwargs = {portbindings.PROFILE: info[0]}
+            kv_dict_1 = parse_switch_info(info[0])
+            # bind p1 to host h1
+            p1 = self._bind_port_to_host(p1['id'], 'h1', **kwargs)['port']
+            vlan_p1 = self._check_binding(p1['id'],
+                expected_binding_info=expected_binding_info)
+            validate_static_path_and_doms(aim_ctx, is_svi, net1, kv_dict_1,
+                                          physical_domain, vlan_p1)
+        net2 = self._make_network(
+            self.fmt, 'net2', True,
+            arg_list=net_arg_list, **net_kwargs)['network']
+        # Bind the port using a single interface or VPC on the same physnet.
+        with self.subnet(network={'network': net2}):
+            p2 = self._make_baremetal_port(net2['tenant_id'],
+                                           net2['id'])['port']
+            kwargs = {portbindings.PROFILE: info[1]}
+            kv_dict_2 = parse_switch_info(info[1])
+            p2 = self._bind_port_to_host(p2['id'], 'h1', **kwargs)['port']
+            vlan_p2 = self._check_binding(p2['id'],
+                expected_binding_info=expected_binding_info)
+
+            self.assertNotEqual(vlan_p1, vlan_p2)
+            validate_static_path_and_doms(aim_ctx, is_svi, net2, kv_dict_2,
+                                          physical_domain, vlan_p2)
+
+        self._delete('ports', p2['id'])
+        self._check_no_dynamic_segment(net2['id'])
+        validate_static_path_and_doms(aim_ctx, is_svi, net1, kv_dict_1,
+                                      physical_domain, vlan_p1)
+        # REVISIT: It looks like dissociation PhysDoms when using
+        # the default mapping fails (likely not specific to baremetal VNICs)
+        #validate_static_path_and_doms(aim_ctx, is_svi, net2, kv_dict_2,
+        #                              physical_domain, vlan_p2, delete=True)
+        self._delete('ports', p1['id'])
+        self._check_no_dynamic_segment(net1['id'])
+        # REVISIT: It looks like dissociation PhysDoms when using
+        # the default mapping fails (likely not specific to baremetal VNICs)
+        #validate_static_path_and_doms(aim_ctx, is_svi, net1, kv_dict_1,
+        #                              physical_domain, vlan_p1, delete=True)
 
 
 class TestOpflexRpc(ApicAimTestCase):
