@@ -24,6 +24,7 @@ DIST_NAMES = 'apic:distinguished_names'
 SYNC_STATE = 'apic:synchronization_state'
 NAT_TYPE = 'apic:nat_type'
 SNAT_HOST_POOL = 'apic:snat_host_pool'
+ACTIVE_ACTIVE_AAP = 'apic:active_active_aap'
 EXTERNAL_CIDRS = 'apic:external_cidrs'
 SVI = 'apic:svi'
 BGP = 'apic:bgp_enable'
@@ -103,9 +104,15 @@ EXT_NET_ATTRIBUTES = {
 
 EXT_SUBNET_ATTRIBUTES = {
     SNAT_HOST_POOL: {
-        # whether an external subnet should be used as a pool
-        # for allocating host-based SNAT addresses
+        # Whether an external subnet should be used as a pool
+        # for allocating host-based SNAT addresses.
         'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': False,
+        'convert_to': conv.convert_to_boolean,
+    },
+    ACTIVE_ACTIVE_AAP: {
+        # Whether a subnet will support the active active AAP or not.
+        'allow_post': True, 'allow_put': False,
         'is_visible': True, 'default': False,
         'convert_to': conv.convert_to_boolean,
     }
