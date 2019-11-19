@@ -118,6 +118,7 @@ CIDR = 'apic:external_cidrs'
 PROV = 'apic:external_provided_contracts'
 CONS = 'apic:external_consumed_contracts'
 SNAT_POOL = 'apic:snat_host_pool'
+ACTIVE_ACTIVE_AAP = 'apic:active_active_aap'
 SVI = 'apic:svi'
 BGP = 'apic:bgp_enable'
 ASN = 'apic:bgp_asn'
@@ -260,6 +261,29 @@ class ApicAimTestMixin(object):
         self.aim_patch.start()
         self.addCleanup(self.aim_patch.stop)
 
+    def _create_subnet_with_extension(self, fmt, net, gateway,
+                                      cidr, **kwargs):
+        data = {'subnet': {'network_id': net['network']['id'],
+                           'ip_version': 4,
+                           'enable_dhcp': True,
+                           'tenant_id': self._tenant_id}}
+        if gateway:
+            data['subnet']['gateway_ip'] = gateway
+        if cidr:
+            data['subnet']['cidr'] = cidr
+        for arg in kwargs:
+            # Arg must be present and not null (but can be false)
+            if kwargs.get(arg) is not None:
+                data['subnet'][arg] = kwargs[arg]
+        subnet_req = self.new_create_request('subnets', data, fmt)
+        subnet_res = subnet_req.get_response(self.api)
+
+        # Things can go wrong - raise HTTP exc with res code only
+        # so it can be caught by unit tests
+        if subnet_res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=subnet_res.status_int)
+        return self.deserialize(fmt, subnet_res)
+
 
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_l3.L3NatTestCaseMixin, ApicAimTestMixin,
@@ -316,6 +340,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self._app_profile_name = self.driver.ap_name
         self.extension_attributes = ('router:external', DN,
                                      'apic:nat_type', SNAT_POOL,
+                                     ACTIVE_ACTIVE_AAP,
                                      CIDR, PROV, CONS, SVI,
                                      BGP, BGP_TYPE, ASN
                                      )
@@ -5174,6 +5199,32 @@ class TestExtensionAttributes(ApicAimTestCase):
             400)
         self._update('networks', net1['id'], {'apic:nat_type': ''}, 400)
 
+    def test_active_aap_subnet(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        subnet = self._make_subnet(
+            self.fmt, net, '10.0.0.1', '10.0.0.0/24')['subnet']
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.assertFalse(subnet[ACTIVE_ACTIVE_AAP])
+
+        # Update is not allowed
+        data = {'subnet': {ACTIVE_ACTIVE_AAP: True}}
+        req = self.new_update_request('subnets', data, subnet['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_code, 400)
+
+        subnet1 = self._create_subnet_with_extension(
+            self.fmt, net, '10.1.0.1', '10.1.0.0/24',
+            **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
+        self.assertTrue(subnet1[ACTIVE_ACTIVE_AAP])
+
+        # Active active AAP subnet can't be connected to a router
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+        self.assertRaises(exceptions.ActiveActiveAAPSubnetConnectedToRouter,
+                          self.l3_plugin.add_router_interface,
+                          n_context.get_admin_context(), router['id'],
+                          {'subnet_id': subnet1['id']})
+
     def test_external_subnet_lifecycle(self):
         session = db_api.get_reader_session()
         extn = extn_db.ExtensionDbMixin()
@@ -8763,7 +8814,8 @@ class TestOpflexRpc(ApicAimTestCase):
         super(TestOpflexRpc, self).setUp(*args, **kwargs)
 
     def _check_response(self, request, response, port, net, subnets,
-                        network_type='opflex', vm_name='someid'):
+                        network_type='opflex', vm_name='someid',
+                        active_active_aap=False):
         epg = aim_resource.EndpointGroup.from_dn(
             net['apic:distinguished_names']['EndpointGroup'])
 
@@ -8823,6 +8875,10 @@ class TestOpflexRpc(ApicAimTestCase):
         self.assertEqual(sorted([sn['cidr'] for sn in subnets]),
                          sorted(gbp_details['vrf_subnets']))
         self.assertEqual(vrf.tenant_name, gbp_details['vrf_tenant'])
+        if active_active_aap:
+            self.assertTrue(gbp_details['active_active_aap'])
+        else:
+            self.assertFalse(gbp_details['active_active_aap'])
 
         # trunk_details tests in TestVlanAwareVM
 
@@ -8888,7 +8944,7 @@ class TestOpflexRpc(ApicAimTestCase):
         self.assertNotIn('gbp_details', response)
         self.assertNotIn('trunk_details', response)
 
-    def test_endpoint_details_bound(self):
+    def _test_endpoint_details_bound(self, active_active_aap=False):
         self.driver.apic_optimized_dhcp_lease_time = 100
         host = 'host1'
         self._register_agent('host1', AGENT_CONF_OPFLEX)
@@ -8902,22 +8958,40 @@ class TestOpflexRpc(ApicAimTestCase):
             {'destination': '172.16.0.0/24', 'nexthop': '10.0.1.2'},
             {'destination': '192.168.0.0/24', 'nexthop': '10.0.1.3'},
         ]
-        subnet1 = self._make_subnet(
-            self.fmt, net, '10.0.1.1', '10.0.1.0/24',
-            dns_nameservers=dns_nameservers1,
-            host_routes=host_routes1)['subnet']
+        if active_active_aap:
+            subnet1 = self._create_subnet_with_extension(
+                self.fmt, net, '10.0.1.1', '10.0.1.0/24',
+                dns_nameservers=dns_nameservers1,
+                host_routes=host_routes1,
+                **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
+        else:
+            subnet1 = self._make_subnet(
+                self.fmt, net, '10.0.1.1', '10.0.1.0/24',
+                dns_nameservers=dns_nameservers1,
+                host_routes=host_routes1)['subnet']
         subnet1_id = subnet1['id']
 
         host_routes2 = [
             {'destination': '169.254.169.254/16', 'nexthop': '10.0.1.2'},
         ]
-        subnet2 = self._make_subnet(
-            self.fmt, net, '10.0.2.1', '10.0.2.0/24',
-            host_routes=host_routes2)['subnet']
+        if active_active_aap:
+            subnet2 = self._create_subnet_with_extension(
+                self.fmt, net, '10.0.2.1', '10.0.2.0/24',
+                host_routes=host_routes2,
+                **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
+        else:
+            subnet2 = self._make_subnet(
+                self.fmt, net, '10.0.2.1', '10.0.2.0/24',
+                host_routes=host_routes2)['subnet']
         subnet2_id = subnet2['id']
 
-        subnet3 = self._make_subnet(
-            self.fmt, net, '10.0.3.1', '10.0.3.0/24')['subnet']
+        if active_active_aap:
+            subnet3 = self._create_subnet_with_extension(
+                self.fmt, net, '10.0.3.1', '10.0.3.0/24',
+                **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
+        else:
+            subnet3 = self._make_subnet(
+                self.fmt, net, '10.0.3.1', '10.0.3.0/24')['subnet']
         subnet3_id = subnet3['id']
 
         # Create multiple DHCP ports and multiple subnets to exercise
@@ -8969,7 +9043,8 @@ class TestOpflexRpc(ApicAimTestCase):
             n_context.get_admin_context(), request=request, host=host)
 
         self._check_response(
-            request, response, port, net['network'], subnets, vm_name='a name')
+            request, response, port, net['network'], subnets,
+            vm_name='a name', active_active_aap=active_active_aap)
 
         # Call the get_vrf_details RPC handler and check its response.
         vrf = aim_resource.VRF.from_dn(
@@ -8982,6 +9057,12 @@ class TestOpflexRpc(ApicAimTestCase):
         self.assertEqual(vrf.name, response['vrf_name'])
         self.assertEqual(sorted([sn['cidr'] for sn in subnets]),
                          sorted(response['vrf_subnets']))
+
+    def test_endpoint_details_bound_regular(self):
+        self._test_endpoint_details_bound()
+
+    def test_endpoint_details_bound_active_active_aap(self):
+        self._test_endpoint_details_bound(active_active_aap=True)
 
     def test_endpoint_details_unbound(self):
         host = 'host1'

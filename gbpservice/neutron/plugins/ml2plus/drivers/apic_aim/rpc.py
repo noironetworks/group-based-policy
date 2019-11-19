@@ -385,6 +385,10 @@ class ApicRpcHandlerMixin(object):
                     info['ext_net_info'] = self._query_endpoint_ext_net_info(
                         session, subnet_ids)
 
+                    # Query for the port's active active AAP mode.
+                    info['active_active_aap'] = self._query_active_active_aap(
+                        session, subnet_ids)
+
                     # Query for list of floating IPs for both this
                     # port and all the other ports on which this
                     # port's HAIP owned addresses are actually
@@ -647,6 +651,23 @@ class ApicRpcHandlerMixin(object):
                     port_id=port_id,
                     network_id=network_id)]
 
+    def _query_active_active_aap(self, session, subnet_ids):
+        # Default is False.
+        if not subnet_ids:
+            False
+
+        query = session.query(
+            extension_db.SubnetExtensionDb.active_active_aap,
+        )
+        query = query.filter(
+            extension_db.SubnetExtensionDb.subnet_id.in_(subnet_ids))
+        query = query.distinct()
+        for active_active_aap, in query:
+            if active_active_aap is False:
+                return False
+        # Return True only if all the subnets have this flag enabled.
+        return True
+
     def _query_endpoint_ext_net_info(self, session, subnet_ids):
         # REVISIT: Consider replacing this query with additional joins
         # in _query_endpoint_fixed_ip_info to eliminate a round-trip
@@ -861,6 +882,7 @@ class ApicRpcHandlerMixin(object):
 
         details = {}
         details['allowed_address_pairs'] = self._build_aaps(info)
+        details['active_active_aap'] = info['active_active_aap']
         details['app_profile_name'] = port_info.epg_app_profile_name
         details['device'] = info['device']  # Redundant.
         if self.apic_optimized_dhcp_lease_time > 0:
@@ -915,7 +937,12 @@ class ApicRpcHandlerMixin(object):
         return details
 
     def _build_aaps(self, info):
-        owned_ips = set(ip.ip_address for ip in info['owned_ip_info'])
+        # If active_active_app is enabled, then the concept of
+        # owned_ip doesn't apply.
+        if info['active_active_aap']:
+            owned_ips = set()
+        else:
+            owned_ips = set(ip.ip_address for ip in info['owned_ip_info'])
         aaps = {}
         for allowed in info['aap_info']:
             aaps[allowed.ip_address] = {'ip_address': allowed.ip_address,
