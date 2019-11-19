@@ -198,6 +198,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             res_dict = self.get_subnet_extn_db(session, result['id'])
             result[cisco_apic.SNAT_HOST_POOL] = (
                 res_dict.get(cisco_apic.SNAT_HOST_POOL, False))
+            result[cisco_apic.ACTIVE_ACTIVE_AAP] = (
+                res_dict.get(cisco_apic.ACTIVE_ACTIVE_AAP, False))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -213,6 +215,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 res_dict = self.get_subnet_extn_db(session, subnet_db['id'])
                 result[cisco_apic.SNAT_HOST_POOL] = (
                     res_dict.get(cisco_apic.SNAT_HOST_POOL, False))
+                result[cisco_apic.ACTIVE_ACTIVE_AAP] = (
+                    res_dict.get(cisco_apic.ACTIVE_ACTIVE_AAP, False))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -223,7 +227,9 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
 
     def process_create_subnet(self, plugin_context, data, result):
         res_dict = {cisco_apic.SNAT_HOST_POOL:
-                    data.get(cisco_apic.SNAT_HOST_POOL, False)}
+                    data.get(cisco_apic.SNAT_HOST_POOL, False),
+                    cisco_apic.ACTIVE_ACTIVE_AAP:
+                    data.get(cisco_apic.ACTIVE_ACTIVE_AAP, False)}
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
         result.update(res_dict)
