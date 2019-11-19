@@ -90,3 +90,14 @@ class ExternalSubnetNotAllowed(exceptions.BadRequest):
 class SubnetOverlapInRoutedVRF(exceptions.BadRequest):
     message = _("Subnets %(id1)s (%(cidr1)s) and %(id2)s (%(cidr2)s) mapped "
                 "to %(vrf)s overlap.")
+
+
+class ActiveActiveAAPSubnetConnectedToRouter(exceptions.BadRequest):
+    message = _("Subnet %(subnet_id)s can not be connected to a router "
+                "because its an active active AAP subnet.")
+
+
+class AAPNotAllowedOnDifferentActiveActiveAAPSubnet(exceptions.BadRequest):
+    message = _("Allowed address pair can not be added to this port "
+                "because its subnets %(subnet_ids)s active active AAP mode is "
+                "different than other port's subnets %(other_subnet_ids)s.")
