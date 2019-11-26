@@ -117,7 +117,7 @@ class VMNameUpdate(model_base.BASEV2):
     __tablename__ = 'apic_aim_vm_name_updates'
 
     purpose = sa.Column(sa.String(36), primary_key=True)
-    host_id = sa.Column(sa.String(36))
+    host_id = sa.Column(sa.String(255))
     last_incremental_update_time = sa.Column(sa.DateTime)
     last_full_update_time = sa.Column(sa.DateTime)
 
