@@ -88,6 +88,21 @@ class NetworkExtNestedDomainAllowedVlansDb(model_base.BASEV2):
                                    lazy='joined', cascade='delete'))
 
 
+class NetworkExtExtraContractDb(model_base.BASEV2):
+
+    __tablename__ = 'apic_aim_network_extra_contracts'
+
+    network_id = sa.Column(
+        sa.String(36), sa.ForeignKey('networks.id', ondelete="CASCADE"))
+    contract_name = sa.Column(sa.String(64), primary_key=True)
+    provides = sa.Column(sa.Boolean, primary_key=True)
+    network = orm.relationship(models_v2.Network,
+                               backref=orm.backref(
+                                   'aim_extension_extra_contract_mapping',
+                                   uselist=True,
+                                   lazy='joined', cascade='delete'))
+
+
 class SubnetExtensionDb(model_base.BASEV2):
 
     __tablename__ = 'apic_aim_subnet_extensions'
@@ -152,23 +167,38 @@ class ExtensionDbMixin(object):
         db_vlans = query(session).params(
             network_ids=network_ids).all()
 
+        query = BAKERY(lambda s: s.query(
+            NetworkExtExtraContractDb))
+        query += lambda q: q.filter(
+            NetworkExtExtraContractDb.network_id.in_(
+                sa.bindparam('network_ids', expanding=True)))
+        db_contracts = query(session).params(
+            network_ids=network_ids).all()
+
         cidrs_by_net_id = {}
         vlans_by_net_id = {}
+        contracts_by_net_id = {}
         for db_cidr in db_cidrs:
             cidrs_by_net_id.setdefault(db_cidr.network_id, []).append(
                 db_cidr)
         for db_vlan in db_vlans:
             vlans_by_net_id.setdefault(db_vlan.network_id, []).append(
                 db_vlan)
+        for db_contract in db_contracts:
+            contracts_by_net_id.setdefault(db_contract.network_id, []).append(
+                db_contract)
+
         result = {}
         for db_obj in db_objs:
             net_id = db_obj.network_id
             result.setdefault(net_id, self.make_network_extn_db_conf_dict(
                 db_obj, cidrs_by_net_id.get(net_id, []),
-                vlans_by_net_id.get(net_id, [])))
+                vlans_by_net_id.get(net_id, []),
+                contracts_by_net_id.get(net_id, [])))
         return result
 
-    def make_network_extn_db_conf_dict(self, ext_db, db_cidrs, db_vlans):
+    def make_network_extn_db_conf_dict(self, ext_db, db_cidrs, db_vlans,
+                                       db_contracts):
         net_res = {}
         db_obj = ext_db
         if db_obj:
@@ -192,6 +222,10 @@ class ExtensionDbMixin(object):
                     db_obj['nested_domain_node_network_vlan'])
             net_res[cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS] = [
                 c.vlan for c in db_vlans]
+            net_res[cisco_apic.EXTRA_PROVIDED_CONTRACTS] = [
+                c.contract_name for c in db_contracts if c.provides]
+            net_res[cisco_apic.EXTRA_CONSUMED_CONTRACTS] = [
+                c.contract_name for c in db_contracts if not c.provides]
         if net_res.get(cisco_apic.EXTERNAL_NETWORK):
             net_res[cisco_apic.EXTERNAL_CIDRS] = [c.cidr for c in db_cidrs]
         return net_res
@@ -246,6 +280,18 @@ class ExtensionDbMixin(object):
                         session, NetworkExtNestedDomainAllowedVlansDb, 'vlan',
                         res_dict[cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS],
                         network_id=network_id)
+
+            if cisco_apic.EXTRA_PROVIDED_CONTRACTS in res_dict:
+                self._update_list_attr(
+                        session, NetworkExtExtraContractDb, 'contract_name',
+                        res_dict[cisco_apic.EXTRA_PROVIDED_CONTRACTS],
+                        network_id=network_id, provides=True)
+
+            if cisco_apic.EXTRA_CONSUMED_CONTRACTS in res_dict:
+                self._update_list_attr(
+                        session, NetworkExtExtraContractDb, 'contract_name',
+                        res_dict[cisco_apic.EXTRA_CONSUMED_CONTRACTS],
+                        network_id=network_id, provides=False)
 
     def get_network_ids_by_ext_net_dn(self, session, dn, lock_update=False):
         query = BAKERY(lambda s: s.query(
