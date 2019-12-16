@@ -594,7 +594,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
 
-        if self._is_external(current):
+        is_ext = self._is_external(current)
+        is_svi = self._is_svi(current)
+
+        if ((current[cisco_apic.EXTRA_PROVIDED_CONTRACTS] or
+             current[cisco_apic.EXTRA_CONSUMED_CONTRACTS]) and
+            (is_ext or is_svi)):
+            raise exceptions.InvalidNetworkForExtraContracts()
+
+        if is_ext:
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
             if not ext_net:
                 return  # Unmanaged external network
@@ -615,7 +623,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     epg = resource
                 elif isinstance(resource, aim_resource.VRF):
                     vrf = resource
-        elif self._is_svi(current):
+        elif is_svi:
             l3out, ext_net, _ = self._get_aim_external_objects(current)
             if ext_net:
                 other_nets = set(
@@ -708,6 +716,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
             epg.display_name = dname
             epg.bd_name = bd.name
+            epg.provided_contract_names = current[
+                cisco_apic.EXTRA_PROVIDED_CONTRACTS]
+            epg.consumed_contract_names = current[
+                cisco_apic.EXTRA_CONSUMED_CONTRACTS]
             self.aim.create(aim_ctx, epg)
 
         self._add_network_mapping_and_notify(
@@ -726,8 +738,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mapping = self._get_network_mapping(session, current['id'])
 
         is_ext = self._is_external(current)
-        # REVISIT: Remove is_ext from condition and add UT for
-        # updating external network name.
+        is_svi = self._is_svi(current)
+
+        # Update name if changed. REVISIT: Remove is_ext from
+        # condition and add UT for updating external network name.
         if (not is_ext and
             current['name'] != original['name']):
             dname = aim_utils.sanitize_display_name(current['name'])
@@ -740,6 +754,37 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 l3out = self._get_network_l3out(mapping)
                 if l3out:
                     self.aim.update(aim_ctx, l3out, display_name=dname)
+
+        # Update extra provided/consumed contracts if changed.
+        curr_prov = set(current[cisco_apic.EXTRA_PROVIDED_CONTRACTS])
+        curr_cons = set(current[cisco_apic.EXTRA_CONSUMED_CONTRACTS])
+        orig_prov = set(original[cisco_apic.EXTRA_PROVIDED_CONTRACTS])
+        orig_cons = set(original[cisco_apic.EXTRA_CONSUMED_CONTRACTS])
+        if (curr_prov != orig_prov or curr_cons != orig_cons):
+            if is_ext or is_svi:
+                raise exceptions.InvalidNetworkForExtraContracts()
+
+            added_prov = curr_prov - orig_prov
+            removed_prov = orig_prov - curr_prov
+            added_cons = curr_cons - orig_cons
+            removed_cons = orig_cons - curr_cons
+
+            # REVISIT: AIM needs methods to atomically add/remove
+            # items to/from lists, as concurrent changes from router
+            # operations are possible.
+            epg = self.aim.get(aim_ctx, self._get_network_epg(mapping))
+
+            if added_prov or removed_prov:
+                contracts = ((set(epg.provided_contract_names) | added_prov)
+                             - removed_prov)
+                self.aim.update(
+                    aim_ctx, epg, provided_contract_names=contracts)
+
+            if added_cons or removed_cons:
+                contracts = ((set(epg.consumed_contract_names) | added_cons)
+                             - removed_cons)
+                self.aim.update(
+                    aim_ctx, epg, consumed_contract_names=contracts)
 
         if is_ext:
             _, ext_net, ns = self._get_aim_nat_strategy(current)
@@ -756,7 +801,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # TODO(amitbose) Propagate name updates to AIM
         else:
             # BGP config is supported only for svi networks.
-            if not self._is_svi(current):
+            if not is_svi:
                 return
             # Check for pre-existing l3out SVI.
             network_db = self.plugin._get_network(context._plugin_context,
@@ -994,7 +1039,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 res_dict_by_aim_res_dn[vrf.dn] = res_dict_and_aim_status_track
             ext_dict = self.make_network_extn_db_conf_dict(
                 net_db.aim_extension_mapping,
-                net_db.aim_extension_cidr_mapping)
+                net_db.aim_extension_cidr_mapping,
+                net_db.aim_extension_extra_contract_mapping)
             if cisco_apic.EXTERNAL_NETWORK in ext_dict:
                 dn = ext_dict.pop(cisco_apic.EXTERNAL_NETWORK)
                 a_ext_net = aim_resource.ExternalNetwork.from_dn(dn)
@@ -5257,7 +5303,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             contract = self._map_router(
                 mgr.expected_session, router_db, True)
             router_contract_names.add(contract.name)
-        router_contract_names = list(router_contract_names)
+
+        provided_contract_names = (
+            router_contract_names |
+            set([x.contract_name for x in
+                 net_db.aim_extension_extra_contract_mapping
+                 if x.provides]))
+        consumed_contract_names = (
+            router_contract_names |
+            set([x.contract_name for x in
+                 net_db.aim_extension_extra_contract_mapping
+                 if not x.provides]))
 
         # REVISIT: Refactor to share code.
         dname = aim_utils.sanitize_display_name(net_db.name)
@@ -5275,8 +5331,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         epg.display_name = dname
         epg.bd_name = bd.name
         epg.policy_enforcement_pref = 'unenforced'
-        epg.provided_contract_names = router_contract_names
-        epg.consumed_contract_names = router_contract_names
+        epg.provided_contract_names = provided_contract_names
+        epg.consumed_contract_names = consumed_contract_names
         epg.openstack_vmm_domain_names = []
         epg.physical_domain_names = []
         epg.vmm_domains = []

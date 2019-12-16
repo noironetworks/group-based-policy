@@ -30,6 +30,8 @@ SVI = 'apic:svi'
 BGP = 'apic:bgp_enable'
 BGP_ASN = 'apic:bgp_asn'
 BGP_TYPE = 'apic:bgp_type'
+EXTRA_PROVIDED_CONTRACTS = 'apic:extra_provided_contracts'
+EXTRA_CONSUMED_CONTRACTS = 'apic:extra_consumed_contracts'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -68,6 +70,18 @@ NET_ATTRIBUTES = {
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': "0",
         'validate': {'type:non_negative': None},
+    },
+    EXTRA_PROVIDED_CONTRACTS: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'convert_to': conv.convert_none_to_empty_list,
+        'validate': {'type:list_of_unique_strings': None},
+    },
+    EXTRA_CONSUMED_CONTRACTS: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'convert_to': conv.convert_none_to_empty_list,
+        'validate': {'type:list_of_unique_strings': None},
     },
 }
 
