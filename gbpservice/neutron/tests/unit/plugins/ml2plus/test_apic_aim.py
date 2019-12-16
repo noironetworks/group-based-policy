@@ -875,6 +875,10 @@ class TestAimMapping(ApicAimTestCase):
         aname = self.name_mapper.network(None, net['id'])
         router_anames = [self.name_mapper.router(None, router['id'])
                          for router in routers or []]
+        provided_contract_names = set(
+            router_anames + net['apic:extra_provided_contracts'])
+        consumed_contract_names = set(
+            router_anames + net['apic:extra_consumed_contracts'])
 
         if routers:
             if vrf:
@@ -945,9 +949,9 @@ class TestAimMapping(ApicAimTestCase):
             self.assertEqual(aname, aim_epg.name)
             self.assertEqual(net['name'], aim_epg.display_name)
             self.assertEqual(aname, aim_epg.bd_name)
-            self.assertItemsEqual(router_anames,
+            self.assertItemsEqual(provided_contract_names,
                                   aim_epg.provided_contract_names)
-            self.assertItemsEqual(router_anames,
+            self.assertItemsEqual(consumed_contract_names,
                                   aim_epg.consumed_contract_names)
             # REVISIT(rkukura): Check openstack_vmm_domain_names and
             # physical_domain_names?
@@ -1294,7 +1298,11 @@ class TestAimMapping(ApicAimTestCase):
 
     def test_network_lifecycle(self):
         # Test create.
-        net = self._make_network(self.fmt, 'net1', True)['network']
+        kwargs = {'apic:extra_provided_contracts': ['ep1', 'ep2'],
+                  'apic:extra_consumed_contracts': ['ec1', 'ec2']}
+        net = self._make_network(
+            self.fmt, 'net1', True, arg_list=tuple(kwargs.keys()),
+            **kwargs)['network']
         net_id = net['id']
         self._check_network(net)
 
@@ -1303,7 +1311,10 @@ class TestAimMapping(ApicAimTestCase):
         self._check_network(net)
 
         # Test update.
-        data = {'network': {'name': 'newnamefornet'}}
+        data = {'network':
+                {'name': 'newnamefornet',
+                 'apic:extra_provided_contracts': ['ep2', 'ep3'],
+                 'apic:extra_consumed_contracts': ['ec2', 'ec3']}}
         net = self._update('networks', net_id, data)['network']
         self._check_network(net)
 
@@ -1340,6 +1351,56 @@ class TestAimMapping(ApicAimTestCase):
         self._delete('networks', net['id'])
         self.assertFalse(extn.get_network_extn_db(session, net['id']))
         self._check_network_deleted(net)
+
+    def _test_invalid_network_exceptions(self, kwargs):
+        # Verify creating network with extra provided contracts fails.
+        kwargs['apic:extra_provided_contracts'] = ['ep1']
+        resp = self._create_network(
+            self.fmt, 'net', True, arg_list=tuple(kwargs.keys()), **kwargs)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidNetworkForExtraContracts',
+            result['NeutronError']['type'])
+        del kwargs['apic:extra_provided_contracts']
+
+        # Verify creating network with extra consumed contracts fails.
+        kwargs['apic:extra_consumed_contracts'] = ['ec1']
+        resp = self._create_network(
+            self.fmt, 'net', True, arg_list=tuple(kwargs.keys()), **kwargs)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidNetworkForExtraContracts',
+            result['NeutronError']['type'])
+        del kwargs['apic:extra_consumed_contracts']
+
+        # Create network without extra provided or consumed contracts.
+        net_id = self._make_network(
+            self.fmt, 'net', True,
+            arg_list=tuple(kwargs.keys()), **kwargs)['network']['id']
+
+        # Verify setting extra provided contracts on network fails.
+        result = self._update(
+            'networks', net_id,
+            {'network': {'apic:extra_provided_contracts': ['ep1']}},
+            webob.exc.HTTPBadRequest.code)
+        self.assertEqual(
+            'InvalidNetworkForExtraContracts',
+            result['NeutronError']['type'])
+
+        # Verify setting extra consumed contracts on network fails.
+        result = self._update(
+            'networks', net_id,
+            {'network': {'apic:extra_consumed_contracts': ['ec1']}},
+            webob.exc.HTTPBadRequest.code)
+        self.assertEqual(
+            'InvalidNetworkForExtraContracts',
+            result['NeutronError']['type'])
+
+    def test_external_network_exceptions(self):
+        self._test_invalid_network_exceptions({'router:external': True})
+
+    def test_svi_network_exceptions(self):
+        self._test_invalid_network_exceptions({'apic:svi': True})
 
     def test_security_group_lifecycle(self):
         # Test create
@@ -3050,6 +3111,14 @@ class TestAimMapping(ApicAimTestCase):
         gw3B = '10.0.3.2'
         gw3C = '10.0.3.3'
         gw4C = '10.0.4.3'
+
+        # Add extra contracts to two of the networks.
+        self._update(
+            'networks', net2, {'network': {'apic:extra_provided_contracts':
+                                           ['ep1', 'ep2']}})
+        self._update(
+            'networks', net3, {'network': {'apic:extra_consumed_contracts':
+                                           ['ec1', 'ec2']}})
 
         # Check initial state with no routing.
         check_net(net1, sn1, [], [], [gw1A], t1)
@@ -5086,6 +5155,57 @@ class TestExtensionAttributes(ApicAimTestCase):
             extn_db.NetworkExtNestedDomainAllowedVlansDb).filter_by(
                 network_id=net1['id']).all())
         self.assertEqual([], db_vlans)
+
+    def test_network_with_extra_contracts_lifecycle(self):
+        session = db_api.get_reader_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # Create network with extra contracts.
+        provided = ['ep1', 'ep2']
+        consumed = ['ec1', 'ec2']
+        kwargs = {'apic:extra_provided_contracts': provided,
+                  'apic:extra_consumed_contracts': consumed}
+        net = self._make_network(
+            self.fmt, 'net1', True, arg_list=tuple(kwargs.keys()),
+            **kwargs)['network']
+        net_id = net['id']
+        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+
+        # Test show.
+        net = self._show('networks', net_id)['network']
+        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+
+        # Test list.
+        net = self._list(
+            'networks', query_params=('id=%s' % net_id))['networks'][0]
+        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+
+        # Test update extra contracts.
+        provided = ['ep2', 'ep3']
+        consumed = ['ec2', 'ec3']
+        net = self._update(
+            'networks', net_id,
+            {'network':
+             {'apic:extra_provided_contracts': provided,
+              'apic:extra_consumed_contracts': consumed}})['network']
+        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+
+        # Test show after update.
+        net = self._show('networks', net_id)['network']
+        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+
+        # Test delete.
+        self._delete('networks', net_id)
+        self.assertFalse(extn.get_network_extn_db(session, net_id))
+        db_contracts = (session.query(
+            extn_db.NetworkExtExtraContractDb).filter_by(
+                network_id=net_id).all())
+        self.assertEqual([], db_contracts)
 
     def test_external_network_lifecycle(self):
         session = db_api.get_reader_session()
