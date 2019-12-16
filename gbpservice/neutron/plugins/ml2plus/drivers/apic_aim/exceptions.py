@@ -101,3 +101,9 @@ class AAPNotAllowedOnDifferentActiveActiveAAPSubnet(exceptions.BadRequest):
     message = _("Allowed address pair can not be added to this port "
                 "because its subnets %(subnet_ids)s active active AAP mode is "
                 "different than other port's subnets %(other_subnet_ids)s.")
+
+
+class InvalidNetworkForExtraContracts(exceptions.BadRequest):
+    message = _("Cannot specify apic:extra_provided_contracts or "
+                "apic:extra_consumed_consumed contracts for an external or "
+                "SVI network.")

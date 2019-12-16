@@ -116,6 +116,10 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     data.get(cisco_apic.NESTED_DOMAIN_SERVICE_VLAN),
                     cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN:
                     data.get(cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN),
+                    cisco_apic.EXTRA_PROVIDED_CONTRACTS:
+                    data.get(cisco_apic.EXTRA_PROVIDED_CONTRACTS),
+                    cisco_apic.EXTRA_CONSUMED_CONTRACTS:
+                    data.get(cisco_apic.EXTRA_CONSUMED_CONTRACTS),
                     }
         if cisco_apic.VLANS_LIST in (data.get(
                 cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS) or {}):
@@ -151,8 +155,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
             result.update(res_dict)
 
     def process_update_network(self, plugin_context, data, result):
-        # External_cidr, bgp_enable, bgp_type and bgp_asn or
-        # nested domain attributes could be updated
+        # Extension attributes that could be updated.
         update_attrs = [
                 cisco_apic.EXTERNAL_CIDRS, cisco_apic.BGP, cisco_apic.BGP_TYPE,
                 cisco_apic.BGP_ASN,
@@ -160,8 +163,9 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 cisco_apic.NESTED_DOMAIN_INFRA_VLAN,
                 cisco_apic.NESTED_DOMAIN_SERVICE_VLAN,
                 cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN,
-                cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS]
-
+                cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS,
+                cisco_apic.EXTRA_PROVIDED_CONTRACTS,
+                cisco_apic.EXTRA_CONSUMED_CONTRACTS]
         if not(set(update_attrs) & set(data.keys())):
             return
 
@@ -177,7 +181,9 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 cisco_apic.NESTED_DOMAIN_NAME, cisco_apic.NESTED_DOMAIN_TYPE,
                 cisco_apic.NESTED_DOMAIN_INFRA_VLAN,
                 cisco_apic.NESTED_DOMAIN_SERVICE_VLAN,
-                cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN]
+                cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN,
+                cisco_apic.EXTRA_PROVIDED_CONTRACTS,
+                cisco_apic.EXTRA_CONSUMED_CONTRACTS]
         for e_k in ext_keys:
             if e_k in data:
                 res_dict.update({e_k: data[e_k]})

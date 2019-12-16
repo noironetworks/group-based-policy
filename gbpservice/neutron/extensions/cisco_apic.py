@@ -42,6 +42,8 @@ NESTED_DOMAIN_INFRA_VLAN = 'apic:nested_domain_infra_vlan'
 NESTED_DOMAIN_ALLOWED_VLANS = 'apic:nested_domain_allowed_vlans'
 NESTED_DOMAIN_SERVICE_VLAN = 'apic:nested_domain_service_vlan'
 NESTED_DOMAIN_NODE_NETWORK_VLAN = 'apic:nested_domain_node_network_vlan'
+EXTRA_PROVIDED_CONTRACTS = 'apic:extra_provided_contracts'
+EXTRA_CONSUMED_CONTRACTS = 'apic:extra_consumed_contracts'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -216,6 +218,18 @@ NET_ATTRIBUTES = {
             }
         },
         'convert_to': convert_nested_domain_allowed_vlans,
+    },
+    EXTRA_PROVIDED_CONTRACTS: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'convert_to': conv.convert_none_to_empty_list,
+        'validate': {'type:list_of_unique_strings': None},
+    },
+    EXTRA_CONSUMED_CONTRACTS: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'convert_to': conv.convert_none_to_empty_list,
+        'validate': {'type:list_of_unique_strings': None},
     },
 }
 
