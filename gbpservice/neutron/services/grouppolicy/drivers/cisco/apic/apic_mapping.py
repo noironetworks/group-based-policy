@@ -309,7 +309,7 @@ class ApicMappingDriver(api.ResourceMappingDriver,
                 # _get_keystone_client() implementation here, but the
                 # original implemenation is not very reusable and hence we
                 # are having to use it in the following way.
-                ncache = cache.ProjectNameCache()
+                ncache = cache.ProjectDetailsCache()
                 ncache._get_keystone_client()
                 keystoneclientv3 = ncache.keystone
 
