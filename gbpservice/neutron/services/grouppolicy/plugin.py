@@ -13,6 +13,7 @@
 import netaddr
 import six
 
+from neutron.common import utils as n_utils
 from neutron.db import api as db_api
 from neutron.quota import resource_registry
 from neutron_lib.api.definitions import portbindings
@@ -464,8 +465,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 {'port_attributes': port_attributes})
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_policy_target(self, context, policy_target):
         self._ensure_tenant(context, policy_target['policy_target'])
         with db_api.context_manager.writer.using(context):
@@ -495,8 +496,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_target(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_policy_target(self, context, policy_target_id, policy_target):
         with db_api.context_manager.writer.using(context):
             session = context.session
@@ -522,8 +523,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_target(context, policy_target_id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_policy_target(self, context, policy_target_id):
         with db_api.context_manager.writer.using(context):
             policy_target = self.get_policy_target(context, policy_target_id)
@@ -544,14 +545,12 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
 
     @log.log_method_call
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def get_policy_target(self, context, policy_target_id, fields=None):
         return self._get_resource(context, 'policy_target', policy_target_id,
                                   'PolicyTargetContext', fields=fields)
 
     @log.log_method_call
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def get_policy_targets(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
@@ -561,8 +560,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_policy_target_group(self, context, policy_target_group):
         self._ensure_tenant(context,
                             policy_target_group['policy_target_group'])
@@ -593,8 +592,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_target_group(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_policy_target_group(self, context, policy_target_group_id,
                                    policy_target_group):
         with db_api.context_manager.writer.using(context):
@@ -634,8 +633,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_target_group(context, policy_target_group_id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_policy_target_group(self, context, policy_target_group_id):
         with db_api.context_manager.writer.using(context):
             policy_target_group = self.get_policy_target_group(
@@ -661,7 +660,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         policy_context.current['provided_policy_rule_sets'] = []
         policy_context.current['consumed_policy_rule_sets'] = []
 
-        # Proxy PTGs must be deleted before the group itself
+        # Proxy PTGs must be deleted before the group itself.
         if policy_target_group.get('proxy_group_id'):
             try:
                 self.delete_policy_target_group(
@@ -670,16 +669,19 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 LOG.warning('PTG %s already deleted',
                             policy_target_group['proxy_group_id'])
 
-        with db_api.context_manager.writer.using(context):
-            for pt in self.get_policy_targets(context, {'id': pt_ids}):
-                # We will allow PTG deletion if all PTs are unused.
-                # We could have cleaned these opportunistically in
-                # the previous loop, but we will keep it simple,
-                # such that either all unused PTs are deleted
-                # or nothing is.
-                self.delete_policy_target(context, pt['id'])
-            super(GroupPolicyPlugin, self).delete_policy_target_group(
-                context, policy_target_group_id)
+        # Delete the PTG's PTs, which should not be in-use.
+        for pt in self.get_policy_targets(context, {'id': pt_ids}):
+            self.delete_policy_target(context, pt['id'])
+
+        # REVISIT: The DB layer method called here manages its own
+        # transaction, but ideally would be called within the same
+        # transaction as the precommit calls above. Maybe the cleanup
+        # of PRSs, proxy PTGs and PTs, which much be done outside any
+        # transaction, could be moved before the initial transaction,
+        # possibly within a loop to ensure no PTs concurrently become
+        # in-use before proceding with the PTG deletion transaction.
+        super(GroupPolicyPlugin, self).delete_policy_target_group(
+            context, policy_target_group_id)
 
         try:
             self.policy_driver_manager.delete_policy_target_group_postcommit(
@@ -708,8 +710,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_application_policy_group(self, context,
                                         application_policy_group):
         self._ensure_tenant(
@@ -740,8 +742,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_application_policy_group(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_application_policy_group(self, context,
                                         application_policy_group_id,
                                         application_policy_group):
@@ -774,8 +776,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                                  application_policy_group_id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_application_policy_group(self, context,
                                         application_policy_group_id):
         with db_api.context_manager.writer.using(context):
@@ -816,8 +818,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             sorts=sorts, limit=limit, marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_l2_policy(self, context, l2_policy):
         self._ensure_tenant(context, l2_policy['l2_policy'])
         with db_api.context_manager.writer.using(context):
@@ -844,8 +846,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_l2_policy(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_l2_policy(self, context, l2_policy_id, l2_policy):
         with db_api.context_manager.writer.using(context):
             session = context.session
@@ -869,8 +871,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_l2_policy(context, l2_policy_id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_l2_policy(self, context, l2_policy_id):
         with db_api.context_manager.writer.using(context):
             l2_policy = self.get_l2_policy(context, l2_policy_id)
@@ -906,8 +908,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_network_service_policy(self, context, network_service_policy):
         self._ensure_tenant(
             context, network_service_policy['network_service_policy'])
@@ -940,8 +942,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_network_service_policy(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_network_service_policy(self, context, network_service_policy_id,
                                       network_service_policy):
         with db_api.context_manager.writer.using(context):
@@ -971,8 +973,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                                network_service_policy_id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_network_service_policy(
         self, context, network_service_policy_id):
         with db_api.context_manager.writer.using(context):
@@ -1012,8 +1014,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_l3_policy(self, context, l3_policy):
         self._ensure_tenant(context, l3_policy['l3_policy'])
         with db_api.context_manager.writer.using(context):
@@ -1042,8 +1044,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_l3_policy(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_l3_policy(self, context, l3_policy_id, l3_policy):
         with db_api.context_manager.writer.using(context):
             session = context.session
@@ -1068,8 +1070,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_l3_policy(context, l3_policy_id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_l3_policy(self, context, l3_policy_id, check_unused=False):
         with db_api.context_manager.writer.using(context):
             session = context.session
@@ -1111,8 +1113,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_policy_classifier(self, context, policy_classifier):
         self._ensure_tenant(context, policy_classifier['policy_classifier'])
         with db_api.context_manager.writer.using(context):
@@ -1142,8 +1144,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_classifier(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_policy_classifier(self, context, id, policy_classifier):
         with db_api.context_manager.writer.using(context):
             session = context.session
@@ -1168,8 +1170,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_classifier(context, id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_policy_classifier(self, context, id):
         with db_api.context_manager.writer.using(context):
             policy_classifier = self.get_policy_classifier(context, id)
@@ -1206,8 +1208,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_policy_action(self, context, policy_action):
         self._ensure_tenant(context, policy_action['policy_action'])
         with db_api.context_manager.writer.using(context):
@@ -1237,8 +1239,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_action(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_policy_action(self, context, id, policy_action):
         with db_api.context_manager.writer.using(context):
             session = context.session
@@ -1264,8 +1266,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_action(context, id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_policy_action(self, context, id):
         with db_api.context_manager.writer.using(context):
             policy_action = self.get_policy_action(context, id)
@@ -1300,8 +1302,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_policy_rule(self, context, policy_rule):
         self._ensure_tenant(context, policy_rule['policy_rule'])
         with db_api.context_manager.writer.using(context):
@@ -1330,8 +1332,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_rule(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_policy_rule(self, context, id, policy_rule):
         with db_api.context_manager.writer.using(context):
             session = context.session
@@ -1355,8 +1357,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_rule(context, id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_policy_rule(self, context, id):
         with db_api.context_manager.writer.using(context):
             policy_rule = self.get_policy_rule(context, id)
@@ -1392,8 +1394,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_policy_rule_set(self, context, policy_rule_set):
         self._ensure_tenant(context, policy_rule_set['policy_rule_set'])
         with db_api.context_manager.writer.using(context):
@@ -1423,8 +1425,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_rule_set(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_policy_rule_set(self, context, id, policy_rule_set):
         with db_api.context_manager.writer.using(context):
             session = context.session
@@ -1449,8 +1451,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_policy_rule_set(context, id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_policy_rule_set(self, context, id):
         with db_api.context_manager.writer.using(context):
             policy_rule_set = self.get_policy_rule_set(context, id)
@@ -1485,8 +1487,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_external_segment(self, context, external_segment):
         self._ensure_tenant(context, external_segment['external_segment'])
         with db_api.context_manager.writer.using(context):
@@ -1519,8 +1521,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_external_segment(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_external_segment(self, context, external_segment_id,
                                 external_segment):
         with db_api.context_manager.writer.using(context):
@@ -1551,8 +1553,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_external_segment(context, external_segment_id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_external_segment(self, context, external_segment_id):
         with db_api.context_manager.writer.using(context):
             es = self.get_external_segment(context, external_segment_id)
@@ -1592,8 +1594,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_external_policy(self, context, external_policy):
         self._ensure_tenant(context, external_policy['external_policy'])
         with db_api.context_manager.writer.using(context):
@@ -1623,8 +1625,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_external_policy(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_external_policy(self, context, external_policy_id,
                                external_policy):
         with db_api.context_manager.writer.using(context):
@@ -1652,8 +1654,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_external_policy(context, external_policy_id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_external_policy(self, context, external_policy_id,
                                check_unused=False):
         with db_api.context_manager.writer.using(context):
@@ -1690,8 +1692,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             marker=marker, page_reverse=page_reverse)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def create_nat_pool(self, context, nat_pool):
         self._ensure_tenant(context, nat_pool['nat_pool'])
         with db_api.context_manager.writer.using(context):
@@ -1718,8 +1720,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_nat_pool(context, result['id'])
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def update_nat_pool(self, context, nat_pool_id, nat_pool):
         with db_api.context_manager.writer.using(context):
             session = context.session
@@ -1741,8 +1743,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
         return self.get_nat_pool(context, nat_pool_id)
 
     @log.log_method_call
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
-    @gbp_extensions.disable_transaction_guard
     def delete_nat_pool(self, context, nat_pool_id, check_unused=False):
         with db_api.context_manager.writer.using(context):
             es = self.get_nat_pool(context, nat_pool_id)
