@@ -76,6 +76,7 @@ EndpointPortInfo = namedtuple(
      # Not in newton: 'nested_domain_infra_vlan',
      # Not in newton: 'nested_domain_service_vlan',
      # Not in newton: 'nested_domain_node_network_vlan',
+     'svi',
      'epg_name',
      'epg_app_profile_name',
      'epg_tenant_name',
@@ -100,7 +101,8 @@ EndpointBindingInfo = namedtuple(
     ['host',
      'level',
      'network_type',
-     'physical_network'])
+     'physical_network',
+     'segmentation_id'])
 
 EndpointSecurityGroupInfo = namedtuple(
     'EndpointSecurityGroupInfo',
@@ -508,6 +510,7 @@ class ApicRpcHandlerMixin(object):
             # nested_domain_service_vlan,
             # Not in newton: extension_db.NetworkExtensionDb.
             # nested_domain_node_network_vlan,
+            extension_db.NetworkExtensionDb.svi,
             db.NetworkMapping.epg_name,
             db.NetworkMapping.epg_app_profile_name,
             db.NetworkMapping.epg_tenant_name,
@@ -599,6 +602,7 @@ class ApicRpcHandlerMixin(object):
             ml2_models.PortBindingLevel.level,
             segment_models.NetworkSegment.network_type,
             segment_models.NetworkSegment.physical_network,
+            segment_models.NetworkSegment.segmentation_id,
         ))
         query += lambda q: q.join(
             segment_models.NetworkSegment,
@@ -897,6 +901,7 @@ class ApicRpcHandlerMixin(object):
         details['network_id'] = port_info.network_id
         details['network_type'] = binding_info[-1].network_type
         details['physical_network'] = binding_info[-1].physical_network
+        details['segmentation_id'] = binding_info[-1].segmentation_id
         details['port_id'] = port_info.port_id
 
         return details
@@ -931,7 +936,11 @@ class ApicRpcHandlerMixin(object):
         details['dns_domain'] = port_info.net_dns_domain or ''
         details['enable_dhcp_optimization'] = self.enable_dhcp_opt
         details['enable_metadata_optimization'] = self.enable_metadata_opt
-        details['endpoint_group_name'] = port_info.epg_name
+        if port_info.svi:
+            details['endpoint_group_name'] = port_info.network_id
+            details['svi'] = True
+        else:
+            details['endpoint_group_name'] = port_info.epg_name
         details['floating_ip'] = self._build_fips(info)
         details['host'] = port_info.host
         details['host_snat_ips'] = self._build_host_snat_ips(

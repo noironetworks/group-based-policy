@@ -345,7 +345,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                      'apic:nat_type', SNAT_POOL,
                                      ACTIVE_ACTIVE_AAP,
                                      CIDR, PROV, CONS, SVI,
-                                     BGP, BGP_TYPE, ASN
+                                     BGP, BGP_TYPE, ASN,
+                                     'provider:network_type'
                                      )
         self.name_mapper = apic_mapper.APICNameMapper()
         self.t1_aname = self.name_mapper.project(None, 't1')
@@ -4718,6 +4719,28 @@ class TestPortBinding(ApicAimTestCase):
         port = self._make_port(self.fmt, net['network']['id'])['port']
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
+        self.assertEqual('ovs', port['binding:vif_type'])
+        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
+                         port['binding:vif_details'])
+
+    def test_bind_opflex_agent_svi(self):
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        aim_ctx = aim_context.AimContext(self.db_session)
+        hlink_1 = aim_infra.HostLink(
+            host_name='host1',
+            interface_name='eth1',
+            path='topology/pod-1/paths-102/pathep-[eth1/8]')
+        self.aim_mgr.create(aim_ctx, hlink_1)
+
+        net = self._make_network(self.fmt, 'net1', True,
+            arg_list=self.extension_attributes,
+            **{'apic:svi': 'True', 'provider:network_type': u'vlan'})
+
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = port['id']
+        port = self._bind_port_to_host(port_id, 'host1')['port']
+
         self.assertEqual('ovs', port['binding:vif_type'])
         self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
                          port['binding:vif_details'])
@@ -9130,6 +9153,42 @@ class TestOpflexRpc(ApicAimTestCase):
 
     def test_endpoint_details_bound_active_active_aap(self):
         self._test_endpoint_details_bound(active_active_aap=True)
+
+    def test_endpoint_details_bound_svi(self):
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+
+        aim_ctx = aim_context.AimContext(self.db_session)
+        hlink_1 = aim_infra.HostLink(
+            host_name='h1',
+            interface_name='eth1',
+            path='topology/pod-1/paths-102/pathep-[eth1/8]')
+        self.aim_mgr.create(aim_ctx, hlink_1)
+
+        network = self._make_network(self.fmt, 'net1', True,
+                                     arg_list=self.extension_attributes,
+                                     **{'apic:svi': 'True',
+                                        'provider:network_type': u'vlan'})
+        net1 = network['network']
+        gw1_ip = '10.0.1.1'
+        self._make_subnet(self.fmt, network, gw1_ip, cidr='10.0.1.0/24')
+
+        # Make a VM port.
+        p1 = self._make_port(self.fmt, net1['id'],
+                             device_owner='compute:')['port']
+        self._bind_port_to_host(p1['id'], 'h1')
+
+        request = {
+            'device': 'tap' + p1['id'],
+            'timestamp': 12345,
+            'request_id': 'a_request'
+        }
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='h1')
+        gbp_details = response['gbp_details']
+        self.assertEqual(True, gbp_details.get('svi'))
+        neutron_details = response['neutron_details']
+        self.assertEqual(net1['provider:segmentation_id'],
+            neutron_details.get('segmentation_id'))
 
     def test_endpoint_details_unbound(self):
         host = 'host1'
