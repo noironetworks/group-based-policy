@@ -1702,6 +1702,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if network_db.external:
             raise exceptions.ExternalSubnetNotAllowed(network_id=network_id)
 
+        # We don't allow subnets marked with ACTIVE_ACTIVE_AAP flag to be
+        # connected to a router.
+        for subnet in subnets:
+            if subnet[cisco_apic.ACTIVE_ACTIVE_AAP]:
+                raise exceptions.ActiveActiveAAPSubnetConnectedToRouter(
+                                                        subnet_id=subnet['id'])
+
         # Find the address_scope(s) for the new interface.
         #
         # REVISIT: If dual-stack interfaces allowed, process each
@@ -2268,8 +2275,64 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self.aim.update(aim_ctx, sg_rule_aim,
                             remote_ips=aim_sg_rule.remote_ips)
 
+    def _check_active_active_aap(self, context, port):
+        aap_current = port.get('allowed_address_pairs', [])
+        aap_original = []
+        if context.original:
+            aap_original = context.original.get('allowed_address_pairs', [])
+        curr_ips = [aap['ip_address'] for aap in aap_current]
+        orig_ips = [aap['ip_address'] for aap in aap_original]
+        added = list(set(curr_ips) - set(orig_ips))
+        if not added:
+            return
+
+        session = context._plugin_context.session
+        query = BAKERY(lambda s: s.query(
+            n_addr_pair_db.AllowedAddressPair.port_id,
+            n_addr_pair_db.AllowedAddressPair.ip_address,
+            models_v2.IPAllocation.subnet_id))
+        query += lambda q: q.join(
+            models_v2.IPAllocation,
+            models_v2.IPAllocation.port_id ==
+            n_addr_pair_db.AllowedAddressPair.port_id)
+        query += lambda q: q.filter(
+            n_addr_pair_db.AllowedAddressPair.port_id != sa.bindparam(
+                'port_id'),
+            models_v2.IPAllocation.network_id == sa.bindparam('network_id'))
+        addr_pairs = query(session).params(
+            network_id=port['network_id'],
+            port_id=port['id']).all()
+        if not addr_pairs:
+            return
+
+        affected_ports = {}
+        cidr_aap = netaddr.IPSet()
+        for added_ip in added:
+            cidr_aap.add(netaddr.IPNetwork(added_ip))
+        for a_pair in addr_pairs:
+            port_id, ip_address, subnet_id = a_pair
+            cidr = netaddr.IPSet(netaddr.IPNetwork(ip_address))
+            if cidr & cidr_aap:
+                affected_ports.setdefault(port_id, [])
+                if subnet_id not in affected_ports[port_id]:
+                    affected_ports[port_id].append(subnet_id)
+        if not affected_ports:
+            return
+
+        # Make sure all these ports belong to the same
+        # active_active_aap mode.
+        subnet_ids = [x['subnet_id'] for x in port['fixed_ips']]
+        active_aap_mode = self._query_active_active_aap(session, subnet_ids)
+        for port_id, other_subnet_ids in affected_ports.items():
+            other_active_aap_mode = self._query_active_active_aap(
+                                                    session, other_subnet_ids)
+            if active_aap_mode != other_active_aap_mode:
+                raise exceptions.AAPNotAllowedOnDifferentActiveActiveAAPSubnet(
+                    subnet_ids=subnet_ids, other_subnet_ids=other_subnet_ids)
+
     def create_port_precommit(self, context):
         port = context.current
+        self._check_active_active_aap(context, port)
         self._really_update_sg_rule_with_remote_group_set(
             context, port, port['security_groups'], is_delete=False)
         self._insert_provisioning_block(context)
@@ -2322,6 +2385,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def update_port_precommit(self, context):
         port = context.current
+        self._check_active_active_aap(context, port)
         if context.original_host and context.original_host != context.host:
             self.disassociate_domain(context, use_original=True)
             if self._use_static_path(context.original_bottom_bound_segment):
@@ -5269,15 +5333,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Note that this is intended primarily to handle migration to
         # apic_aim, where the previous plugin and/or drivers did not
         # populate apic_aim's extension data. After migration, the
-        # SNAT_HOST_POOL attribute can be changed via the REST API if
-        # needed.
+        # SNAT_HOST_POOL (but not the ACTIVE_ACTIVE_AAP) attribute can be
+        # changed via the REST API if needed.
 
         if not mgr.should_repair(
                 "subnet %s missing extension data" % subnet_db.id):
             return
 
         res_dict = {
-            cisco_apic.SNAT_HOST_POOL: False
+            cisco_apic.SNAT_HOST_POOL: False,
+            cisco_apic.ACTIVE_ACTIVE_AAP: False
         }
         self.set_subnet_extn_db(mgr.actual_session, subnet_db.id, res_dict)
 
