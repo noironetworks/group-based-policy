@@ -99,6 +99,7 @@ DN = cisco_apic.DIST_NAMES
 EPG = cisco_apic.EPG
 EXTERNAL_NETWORK = cisco_apic.EXTERNAL_NETWORK
 SNAT_HOST_POOL = cisco_apic.SNAT_HOST_POOL
+ACTIVE_ACTIVE_AAP = cisco_apic.ACTIVE_ACTIVE_AAP
 VRF = cisco_apic.VRF
 CIDR = 'apic:external_cidrs'
 PROV = 'apic:external_provided_contracts'
@@ -5769,7 +5770,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             return False
 
     def _test_gbp_details_for_allowed_address_pair(self, allow_addr,
-            owned_addr, update_addr, update_owned_addr):
+            owned_addr, update_addr, update_owned_addr, is_cidr=False):
         self._register_agent('h1', test_aim_md.AGENT_CONF_OPFLEX)
         self._register_agent('h2', test_aim_md.AGENT_CONF_OPFLEX)
         net = self._make_network(self.fmt, 'net1', True)
@@ -5777,6 +5778,36 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             'subnet']
         sub2 = self._make_subnet(self.fmt, net, '1.2.3.1', '1.2.3.0/24')[
             'subnet']
+        sub_active_aap = self._create_subnet_with_extension(
+                self.fmt, net, '2.2.3.1', '2.2.3.0/24',
+                **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
+        sub_active_aap1 = self._create_subnet_with_extension(
+                self.fmt, net, '3.2.3.1', '3.2.3.0/24',
+                **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
+
+        allow_addr_active_aap = [{'ip_address': '2.2.3.250',
+                        'mac_address': '00:00:00:AA:AA:AA'},
+                       {'ip_address': '2.2.3.251',
+                        'mac_address': '00:00:00:BB:BB:BB'}]
+        if is_cidr:
+            allow_addr_active_aap = [{'ip_address': '2.2.3.0/24',
+                        'mac_address': '00:00:00:AA:AA:AA'}]
+        owned_addr_active_aap = ['2.2.3.250', '2.2.3.251']
+        p_active_aap = self._make_port(self.fmt, net['network']['id'],
+                         arg_list=('allowed_address_pairs',),
+                         device_owner='compute:',
+                         fixed_ips=[{'subnet_id': sub_active_aap['id']},
+                                    {'subnet_id': sub_active_aap1['id']}],
+                         allowed_address_pairs=allow_addr_active_aap)['port']
+        # The same aap can't be assigned to a port whose subnets
+        # belong to a different active_acitve_aap mode.
+        self.assertRaises(webob.exc.HTTPClientError,
+                          self._make_port, self.fmt, net['network']['id'],
+                          arg_list=('allowed_address_pairs',),
+                          device_owner='compute:',
+                          fixed_ips=[{'subnet_id': sub1['id']},
+                                     {'subnet_id': sub_active_aap['id']}],
+                          allowed_address_pairs=allow_addr_active_aap)
 
         # Create similar net and subnets for a different
         # tenant. Similar t2* resources, with the same addresses as
@@ -5787,6 +5818,15 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                                    tenant_id='t2')['subnet']
         t2sub2 = self._make_subnet(self.fmt, t2net, '1.2.3.1', '1.2.3.0/24',
                                    tenant_id='t2')['subnet']
+
+        # The same aap however can be assigned to a port (but from a different
+        # network) whose subnets belong to a different active_acitve_aap mode.
+        self._make_port(self.fmt, t2net['network']['id'],
+                        arg_list=('allowed_address_pairs',),
+                        device_owner='compute:',
+                        fixed_ips=[{'subnet_id': t2sub1['id']},
+                                   {'subnet_id': t2sub2['id']}],
+                        allowed_address_pairs=allow_addr_active_aap)
 
         # create 2 ports configured with the same allowed-addresses
         p1 = self._make_port(self.fmt, net['network']['id'],
@@ -5811,8 +5851,17 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                                allowed_address_pairs=allow_addr)['port']
         self._bind_port_to_host(p1['id'], 'h1')
         self._bind_port_to_host(t2p1['id'], 'h1')
+        self._bind_port_to_host(p_active_aap['id'], 'h1')
         self._bind_port_to_host(p2['id'], 'h2')
         self._bind_port_to_host(t2p2['id'], 'h2')
+
+        # The same aap can't be assigned to a port whose subnets
+        # belong to a different active_acitve_aap mode.
+        self._update('ports', p_active_aap['id'],
+                     {'port': {'allowed_address_pairs': allow_addr}},
+                     neutron_context=self._neutron_admin_context,
+                     expected_code=webob.exc.HTTPBadRequest.code)
+
         # Call agent => plugin RPC to get the details for each port. The
         # results should only have the configured AAPs, with none of them
         # active.
@@ -5828,6 +5877,17 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                          sorted(details['allowed_address_pairs']))
 
         # Call agent => plugin RPC, requesting ownership of a /32 IP
+        ip_owner_info = {'port': p_active_aap['id'],
+                         'ip_address_v4': owned_addr_active_aap[0],
+                         'network_id': p_active_aap['network_id']}
+        self.mech_driver.update_ip_owner(ip_owner_info)
+        details = self.mech_driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p_active_aap['id'],
+            host='h1')
+        # There should be no active aap here
+        self.assertEqual(sorted(allow_addr_active_aap),
+                         sorted(details['allowed_address_pairs']))
+
         ip_owner_info = {'port': p1['id'],
                          'ip_address_v4': owned_addr[0],
                          'network_id': p1['network_id']}
@@ -6016,7 +6076,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                         'mac_address': '00:00:00:BB:BB:BB'}]
         update_owned_addr = ['2.3.4.250', '2.3.4.251']
         self._test_gbp_details_for_allowed_address_pair(allow_addr,
-            owned_addr, update_addr, update_owned_addr)
+            owned_addr, update_addr, update_owned_addr, is_cidr=True)
 
     def test_port_bound_other_agent(self):
         # REVISIT: This test should call request_endpoint_details
