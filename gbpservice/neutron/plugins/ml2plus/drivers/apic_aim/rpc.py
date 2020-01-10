@@ -655,7 +655,7 @@ class ApicRpcHandlerMixin(object):
     def _query_active_active_aap(self, session, subnet_ids):
         # Default is False.
         if not subnet_ids:
-            False
+            return False
         query = BAKERY(lambda s: s.query(
             extension_db.SubnetExtensionDb.active_active_aap,
         ))
@@ -664,7 +664,7 @@ class ApicRpcHandlerMixin(object):
                 sa.bindparam('subnet_ids', expanding=True)))
         query += lambda q: q.distinct()
         for active_active_aap, in query(session).params(
-                                        subnet_ids=list(subnet_ids)):
+                subnet_ids=list(subnet_ids)):
             if active_active_aap is False:
                 return False
         # Return True only if all the subnets have this flag enabled.
