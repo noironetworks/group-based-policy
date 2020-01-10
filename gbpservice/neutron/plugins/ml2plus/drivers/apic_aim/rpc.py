@@ -681,8 +681,8 @@ class ApicRpcHandlerMixin(object):
     def _query_active_active_aap(self, session, subnet_ids):
         # Default is False.
         if not subnet_ids:
-            False
-
+            return False
+        # Baked queries using in_ require sqlalchemy >=1.2.
         query = session.query(
             extension_db.SubnetExtensionDb.active_active_aap,
         )
