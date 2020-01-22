@@ -920,6 +920,48 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     def _check_ip_in_cidr(self, ip_addr, cidr):
         self.assertTrue(netaddr.IPAddress(ip_addr) in netaddr.IPNetwork(cidr))
 
+    def _verify_fip_details(self, mapping, fip, ext_epg_tenant,
+                            ext_epg_name, ext_epg_app_profile='OpenStack'):
+        self.assertEqual(1, len(mapping['floating_ip']))
+        fip_mapping = mapping['floating_ip'][0]
+        # REVISIT: The port_id, project_id, and floating_network_id
+        # are not used by the agent, and the new RPC implementation
+        # doesn't provide them, so these assertions are commented out
+        # until the RPC implementations are cleaned up.
+        self.assertEqual(fip['id'], fip_mapping['id'])
+        # self.assertEqual(fip['port_id'], fip_mapping['port_id'])
+        # self.assertEqual(fip['project_id'], fip_mapping['project_id'])
+        self.assertEqual(fip['fixed_ip_address'],
+                         fip_mapping['fixed_ip_address'])
+        self.assertEqual(fip['floating_ip_address'],
+                         fip_mapping['floating_ip_address'])
+        # self.assertEqual(fip['floating_network_id'],
+        #                  fip_mapping['floating_network_id'])
+        self.assertEqual(ext_epg_name, fip_mapping['nat_epg_name'])
+        self.assertEqual(ext_epg_tenant, fip_mapping['nat_epg_tenant'])
+        self.assertEqual(ext_epg_app_profile,
+                         fip_mapping['nat_epg_app_profile'])
+
+    def _verify_ip_mapping_details(self, mapping, ext_segment_name,
+                                   ext_epg_tenant, ext_epg_name,
+                                   ext_epg_app_profile='OpenStack'):
+        self.assertTrue({'external_segment_name': ext_segment_name,
+                         'nat_epg_name': ext_epg_name,
+                         'nat_epg_app_profile': ext_epg_app_profile,
+                         'nat_epg_tenant': ext_epg_tenant}
+                        in mapping['ip_mapping'])
+
+    def _verify_host_snat_ip_details(self, mapping, ext_segment_name,
+                                     snat_ip, subnet_cidr, ext_net_id):
+        gw, prefix = subnet_cidr.split('/')
+        self._check_ip_in_cidr(snat_ip, subnet_cidr)
+        mapping['host_snat_ips'][0].pop('host_snat_ip', None)
+        self.assertEqual({'ext_net_id': ext_net_id,
+                          'external_segment_name': ext_segment_name,
+                          'gateway_ip': gw,
+                          'prefixlen': int(prefix)},
+                         mapping['host_snat_ips'][0])
+
 
 class TestGBPStatus(AIMBaseTestCase):
 
@@ -2694,51 +2736,16 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
         self.assertEqual(expected_l3p_id,
                          vrf_mapping['l3_policy_id'])
 
-    def _verify_fip_details(self, mapping, fip, ext_epg_tenant,
-                            ext_epg_name, ext_epg_app_profile='OpenStack'):
-        self.assertEqual(1, len(mapping['floating_ip']))
-        fip_mapping = mapping['floating_ip'][0]
-        # REVISIT: The port_id, project_id, and floating_network_id
-        # are not used by the agent, and the new RPC implementation
-        # doesn't provide them, so these assertions are commented out
-        # until the RPC implementations are cleaned up.
-        self.assertEqual(fip['id'], fip_mapping['id'])
-        # self.assertEqual(fip['port_id'], fip_mapping['port_id'])
-        # self.assertEqual(fip['project_id'], fip_mapping['project_id'])
-        self.assertEqual(fip['fixed_ip_address'],
-                         fip_mapping['fixed_ip_address'])
-        self.assertEqual(fip['floating_ip_address'],
-                         fip_mapping['floating_ip_address'])
-        # self.assertEqual(fip['floating_network_id'],
-        #                  fip_mapping['floating_network_id'])
-        self.assertEqual(ext_epg_name, fip_mapping['nat_epg_name'])
-        self.assertEqual(ext_epg_tenant, fip_mapping['nat_epg_tenant'])
-        self.assertEqual(ext_epg_app_profile,
-                         fip_mapping['nat_epg_app_profile'])
-
-    def _verify_ip_mapping_details(self, mapping, ext_segment_name,
-                                   ext_epg_tenant, ext_epg_name,
-                                   ext_epg_app_profile='OpenStack'):
-        self.assertTrue({'external_segment_name': ext_segment_name,
-                         'nat_epg_name': ext_epg_name,
-                         'nat_epg_app_profile': ext_epg_app_profile,
-                         'nat_epg_tenant': ext_epg_tenant}
-                        in mapping['ip_mapping'])
-
-    def _verify_host_snat_ip_details(self, mapping, ext_segment_name,
-                                     snat_ip, subnet_cidr):
-        gw, prefix = subnet_cidr.split('/')
-        self._check_ip_in_cidr(snat_ip, subnet_cidr)
-        mapping['host_snat_ips'][0].pop('host_snat_ip', None)
-        self.assertEqual({'external_segment_name': ext_segment_name,
-                          'gateway_ip': gw,
-                          'prefixlen': int(prefix)},
-                         mapping['host_snat_ips'][0])
-
     def _do_test_get_gbp_details(self, pre_vrf=None):
         self.mech_driver.apic_optimized_dhcp_lease_time = 100
-        ext_net1, rtr1, ext_net1_sub = self._setup_external_network(
+        ext_net1, rtr1, ext_net1_sub1 = self._setup_external_network(
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
+        ext_net1_sub2 = self._make_subnet(
+            self.fmt, {'network': {'id': ext_net1_sub1['network_id'],
+                                   'tenant_id': ext_net1_sub1['tenant_id']}},
+            '150.150.0.1', '150.150.0.0/16')['subnet']
+        self._update('subnets', ext_net1_sub2['id'],
+                     {'subnet': {SNAT_HOST_POOL: True}})
         ext_net2, rtr2, ext_net2_sub1 = self._setup_external_network(
             'es2', dn='uni/tn-t1/out-l2/instP-n2')
         ext_net2_sub2 = self._make_subnet(
@@ -2787,13 +2794,17 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
                                   fixed_ips=dhcp_subnet2)['port']
         self._bind_other_port_to_host(dhcp_p2['id'], 'h2')
         # Make a VM port
+        fixed_ips = [{'subnet_id': subnet1['id'], 'ip_address': '10.0.1.10'},
+                     {'subnet_id': subnet1['id'], 'ip_address': '10.0.1.20'}]
         p1 = self._make_port(self.fmt, net1['id'],
-                             device_owner='compute:')['port']
+                             device_owner='compute:',
+                             fixed_ips=fixed_ips)['port']
         self._bind_port_to_host(p1['id'], 'h1')
         self._router_interface_action('add', rtr1['id'], subnet1['id'], None)
         self._router_interface_action('add', rtr2['id'], subnet2['id'], None)
-        fip = self._make_floatingip(self.fmt, ext_net1_sub['network_id'],
-                                    port_id=p1['id'])['floatingip']
+        fip = self._make_floatingip(self.fmt, ext_net1_sub1['network_id'],
+                                    port_id=p1['id'],
+                                    fixed_ip='10.0.1.10')['floatingip']
 
         mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
@@ -2829,8 +2840,12 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
         prefixlist = [prefix.strip() for prefix in subpools['prefixes']]
         self._verify_vrf_details_assertions(
             mapping, vrf_name, vrf_id, prefixlist, vrf_tenant)
-
         self._verify_fip_details(mapping, fip, 't1', 'EXT-l1')
+        self._verify_ip_mapping_details(mapping,
+            'uni:tn-t1:out-l1:instP-n1', 't1', 'EXT-l1')
+        self._verify_host_snat_ip_details(mapping,
+            'uni:tn-t1:out-l1:instP-n1', '150.150.0.3', '150.150.0.1/16',
+            ext_net1_sub1['network_id'])
 
         # Create event on a second host to verify that the SNAT
         # port gets created for this second host
@@ -2875,10 +2890,12 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
         self._verify_ip_mapping_details(mapping,
             'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
         self._verify_host_snat_ip_details(mapping,
-            'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
+            'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16',
+            ext_net2_sub1['network_id'])
         # Make sure 2nd RPC returned SNAT IP allocated in 1st RPC.
         self._verify_host_snat_ip_details(req_mapping['gbp_details'],
-            'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
+            'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16',
+            ext_net2_sub1['network_id'])
         self.assertEqual(1000, mapping['interface_mtu'])
         self.assertEqual(100, mapping['dhcp_lease_time'])
 
@@ -3313,47 +3330,6 @@ class TestPolicyTarget(AIMBaseTestCase,
             subnet_id=subnet['id'])['external_segment']
         return ext_seg, subnet
 
-    def _verify_fip_details(self, mapping, fip, ext_epg_tenant,
-                            ext_epg_name, ext_epg_app_profile='OpenStack'):
-        self.assertEqual(1, len(mapping['floating_ip']))
-        fip_mapping = mapping['floating_ip'][0]
-        # REVISIT: The port_id, project_id, and floating_network_id
-        # are not used by the agent, and the new RPC implementation
-        # doesn't provide them, so these assertions are commented out
-        # until the RPC implementations are cleaned up.
-        self.assertEqual(fip['id'], fip_mapping['id'])
-        # self.assertEqual(fip['port_id'], fip_mapping['port_id'])
-        # self.assertEqual(fip['project_id'], fip_mapping['project_id'])
-        self.assertEqual(fip['fixed_ip_address'],
-                         fip_mapping['fixed_ip_address'])
-        self.assertEqual(fip['floating_ip_address'],
-                         fip_mapping['floating_ip_address'])
-        # self.assertEqual(fip['floating_network_id'],
-        #                  fip_mapping['floating_network_id'])
-        self.assertEqual(ext_epg_name, fip_mapping['nat_epg_name'])
-        self.assertEqual(ext_epg_tenant, fip_mapping['nat_epg_tenant'])
-        self.assertEqual(ext_epg_app_profile,
-                         fip_mapping['nat_epg_app_profile'])
-
-    def _verify_ip_mapping_details(self, mapping, ext_segment_name,
-                                   ext_epg_tenant, ext_epg_name,
-                                   ext_epg_app_profile='OpenStack'):
-        self.assertTrue({'external_segment_name': ext_segment_name,
-                         'nat_epg_name': ext_epg_name,
-                         'nat_epg_app_profile': ext_epg_app_profile,
-                         'nat_epg_tenant': ext_epg_tenant}
-                        in mapping['ip_mapping'])
-
-    def _verify_host_snat_ip_details(self, mapping, ext_segment_name,
-                                     snat_ip, subnet_cidr):
-        gw, prefix = subnet_cidr.split('/')
-        self._check_ip_in_cidr(snat_ip, subnet_cidr)
-        mapping['host_snat_ips'][0].pop('host_snat_ip', None)
-        self.assertEqual({'external_segment_name': ext_segment_name,
-                          'gateway_ip': gw,
-                          'prefixlen': int(prefix)},
-                         mapping['host_snat_ips'][0])
-
     def _do_test_get_gbp_details(self, pre_vrf=None):
         self.mech_driver.apic_optimized_dhcp_lease_time = 100
         es1, es1_sub = self._setup_external_segment(
@@ -3423,7 +3399,8 @@ class TestPolicyTarget(AIMBaseTestCase,
         self._verify_ip_mapping_details(mapping,
             'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
         self._verify_host_snat_ip_details(mapping,
-            'uni:tn-t1:out-l2:instP-n2', '200.200.0.2', '200.200.0.1/16')
+            'uni:tn-t1:out-l2:instP-n2', '200.200.0.2', '200.200.0.1/16',
+            es2_sub1['network_id'])
 
         # Create event on a second host to verify that the SNAT
         # port gets created for this second host
@@ -3449,12 +3426,13 @@ class TestPolicyTarget(AIMBaseTestCase,
             self._neutron_admin_context, device='tap%s' % pt2['port_id'],
             host='h1')
         self.assertEqual(pt2['port_id'], mapping['port_id'])
-        self._verify_ip_mapping_details(mapping,
-            'uni:tn-t1:out-l1:instP-n1', 't1', 'EXT-l1')
+        # We don't need the ip_mapping details for es1 because it
+        # doesn't have the SNAT subnet present.
         self._verify_ip_mapping_details(mapping,
             'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
         self._verify_host_snat_ip_details(mapping,
-            'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16')
+            'uni:tn-t1:out-l2:instP-n2', '200.200.0.3', '200.200.0.1/16',
+            es2_sub1['network_id'])
         self.assertEqual(1000, mapping['interface_mtu'])
         self.assertEqual(100, mapping['dhcp_lease_time'])
         sg_list = []
@@ -3583,7 +3561,7 @@ class TestPolicyTarget(AIMBaseTestCase,
                         'uni:tn-t1:out-l2:instP-n2', 't1', 'EXT-l2')
                     self._verify_host_snat_ip_details(mapping,
                         'uni:tn-t1:out-l2:instP-n2', '200.200.0.2',
-                        '200.200.0.1/16')
+                        '200.200.0.1/16', ext_net2_sub2['network_id'])
                 else:
                     self.assertFalse(mapping['floating_ip'])
                     self.assertFalse(mapping['ip_mapping'])
@@ -5944,8 +5922,14 @@ class TestNeutronPortOperation(AIMBaseTestCase):
 
         # set allowed-address as fixed-IP of ports p3 and p4, which also have
         # floating-IPs. Verify that FIP is "stolen" by p1 and p2
-        net_ext, rtr, _ = self._setup_external_network(
+        net_ext, rtr, ext_net1_sub1 = self._setup_external_network(
             'l1', dn='uni/tn-t1/out-l1/instP-n1')
+        ext_net1_sub2 = self._make_subnet(
+            self.fmt, {'network': {'id': ext_net1_sub1['network_id'],
+                                   'tenant_id': ext_net1_sub1['tenant_id']}},
+            '150.150.0.1', '150.150.0.0/16')['subnet']
+        self._update('subnets', ext_net1_sub2['id'],
+                     {'subnet': {SNAT_HOST_POOL: True}})
         t2net_ext, t2rtr, _ = self._setup_external_network(
             'l1', dn='uni/tn-t2/out-l1/instP-n1', router_tenant='t2')
         p3 = self._make_port(self.fmt, net['network']['id'],
@@ -5984,16 +5968,23 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
         self.assertEqual(1, len(details['floating_ip']))
-        self.assertEqual(
-            fip1['floating_ip_address'],
-            details['floating_ip'][0]['floating_ip_address'])
+        self._verify_fip_details(details, fip1, 't1', 'EXT-l1')
+        self._verify_ip_mapping_details(details,
+            'uni:tn-t1:out-l1:instP-n1', 't1', 'EXT-l1')
+        self._verify_host_snat_ip_details(details,
+            'uni:tn-t1:out-l1:instP-n1', '150.150.0.3', '150.150.0.1/16',
+            ext_net1_sub1['network_id'])
+
         details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
         self.assertEqual(1, len(details['floating_ip']))
-        self.assertEqual(
-            fip2['floating_ip_address'],
-            details['floating_ip'][0]['floating_ip_address'])
+        self._verify_fip_details(details, fip2, 't1', 'EXT-l1')
+        self._verify_ip_mapping_details(details,
+            'uni:tn-t1:out-l1:instP-n1', 't1', 'EXT-l1')
+        self._verify_host_snat_ip_details(details,
+            'uni:tn-t1:out-l1:instP-n1', '150.150.0.4', '150.150.0.1/16',
+            ext_net1_sub1['network_id'])
 
         # verify FIP updates: update to p3, p4 should also update p1 and p2
         self.mech_driver._notify_port_update = mock.Mock()
