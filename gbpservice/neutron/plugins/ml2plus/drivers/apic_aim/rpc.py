@@ -451,7 +451,8 @@ class ApicRpcHandlerMixin(object):
         # Completed queries, so build up the response.
         response['neutron_details'] = self._build_endpoint_neutron_details(
             info)
-        response['gbp_details'] = self._build_endpoint_gbp_details(info)
+        response['gbp_details'] = self._build_endpoint_gbp_details(
+            info, response['neutron_details'])
         response['trunk_details'] = self._build_endpoint_trunk_details(info)
 
         #  Let the GBP policy driver add/update its details in the response.
@@ -879,7 +880,7 @@ class ApicRpcHandlerMixin(object):
 
         return fixed_ips.values()
 
-    def _build_endpoint_gbp_details(self, info):
+    def _build_endpoint_gbp_details(self, info, neutron_details):
         port_info = info['port_info']
 
         # Note that the GBP policy driver will replace these
@@ -899,11 +900,12 @@ class ApicRpcHandlerMixin(object):
         details['endpoint_group_name'] = port_info.epg_name
         details['floating_ip'] = self._build_fips(info)
         details['host'] = port_info.host
-        details['host_snat_ips'] = self._build_host_snat_ips(info)
+        details['host_snat_ips'] = self._build_host_snat_ips(
+            info, details, neutron_details)
         mtu = self._get_interface_mtu(info)
         if mtu:
             details['interface_mtu'] = mtu
-        details['ip_mapping'] = self._build_ipms(info)
+        details['ip_mapping'] = self._build_ipms(info, details)
         details['l3_policy_id'] = ("%s %s" %
                                    (port_info.vrf_tenant_name,
                                     port_info.vrf_name))
@@ -982,19 +984,36 @@ class ApicRpcHandlerMixin(object):
                 details['nat_epg_app_profile'] = ext_net.epg_app_profile_name
                 details['nat_epg_name'] = ext_net.epg_name
                 details['nat_epg_tenant'] = ext_net.epg_tenant_name
+                details['ext_net_id'] = fip.floating_network_id
             fips.append(details)
         return fips
 
-    def _build_host_snat_ips(self, info):
+    def _build_host_snat_ips(self, info, details, neutron_details):
         snat_info = info['snat_info']
         host = info['port_info'].host
-        ext_nets_with_fips = {fip.floating_network_id
-                              for fip in info['fip_info']}
+
+        fip_fixed_ips = {}
+        for fip in details['floating_ip']:
+            if 'ext_net_id' in fip:
+                fip_fixed_ips.setdefault(fip['ext_net_id'], set()).add(
+                    fip['fixed_ip_address'])
+
+        ips = [x['ip_address'] for x in neutron_details['fixed_ips']]
+        ips_aap = [aap['ip_address'] for aap in
+                   details['allowed_address_pairs'] if aap.get('active',
+                                                               False)]
+        total_ips = sorted(ips + ips_aap)
+
         host_snat_ips = []
         for ext_net in info['ext_net_info'].values():
-            if ext_net in ext_nets_with_fips:
-                # No need for SNAT IP.
+            need_snat = False
+            for ip in total_ips:
+                if ip not in fip_fixed_ips.get(ext_net.network_id, []):
+                    need_snat = True
+                    break
+            if need_snat is False:
                 continue
+
             snat = snat_info.get(ext_net.network_id)
             if snat:
                 snat_ip = {'host_snat_ip': snat.ip_address,
@@ -1013,6 +1032,7 @@ class ApicRpcHandlerMixin(object):
                         ctx, host, {'id': ext_net.network_id,
                                     'tenant_id': ext_net.project_id})
             if snat_ip:
+                snat_ip['ext_net_id'] = ext_net.network_id
                 snat_ip['external_segment_name'] = (
                     ext_net.external_network_dn.replace('/', ':'))
                 host_snat_ips.append(snat_ip)
@@ -1029,9 +1049,10 @@ class ApicRpcHandlerMixin(object):
                     pass
             return info['port_info'].net_mtu
 
-    def _build_ipms(self, info):
-        ext_nets_with_fips = {fip.floating_network_id
-                              for fip in info['fip_info']}
+    def _build_ipms(self, info, details):
+        host_snat_ips = details['host_snat_ips']
+        host_snat_ext_net_ids = [host_snat_ip['ext_net_id'] for
+                                 host_snat_ip in host_snat_ips]
         return [{'external_segment_name':
                  ext_net.external_network_dn.replace('/', ':'),
                  'nat_epg_app_profile': ext_net.epg_app_profile_name,
@@ -1040,7 +1061,7 @@ class ApicRpcHandlerMixin(object):
                 for ext_net in info['ext_net_info'].values()
                 if ext_net.external_network_dn and
                 ext_net.nat_type == 'distributed' and
-                ext_net.network_id not in ext_nets_with_fips]
+                ext_net.network_id in host_snat_ext_net_ids]
 
     def _get_promiscuous_mode(self, info):
         port_info = info['port_info']
