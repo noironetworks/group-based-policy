@@ -434,7 +434,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=dname,
             direction='egress',
             ethertype='ipv4',
-            ip_protocol='udp',
+            ip_protocol=self.get_aim_protocol('udp'),
             from_port='67',
             to_port='67',
             conn_track='normal')
@@ -450,7 +450,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=dname,
             direction='ingress',
             ethertype='ipv4',
-            ip_protocol='udp',
+            ip_protocol=self.get_aim_protocol('udp'),
             from_port='68',
             to_port='68',
             conn_track='normal')
@@ -466,7 +466,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=dname,
             direction='egress',
             ethertype='ipv6',
-            ip_protocol='udp',
+            ip_protocol=self.get_aim_protocol('udp'),
             from_port='547',
             to_port='547',
             conn_track='normal')
@@ -482,7 +482,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=dname,
             direction='ingress',
             ethertype='ipv6',
-            ip_protocol='udp',
+            ip_protocol=self.get_aim_protocol('udp'),
             from_port='546',
             to_port='546',
             conn_track='normal')
@@ -499,7 +499,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=dname,
             direction='ingress',
             ethertype='ipv6',
-            ip_protocol='icmpv6',
+            ip_protocol=self.get_aim_protocol('icmpv6'),
             conn_track='normal',
             remote_ips=['::/0'])
         self.aim.create(aim_ctx, icmp6_ingress_rule, overwrite=True)
@@ -514,7 +514,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=dname,
             direction='egress',
             ethertype='ipv6',
-            ip_protocol='icmpv6',
+            ip_protocol=self.get_aim_protocol('icmpv6'),
             conn_track='normal',
             remote_ips=['::/0'])
         self.aim.create(aim_ctx, icmp6_egress_rule, overwrite=True)
@@ -2586,8 +2586,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             name=sg_rule['id'],
             direction=sg_rule['direction'],
             ethertype=sg_rule['ethertype'].lower(),
-            ip_protocol=(sg_rule['protocol'] if sg_rule['protocol']
-                         else 'unspecified'),
+            ip_protocol= self.get_aim_protocol(sg_rule['protocol']),
             remote_ips=remote_ips,
             icmp_code=(sg_rule['port_range_min']
                        if (sg_rule['port_range_min'] and
@@ -5626,8 +5625,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         name=rule_db.id,
                         direction=rule_db.direction,
                         ethertype=rule_db.ethertype.lower(),
-                        ip_protocol=(rule_db.protocol if rule_db.protocol
-                                     else 'unspecified'),
+                        ip_protocol = self.get_aim_protocol(rule_db.protocol),
                         remote_ips=remote_ips,
                         from_port=(rule_db.port_range_min
                                    if rule_db.port_range_min
@@ -5756,3 +5754,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 "binding them again." % (failure_count, list(failure_hosts)))
         else:
             mgr.output("All ports are bound")
+
+    # The sg_rule_protocol can be either protocol name , protocol number or
+    # None.
+    # If sg_rule_protocol is None, return 'unspecified' otherwise return
+    # protocol number.
+    def get_aim_protocol(self, sg_rule_protocol):
+        if sg_rule_protocol:
+            try:
+                return n_constants.IP_PROTOCOL_MAP[sg_rule_protocol]
+            except KeyError:
+                return sg_rule_protocol
+        return 'unspecified'
