@@ -146,6 +146,11 @@ InterfaceValidationInfo = namedtuple(
     ['router_id', 'ip_address', 'subnet', 'scope_mapping'])
 
 
+StaticPort = namedtuple(
+    'StaticPort',
+    ['link', 'encap', 'mode'])
+
+
 class KeystoneNotificationEndpoint(object):
     filter_rule = oslo_messaging.NotificationFilter(
         event_type='^identity.project.[updated|deleted]')
@@ -3983,17 +3988,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._is_supported_non_opflex_type(
                     bound_segment[api.NETWORK_TYPE]))
 
-    def _convert_segment(self, segment):
-        seg = None
+    def _segment_to_vlan_encap(self, segment):
+        encap = None
         if segment:
             if segment.get(api.NETWORK_TYPE) in [pconst.TYPE_VLAN]:
-                seg = 'vlan-%s' % segment[api.SEGMENTATION_ID]
+                encap = 'vlan-%s' % segment[api.SEGMENTATION_ID]
             else:
                 LOG.debug('Unsupported segmentation type for static path '
                           'binding: %s',
                           segment.get(api.NETWORK_TYPE))
-        return seg
+        return encap
 
+    # Used by the AIM SFC driver.
+    # REVISIT: We should explore better options for this API.
     def _filter_host_links_by_segment(self, session, segment, host_links):
         # All host links must belong to the same host
         filtered_host_links = []
@@ -4016,13 +4023,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _rebuild_host_path_for_network(self, plugin_context, network, segment,
                                        host, host_links):
-        seg = self._convert_segment(segment)
-        if not seg:
-            return
-        # Filter host links if needed
+        # Look up the static ports for this host and segment.
         aim_ctx = aim_context.AimContext(db_session=plugin_context.session)
-        host_links = self._filter_host_links_by_segment(plugin_context.session,
-                                                        segment, host_links)
+        static_ports = self._get_static_ports(plugin_context, host, segment)
 
         if self._is_svi(network):
             l3out, _, _ = self._get_aim_external_objects(network)
@@ -4037,65 +4040,97 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             for aim_l3out_if in self.aim.find(
                     aim_ctx, aim_resource.L3OutInterface, **search_args):
                 self.aim.delete(aim_ctx, aim_l3out_if, cascade=True)
-            for link in host_links:
+            for static_port in static_ports:
                 self._update_static_path_for_svi(
-                    plugin_context.session, plugin_context, network, segment,
-                    new_path=link, l3out=l3out)
+                    plugin_context.session, plugin_context, network,
+                    l3out, static_port)
         else:
             epg = self.get_epg_for_network(plugin_context.session, network)
             if not epg:
                 LOG.info('Network %s does not map to any EPG', network['id'])
                 return
             epg = self.aim.get(aim_ctx, epg)
-            # Remove old host values
+            # Update old host values.
             paths = set([(x['path'], x['encap'], x['host'])
                          for x in epg.static_paths if x['host'] != host])
-            # Add new ones
-            paths |= set([(x.path, seg, x.host_name) for x in host_links])
+            # Add new static ports.
+            paths |= set([(x.link.path, x.encap, x.link.host_name)
+                         for x in static_ports])
             self.aim.update(aim_ctx, epg, static_paths=[
                 {'path': x[0], 'encap': x[1], 'host': x[2]} for x in paths])
 
-    def _update_static_path_for_svi(self, session, plugin_context, network,
-                                    segment, old_path=None, new_path=None,
-                                    l3out=None):
-        if new_path and not segment:
-            return
+    def _get_topology_from_path(self, path):
+        """Convert path string to toplogy elements.
 
-        seg = self._convert_segment(segment)
-        if not seg:
-            return
-        if new_path:
-            path = new_path.path
-        else:
-            path = old_path.path
+        Given a static path DN, convert it into the individual
+        elements that make up the path. Static paths can be for
+        VPCs or individual ports. Extract the switch IDs from
+        the path, along with any relevant interface information.
+        Returns a tuple with one of two formats:
+
+            (is_vpc, pod_id, nodes, node_paths, module, port)
+
+                                OR
+
+            (is_vpc, pod_id, nodes, node_paths, bundle, vpcmodule)
+        where:
+            is_vpc: is the static path for a VPC
+            pod_id: the pod ID in the static path
+            nodes: list of switch nodes declared in the path
+            node_paths: list of prefixes, which is the DN up
+                        to the switch component
+            module: the module on an individual switch
+            port: the port ID on a switch module
+            bundle: the bundle that make up a VPC
+            vpcmodule: the VPC module name
+        """
         nodes = []
         node_paths = []
-        is_vpc = False
         match = self.port_desc_re.match(path)
         if match:
             pod_id, switch, module, port = match.group(1, 2, 3, 4)
             nodes.append(switch)
             node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id, switch))
+            return (False, pod_id, nodes, node_paths, module, port)
         else:
+            # In the case where the static path calls out a VPC, then both
+            # the IDs and paths for both nodes used to make up the VPC must
+            # be extracted from the static path.
             match = self.vpcport_desc_re.match(path)
             if match:
                 pod_id, switch1, switch2, bundle = match.group(1, 2, 3, 4)
-                nodes.append(switch1)
-                nodes.append(switch2)
-                node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id,
-                                                              switch1))
-                node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id,
-                                                              switch2))
-                is_vpc = True
+                for switch in (switch1, switch2):
+                    nodes.append(switch)
+                    node_paths.append(ACI_CHASSIS_DESCR_STRING % (pod_id,
+                                                                  switch))
+                return (True, pod_id, nodes, node_paths, bundle, None)
             else:
                 LOG.error('Unsupported static path format: %s', path)
-                return
+                return (False, None, None, None, None, None)
 
+    def _update_static_path_for_svi(self, session, plugin_context, network,
+                                    l3out, static_port, remove=False):
+        """Configure static path for an SVI on a L3 Out
+
+        Add, update, or delete a single static path on an SVI. Adds
+        and updates are handled by providing a StaticPort with a valid
+        encap, as well as link that contains the path. For deletion,
+        the remove flag should be set to True.
+        """
+        if not static_port.encap:
+            return
+
+        path = static_port.link.path
+        is_vpc, _, nodes, node_paths, _, _ = self._get_topology_from_path(path)
+
+        # ACI requires all router IDs to be unique within a VRF,
+        # so if we're creating new nodes, then we need to allocate
+        # new IDs for each one.
         aim_ctx = aim_context.AimContext(db_session=session)
-        if not l3out:
-            l3out, _, _ = self._get_aim_external_objects(network)
-        if new_path:
+        if not remove and path:
             for node_path in node_paths:
+                # REVISIT: We should check to see if this node is
+                # already present under the node profile.
                 apic_router_id = self._allocate_apic_router_ids(aim_ctx,
                                                                 node_path)
                 aim_l3out_node = aim_resource.L3OutNode(
@@ -4108,6 +4143,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if not network['subnets']:
                 return
 
+            # REVISIT: This only supports 1 subnet on a network, and should
+            #          be fixed to handle additional ones.
             query = BAKERY(lambda s: s.query(
                 models_v2.Subnet))
             query += lambda q: q.filter(
@@ -4119,6 +4156,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
             primary_ips = []
             for node in nodes:
+                # See if this node already has an IP for SVI under the L3 Out
+                # for this network. If not, allocate a port (and therefore IP)
+                # for the SVI interface on this node.
                 filters = {'network_id': [network['id']],
                            'name': ['apic-svi-port:node-%s' % node]}
                 svi_ports = self.plugin.get_ports(plugin_context, filters)
@@ -4144,13 +4184,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         LOG.error('cannot allocate a port for the SVI primary'
                                   ' addr')
                         return
+
+            # We only need one interface profile, even if it's a VPC.
             secondary_ip = subnet['gateway_ip'] + '/' + mask
             aim_l3out_if = aim_resource.L3OutInterface(
                 tenant_name=l3out.tenant_name,
                 l3out_name=l3out.name,
                 node_profile_name=L3OUT_NODE_PROFILE_NAME,
                 interface_profile_name=L3OUT_IF_PROFILE_NAME,
-                interface_path=path, encap=seg, host=new_path.host_name,
+                interface_path=path, encap=static_port.encap,
+                host=static_port.link.host_name,
                 primary_addr_a=primary_ips[0],
                 secondary_addr_a_list=[{'addr': secondary_ip}],
                 primary_addr_b=primary_ips[1] if is_vpc else '',
@@ -4171,7 +4214,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     addr=subnet['cidr'],
                     asn=network_db.aim_extension_mapping.bgp_asn)
                 self.aim.create(aim_ctx, aim_bgp_peer_prefix, overwrite=True)
-        else:
+        if remove:
+            # REVISIT: Should we also delete the node profiles if there aren't
+            # any more instances on this host?
             aim_l3out_if = aim_resource.L3OutInterface(
                 tenant_name=l3out.tenant_name,
                 l3out_name=l3out.name,
@@ -4180,9 +4225,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 interface_path=path)
             self.aim.delete(aim_ctx, aim_l3out_if, cascade=True)
 
-    def _update_static_path_for_network(self, session, network, segment,
-                                        old_path=None, new_path=None):
-        if new_path and not segment:
+    def _update_static_path_for_network(self, session, network,
+                                        static_port, remove=False):
+        """Configure static path on an EPG.
+
+        Add, update, or delete a single static path on an EPG. Adds
+        and updates are handled by providing a StaticPort with a valid
+        encap, as well as link that contains the path. For deletion,
+        the remove flag should be set to True.
+        """
+        if not static_port.encap:
             return
 
         epg = self.get_epg_for_network(session, network)
@@ -4190,23 +4242,48 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             LOG.info(_LI('Network %s does not map to any EPG'), network['id'])
             return
 
-        seg = self._convert_segment(segment)
-        if not seg:
-            return
-
         aim_ctx = aim_context.AimContext(db_session=session)
         epg = self.aim.get(aim_ctx, epg)
-        to_remove = [old_path.path] if old_path else []
-        to_remove.extend([new_path.path] if new_path else [])
+        # Static paths configured on an EPG can be uniquely
+        # identified by their path attribute.
+        to_remove = [static_port.link.path]
         if to_remove:
             epg.static_paths = [p for p in epg.static_paths
                                 if p.get('path') not in to_remove]
-        if new_path:
-            epg.static_paths.append({'path': new_path.path, 'encap': seg,
-                                     'host': new_path.host_name})
+        if not remove and static_port:
+            static_info = {'path': static_port.link.path,
+                           'encap': static_port.encap,
+                           'mode': static_port.mode}
+            if static_port.link.host_name:
+                static_info['host'] = static_port.link.host_name
+            epg.static_paths.append(static_info)
         LOG.debug('Setting static paths for EPG %s to %s',
                   epg, epg.static_paths)
         self.aim.update(aim_ctx, epg, static_paths=epg.static_paths)
+
+    def _get_static_ports(self, plugin_context, host, segment):
+        """Get StaticPort objects for a host and segment.
+
+        This method should be called when a neutron port requires
+        static port configuration state for an interface profile in
+        a L3 Out policy or for an Endpoint Group. This is retrieved
+        from the HostLink entries in the AIM database. The information is
+        only available on bound ports, as the encapsulation information
+        must also be available. The method should only be called by code
+        that has an active DB transaction, as it makes use of the session
+        from the plugin_context.
+        """
+        encap = self._segment_to_vlan_encap(segment)
+        if not encap:
+            return []
+        # Return qualifying entries from the host links table in AIM.
+        session = plugin_context.session
+        aim_ctx = aim_context.AimContext(db_session=session)
+        host_links = self.aim.find(aim_ctx,
+                                   aim_infra.HostLink, host_name=host)
+        return [StaticPort(host_link, encap, 'regular') for host_link in
+                self._filter_host_links_by_segment(session,
+                                                   segment, host_links)]
 
     def _update_static_path(self, port_context, host=None, segment=None,
                             remove=False):
@@ -4235,20 +4312,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if exist:
                 return
 
-        aim_ctx = aim_context.AimContext(db_session=session)
-        host_links = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
-        host_links = self._filter_host_links_by_segment(session, segment,
-                                                        host_links)
-        for hlink in host_links:
+        static_ports = self._get_static_ports(port_context._plugin_context,
+                                              host, segment)
+        for static_port in static_ports:
             if self._is_svi(port_context.network.current):
+                l3out, _, _ = self._get_aim_external_objects(
+                    port_context.network.current)
                 self._update_static_path_for_svi(
                     session, port_context._plugin_context,
-                    port_context.network.current, segment,
-                    **{'old_path' if remove else 'new_path': hlink})
+                    port_context.network.current, l3out,
+                    static_port, remove=remove)
             else:
                 self._update_static_path_for_network(
-                    session, port_context.network.current, segment,
-                    **{'old_path' if remove else 'new_path': hlink})
+                    session, port_context.network.current,
+                    static_port, remove=remove)
 
     def _release_dynamic_segment(self, port_context, use_original=False):
         top = (port_context.original_top_bound_segment if use_original
@@ -4626,8 +4703,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         port_id = port['id']
         path = encap = host = None
         if self._is_port_bound(port):
-            session = plugin_context.session
-            aim_ctx = aim_context.AimContext(db_session=session)
             __, binding = n_db.get_locked_port_and_binding(plugin_context,
                                                            port_id)
             levels = n_db.get_binding_levels(plugin_context, port_id,
@@ -4638,18 +4713,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self, plugin_context, port, network, binding, levels)
             host = port_context.host
             segment = port_context.bottom_bound_segment
-            host_links = self.aim.find(aim_ctx, aim_infra.HostLink,
-                                       host_name=host)
-            host_links = self._filter_host_links_by_segment(session, segment,
-                                                            host_links)
-            encap = self._convert_segment(segment)
-            if not host_links:
+            static_ports = self._get_static_ports(plugin_context,
+                                                  host, segment)
+            if not static_ports:
                 LOG.warning("No host link information found for host %s ",
                             host)
                 return None, None, None
-            # REVISIT(ivar): we should return a list for all available host
-            # links
-            path = host_links[0].path
+            # REVISIT(ivar): We should return a list for all available host
+            # links.
+            path = static_ports[0].link.path
+            encap = static_ports[0].encap
+            host = static_ports[0].link.host_name
         return path, encap, host
 
     # Called by sfc_driver.
