@@ -14,6 +14,7 @@
 #    under the License.
 
 from neutron.api import extensions
+from neutron.common import utils as n_utils
 from neutron.db import _model_query as model_query
 from neutron.db import _resource_extend as resource_extend
 from neutron.db import _utils as db_utils
@@ -148,60 +149,27 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                                                 page_reverse=page_reverse)
         return self._make_routers_dict(routers_db, fields)
 
-    @db_api.retry_if_session_inactive()
+    # REVISIT: Eliminate this wrapper?
+    @n_utils.transaction_guard
     def create_router(self, context, router):
         LOG.debug("APIC AIM L3 Plugin creating router: %s", router)
+        # REVISIT: Do this in MD by registering for
+        # ROUTER.BEFORE_CREATE event.
         self._md.ensure_tenant(context, router['router']['tenant_id'])
-        with db_api.context_manager.writer.using(context):
-            # REVISIT(rkukura): The base operation may create a port,
-            # which should generally not be done inside a
-            # transaction. But we need to ensure atomicity, and are
-            # generally not concerned with mechanism driver postcommit
-            # processing. Consider overriding create_router_db()
-            # instead, and/or reimplementing the base funtionality to
-            # be completely transaction safe.
-            result = super(ApicL3Plugin, self).create_router(context, router)
-            self._process_router_op(context, result, router)
-            self._md.create_router(context, result)
-            return result
+        return super(ApicL3Plugin, self).create_router(context, router)
 
-    @db_api.retry_if_session_inactive()
+    # REVISIT: Eliminate this wrapper?
+    @n_utils.transaction_guard
     def update_router(self, context, id, router):
         LOG.debug("APIC AIM L3 Plugin updating router %(id)s with: %(router)s",
                   {'id': id, 'router': router})
-        with db_api.context_manager.writer.using(context):
-            # REVISIT(rkukura): The base operation sends notification
-            # RPCs, which should generally not be done inside a
-            # transaction. But we need to ensure atomicity, and are
-            # not using an L3 agent. Consider overriding
-            # create_router_db() instead, and/or reimplementing the
-            # base funtionality to be completely transaction safe.
-            original = self.get_router(context, id)
-            result = super(ApicL3Plugin, self).update_router(context, id,
-                                                             router)
-            self._process_router_op(context, result, router)
-            self._md.update_router(context, result, original)
-            return result
+        return super(ApicL3Plugin, self).update_router(context, id, router)
 
-    @db_api.retry_if_session_inactive()
+    # REVISIT: Eliminate this wrapper?
+    @n_utils.transaction_guard
     def delete_router(self, context, id):
         LOG.debug("APIC AIM L3 Plugin deleting router: %s", id)
-        with db_api.context_manager.writer.using(context):
-            # REVISIT(rkukura): The base operation may delete ports
-            # and sends notification RPCs, which should generally not
-            # be done inside a transaction. But we need to ensure
-            # atomicity, are not using an L3 agent, and are generally
-            # not concerned with mechanism driver postcommit
-            # processing. Consider reimplementing the base
-            # funtionality to be completely transaction safe.
-            router = self.get_router(context, id)
-            super(ApicL3Plugin, self).delete_router(context, id)
-            self._md.delete_router(context, router)
-
-    def _process_router_op(self, context, result, router_req):
-        self.set_router_extn_db(context.session, result['id'],
-                                router_req['router'])
-        self._include_router_extn_attr(context.session, result)
+        super(ApicL3Plugin, self).delete_router(context, id)
 
     def _include_router_extn_attr(self, session, router):
         attr = self.get_router_extn_db(session, router['id'])
@@ -215,149 +183,125 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                           else {l3_ext.EXTERNAL_PROVIDED_CONTRACTS: [],
                                 l3_ext.EXTERNAL_CONSUMED_CONTRACTS: []})
 
-    @db_api.retry_if_session_inactive()
+    @n_utils.transaction_guard
     def add_router_interface(self, context, router_id, interface_info):
         LOG.debug("APIC AIM L3 Plugin adding interface %(interface)s "
                   "to router %(router)s",
                   {'interface': interface_info, 'router': router_id})
-        with db_api.context_manager.writer.using(context):
-            # REVISIT(rkukura): The base operation may create or
-            # update a port and sends notification RPCs, which should
-            # generally not be done inside a transaction. But we need
-            # to ensure atomicity, are not using an L3 agent, and are
-            # generally not concerned with mechanism driver postcommit
-            # processing. Consider reimplementing the base
-            # funtionality to be completely transaction safe.
-            #
-            # REVISIT: Remove override flag when no longer needed for
-            # GBP.
-            context.override_network_routing_topology_validation = (
-                interface_info.get(
-                    l3_ext.OVERRIDE_NETWORK_ROUTING_TOPOLOGY_VALIDATION))
+        # REVISIT: Remove override flag when no longer needed for GBP.
+        context.override_network_routing_topology_validation = (
+            interface_info.get(
+                l3_ext.OVERRIDE_NETWORK_ROUTING_TOPOLOGY_VALIDATION))
+        # REVISIT: The REST API layer unwraps these exceptions, such
+        # as MechanismDriverError raised by ML2, returning the
+        # inner_exceptions to the client.  But many UTs call these L3
+        # API methods directly, and need the proper exception to be
+        # raised. Changing the UTs to unwrap raised exceptions
+        # themselves would eliminate the need to do it here.
+        try:
             info = super(ApicL3Plugin, self).add_router_interface(
                 context, router_id, interface_info)
+        except exceptions.MultipleExceptions as e:
+            inner = e.inner_exceptions
+            raise inner[0] if inner else e
+        finally:
             del context.override_network_routing_topology_validation
-            # REVISIT(tbachman): This update port triggers port
-            # binding, which means that port-binding happens inside
-            # of a transaction, which shouldn't happen. This isn't
-            # an issue with the AIM MD, but should be fixed at some
-            # point (e.g. move port-binding outside, possibly queued
-            # to be handled outside of the transaction, with some
-            # sort of cleanup if it fails).
-            self._core_plugin.update_port(context, info['port_id'],
-                                          {'port': {portbindings.HOST_ID:
-                                                    md.FABRIC_HOST_ID}})
-            return info
+        # REVISIT: This could be moved to create_port_postcommit and
+        # update_port_postcommit.
+        self._core_plugin.update_port(
+            context, info['port_id'],
+            {'port': {portbindings.HOST_ID: md.FABRIC_HOST_ID}})
+        return info
 
-    def _add_interface_by_subnet(self, context, router, subnet_id, owner):
-        LOG.debug("APIC AIM L3 Plugin adding interface by subnet %(subnet)s "
-                  "to router %(router)s",
-                  {'subnet': subnet_id, 'router': router['id']})
-        port, subnets, new_port = (
-            super(ApicL3Plugin, self)._add_interface_by_subnet(
-                context, router, subnet_id, owner))
-        self._md.add_router_interface(context, router, port, subnets)
-        return port, subnets, new_port
-
-    def _add_interface_by_port(self, context, router, port_id, owner):
-        LOG.debug("APIC AIM L3 Plugin adding interface by port %(port)s "
-                  "to router %(router)s",
-                  {'port': port_id, 'router': router['id']})
-        port, subnets = (
-            super(ApicL3Plugin, self)._add_interface_by_port(
-                context, router, port_id, owner))
-        self._md.add_router_interface(context, router, port, subnets)
-        return port, subnets
-
-    @db_api.retry_if_session_inactive()
+    @n_utils.transaction_guard
     def remove_router_interface(self, context, router_id, interface_info):
         LOG.debug("APIC AIM L3 Plugin removing interface %(interface)s "
                   "from router %(router)s",
                   {'interface': interface_info, 'router': router_id})
-        with db_api.context_manager.writer.using(context):
-            # REVISIT(rkukura): The base operation may delete or
-            # update a port and sends notification RPCs, which should
-            # generally not be done inside a transaction. But we need
-            # to ensure atomicity, are not using an L3 agent, and are
-            # generally not concerned with mechanism driver postcommit
-            # processing. Consider reimplementing the base
-            # funtionality to be completely transaction safe.
+        # REVISIT: The REST API layer unwraps these exceptions, such
+        # as MechanismDriverError raised by ML2, returning the
+        # inner_exceptions to the client.  But many UTs call these L3
+        # API methods directly, and need the proper exception to be
+        # raised. Changing the UTs to unwrap raised exceptions
+        # themselves would eliminate the need to do it here.
+        try:
             info = super(ApicL3Plugin, self).remove_router_interface(
                 context, router_id, interface_info)
-            return info
+        except exceptions.MultipleExceptions as e:
+            inner = e.inner_exceptions
+            raise inner[0] if inner else e
+        return info
 
-    def _remove_interface_by_subnet(self, context, router_id, subnet_id,
-                                    owner):
-        LOG.debug("APIC AIM L3 Plugin removing interface by subnet %(subnet)s "
-                  "from router %(router)s",
-                  {'subnet': subnet_id, 'router': router_id})
-        port_db, subnets = (
-            super(ApicL3Plugin, self)._remove_interface_by_subnet(
-                context, router_id, subnet_id, owner))
-        self._md.remove_router_interface(context, router_id, port_db, subnets)
-        return port_db, subnets
-
-    def _remove_interface_by_port(self, context, router_id, port_id, subnet_id,
-                                  owner):
-        LOG.debug("APIC AIM L3 Plugin removing interface by port %(port)s "
-                  "from router %(router)s",
-                  {'port': port_id, 'router': router_id})
-        port_db, subnets = (
-            super(ApicL3Plugin, self)._remove_interface_by_port(
-                context, router_id, port_id, subnet_id, owner))
-        self._md.remove_router_interface(context, router_id, port_db, subnets)
-        return port_db, subnets
-
-    @db_api.retry_if_session_inactive()
+    @n_utils.transaction_guard
     def create_floatingip(self, context, floatingip):
         fip = floatingip['floatingip']
+        # REVISIT: This ensure_tenant call probably isn't needed, as
+        # FIPs don't map directly to any AIM resources. If it is
+        # needed, it could me moved to the FLOATING_IP.BEFORE_CREATE
+        # callback in rocky and newer.
         self._md.ensure_tenant(context, fip['tenant_id'])
-        with db_api.context_manager.writer.using(context):
-            # Verify that subnet is not a SNAT host-pool
+        with db_api.context_manager.reader.using(context):
+            # Verify that subnet is not a SNAT host-pool.
+            #
+            # REVISIT: Replace with FLOATING_IP.PRECOMMIT_CREATE
+            # callback in queens and newer?
             self._md.check_floatingip_external_address(context, fip)
-            if fip.get('subnet_id') or fip.get('floating_ip_address'):
-                result = super(ApicL3Plugin, self).create_floatingip(
-                    context, floatingip)
-            else:
-                # Iterate over non SNAT host-pool subnets and try to allocate
-                # an address
+        if fip.get('subnet_id') or fip.get('floating_ip_address'):
+            result = super(ApicL3Plugin, self).create_floatingip(
+                context, floatingip)
+        else:
+            # Iterate over non SNAT host-pool subnets and try to
+            # allocate an address.
+            with db_api.context_manager.reader.using(context):
                 other_subs = self._md.get_subnets_for_fip(context, fip)
-                result = None
-                for ext_sn in other_subs:
-                    fip['subnet_id'] = ext_sn
-                    try:
-                        with context.session.begin(nested=True):
-                            result = (super(ApicL3Plugin, self)
-                                      .create_floatingip(context, floatingip))
-                        break
-                    except exceptions.IpAddressGenerationFailure:
-                        LOG.info('No more floating IP addresses available '
-                                 'in subnet %s',
-                                 ext_sn)
-
-                if not result:
-                    raise exceptions.IpAddressGenerationFailure(
-                        net_id=fip['floating_network_id'])
-            self._md.create_floatingip(context, result)
-            self.update_floatingip_status(context, result['id'],
-                                          result['status'])
+            result = None
+            for ext_sn in other_subs:
+                fip['subnet_id'] = ext_sn
+                try:
+                    result = (super(ApicL3Plugin, self).create_floatingip(
+                        context, floatingip))
+                    break
+                except exceptions.IpAddressGenerationFailure:
+                    LOG.info('No more floating IP addresses available '
+                             'in subnet %s', ext_sn)
+            if not result:
+                raise exceptions.IpAddressGenerationFailure(
+                    net_id=fip['floating_network_id'])
+        # REVISIT: Replace with FLOATING_IP.AFTER_UPDATE callback,
+        # which is called after creation as well, in ocata and newer
+        # (called inside transaction in newton)?
+        self._md.create_floatingip(context, result)
+        # REVISIT: Consider using FLOATING_IP.PRECOMMIT_UPDATE
+        # callback, which is called after creation as well, in queens
+        # and newer, or maybe just calling update_floatingip_status
+        # from the MD's create_floatingip method.
+        with db_api.context_manager.writer.using(context):
+            self.update_floatingip_status(
+                context, result['id'], result['status'])
         return result
 
-    @db_api.retry_if_session_inactive()
+    @n_utils.transaction_guard
     def update_floatingip(self, context, id, floatingip):
-        with db_api.context_manager.writer.using(context):
-            old_fip = self.get_floatingip(context, id)
-            result = super(ApicL3Plugin, self).update_floatingip(
-                context, id, floatingip)
-            self._md.update_floatingip(context, old_fip, result)
-            if old_fip['status'] != result['status']:
-                self.update_floatingip_status(context, result['id'],
-                                              result['status'])
+        old_fip = self.get_floatingip(context, id)
+        result = super(ApicL3Plugin, self).update_floatingip(
+            context, id, floatingip)
+        # REVISIT: Replace with FLOATING_IP.AFTER_UPDATE callback in
+        # ocata and newer (called inside transaction in newton)?
+        self._md.update_floatingip(context, old_fip, result)
+        # REVISIT: Consider using FLOATING_IP.PRECOMMIT_UPDATE
+        # callback in queens and newer, or maybe just calling
+        # update_floatingip_status from the MD's update_floatingip
+        # method.
+        if old_fip['status'] != result['status']:
+            with db_api.context_manager.writer.using(context):
+                self.update_floatingip_status(
+                    context, result['id'], result['status'])
         return result
 
-    @db_api.retry_if_session_inactive()
+    @n_utils.transaction_guard
     def delete_floatingip(self, context, id):
-        with db_api.context_manager.writer.using(context):
-            old_fip = self.get_floatingip(context, id)
-            super(ApicL3Plugin, self).delete_floatingip(context, id)
-            self._md.delete_floatingip(context, old_fip)
+        old_fip = self.get_floatingip(context, id)
+        super(ApicL3Plugin, self).delete_floatingip(context, id)
+        # REVISIT: Replace with FLOATING_IP.AFTER_DELETE callback in
+        # queens and newer?
+        self._md.delete_floatingip(context, old_fip)

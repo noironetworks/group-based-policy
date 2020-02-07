@@ -16,11 +16,11 @@
 # The following is imported at the beginning to ensure
 # that the patches are applied before any of the
 # modules save a reference to the functions being patched
-from gbpservice.neutron import extensions as gbp_extensions
 from gbpservice.neutron.extensions import patch  # noqa
 from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 from neutron.common import constants as n_const
+from neutron.common import utils as n_utils
 from neutron.db import _resource_extend as resource_extend
 from neutron.db import _utils as db_utils
 from neutron.db import api as db_api
@@ -309,7 +309,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                           address_scope)
         return self._fields(res, fields)
 
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def create_network(self, context, network):
         self._ensure_tenant(context, network[net_def.RESOURCE_NAME])
@@ -333,17 +333,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             resource_extend.apply_funcs('networks', result, net_db)
             return result, mech_context
 
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive()
-    def update_network(self, context, id, network):
-        return super(Ml2PlusPlugin, self).update_network(context, id, network)
-
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive()
-    def delete_network(self, context, id):
-        return super(Ml2PlusPlugin, self).delete_network(context, id)
-
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def create_network_bulk(self, context, networks):
         self._ensure_tenant_bulk(context, networks[net_def.COLLECTION_NAME],
@@ -351,23 +341,13 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         return super(Ml2PlusPlugin, self).create_network_bulk(context,
                                                               networks)
 
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def create_subnet(self, context, subnet):
         self._ensure_tenant(context, subnet[subnet_def.RESOURCE_NAME])
         return super(Ml2PlusPlugin, self).create_subnet(context, subnet)
 
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive()
-    def update_subnet(self, context, id, subnet):
-        return super(Ml2PlusPlugin, self).update_subnet(context, id, subnet)
-
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive()
-    def delete_subnet(self, context, id):
-        return super(Ml2PlusPlugin, self).delete_subnet(context, id)
-
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def create_subnet_bulk(self, context, subnets):
         self._ensure_tenant_bulk(context, subnets[subnet_def.COLLECTION_NAME],
@@ -375,13 +355,13 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         return super(Ml2PlusPlugin, self).create_subnet_bulk(context,
                                                              subnets)
 
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def create_port(self, context, port):
         self._ensure_tenant(context, port[port_def.RESOURCE_NAME])
         return super(Ml2PlusPlugin, self).create_port(context, port)
 
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def create_port_bulk(self, context, ports):
         self._ensure_tenant_bulk(context, ports[port_def.COLLECTION_NAME],
@@ -389,45 +369,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         return super(Ml2PlusPlugin, self).create_port_bulk(context,
                                                            ports)
 
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive()
-    def update_port(self, context, id, port):
-        return super(Ml2PlusPlugin, self).update_port(context, id, port)
-
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive()
-    def delete_port(self, context, id, l3_port_check=True):
-        return super(Ml2PlusPlugin, self).delete_port(
-            context, id, l3_port_check=l3_port_check)
-
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive(context_var_name='plugin_context')
-    def get_bound_port_context(self, plugin_context, port_id, host=None,
-                               cached_networks=None):
-        return super(Ml2PlusPlugin, self).get_bound_port_context(
-            plugin_context, port_id, host=host,
-            cached_networks=cached_networks)
-
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive()
-    def update_port_status(self, context, port_id, status, host=None,
-                           network=None):
-        return super(Ml2PlusPlugin, self).update_port_status(
-            context, port_id, status, host=host, network=network)
-
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive()
-    def port_bound_to_host(self, context, port_id, host):
-        return super(Ml2PlusPlugin, self).port_bound_to_host(
-            context, port_id, host)
-
-    @gbp_extensions.disable_transaction_guard
-    @db_api.retry_if_session_inactive()
-    def get_ports_from_devices(self, context, devices):
-        return super(Ml2PlusPlugin, self).get_ports_from_devices(
-            context, devices)
-
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def create_subnetpool(self, context, subnetpool):
         self._ensure_tenant(context, subnetpool[subnetpool_def.RESOURCE_NAME])
@@ -452,7 +394,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     # REVISIT(rkukura): Is create_subnetpool_bulk() needed?
 
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def update_subnetpool(self, context, id, subnetpool):
         with db_api.context_manager.writer.using(context):
@@ -472,7 +414,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.mechanism_manager.update_subnetpool_postcommit(mech_context)
         return updated_subnetpool
 
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     def delete_subnetpool(self, context, id):
         with db_api.context_manager.writer.using(context):
             subnetpool = super(Ml2PlusPlugin, self).get_subnetpool(context, id)
@@ -488,7 +430,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             result['is_implicit'] = (
                 self.update_implicit_subnetpool(context, result))
 
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     def create_address_scope(self, context, address_scope):
         self._ensure_tenant(context, address_scope[as_def.ADDRESS_SCOPE])
         with db_api.context_manager.writer.using(context):
@@ -514,7 +456,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     # REVISIT(rkukura): Is create_address_scope_bulk() needed?
 
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     def update_address_scope(self, context, id, address_scope):
         with db_api.context_manager.writer.using(context):
             original_address_scope = super(Ml2PlusPlugin,
@@ -532,7 +474,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.mechanism_manager.update_address_scope_postcommit(mech_context)
         return updated_address_scope
 
-    @gbp_extensions.disable_transaction_guard
+    @n_utils.transaction_guard
     def delete_address_scope(self, context, id):
         with db_api.context_manager.writer.using(context):
             address_scope = super(Ml2PlusPlugin, self).get_address_scope(

@@ -3758,7 +3758,9 @@ class TestSyncState(ApicAimTestCase):
     def test_router_synced(self):
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
-            self._test_router('synced')
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_router('synced')
 
     def test_router_contract_build(self):
         def get_status(self, context, resource, create_if_absent=True):
@@ -3766,7 +3768,9 @@ class TestSyncState(ApicAimTestCase):
                 context, resource, aim_resource.Contract)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
-            self._test_router('build')
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_router('build')
 
     def test_router_contract_error(self):
         def get_status(self, context, resource, create_if_absent=True):
@@ -3774,7 +3778,9 @@ class TestSyncState(ApicAimTestCase):
                 context, resource, aim_resource.Contract)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
-            self._test_router('error')
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_router('error')
 
     def test_router_subject_build(self):
         def get_status(self, context, resource, create_if_absent=True):
@@ -3782,7 +3788,9 @@ class TestSyncState(ApicAimTestCase):
                 context, resource, aim_resource.ContractSubject)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
-            self._test_router('build')
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_router('build')
 
     def test_router_subject_error(self):
         def get_status(self, context, resource, create_if_absent=True):
@@ -3790,7 +3798,9 @@ class TestSyncState(ApicAimTestCase):
                 context, resource, aim_resource.ContractSubject)
 
         with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
-            self._test_router('error')
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_router('error')
 
     def _test_external_network(self, expected_state, dn=None, msg=None):
         net = self._make_ext_network('net1', dn=dn)
@@ -6260,6 +6270,26 @@ class TestExternalConnectivityBase(object):
 
         self.mock_ns.reset_mock()
         self._update('routers', router['id'],
+                     {'router':
+                      {PROV: []}})
+        a_ext_net2 = aim_resource.ExternalNetwork(
+            tenant_name=self.t1_aname, l3out_name='l2', name='n2',
+            provided_contract_names=sorted([contract]),
+            consumed_contract_names=sorted(['co-1', contract]))
+        cv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf)
+
+        self.mock_ns.reset_mock()
+        self._update('routers', router['id'],
+                     {'router':
+                      {CONS: ['co-1', 'co-2']}})
+        a_ext_net2 = aim_resource.ExternalNetwork(
+            tenant_name=self.t1_aname, l3out_name='l2', name='n2',
+            provided_contract_names=sorted([contract]),
+            consumed_contract_names=sorted(['co-1', 'co-2', contract]))
+        cv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf)
+
+        self.mock_ns.reset_mock()
+        self._update('routers', router['id'],
                      {'router': {'external_gateway_info': {}}})
         a_ext_net2.provided_contract_names = []
         a_ext_net2.consumed_contract_names = []
@@ -6443,6 +6473,8 @@ class TestExternalConnectivityBase(object):
             self.assertEqual('DOWN', fip1['status'])
             # this notification is for SNAT info recalculation
             mock_notif.assert_called_once_with(mock.ANY, p[0])
+            fip1 = self._show('floatingips', fip1['id'])['floatingip']
+            self.assertEqual('DOWN', fip1['status'])
 
             mock_notif.reset_mock()
             fip1 = self._update('floatingips', fip1['id'],
@@ -6450,6 +6482,8 @@ class TestExternalConnectivityBase(object):
             fip1 = fip1['floatingip']
             self.assertEqual('ACTIVE', fip1['status'])
             mock_notif.assert_called_once_with(mock.ANY, p[0])
+            fip1 = self._show('floatingips', fip1['id'])['floatingip']
+            self.assertEqual('ACTIVE', fip1['status'])
 
             mock_notif.reset_mock()
             fip1 = self._update('floatingips', fip1['id'],
@@ -6457,6 +6491,8 @@ class TestExternalConnectivityBase(object):
             fip1 = fip1['floatingip']
             self.assertEqual('DOWN', fip1['status'])
             mock_notif.assert_called_once_with(mock.ANY, p[0])
+            fip1 = self._show('floatingips', fip1['id'])['floatingip']
+            self.assertEqual('DOWN', fip1['status'])
 
         mock_notif.reset_mock()
         with self.floatingip_with_assoc(port_id=p[1]['id']) as fip2:
@@ -6466,6 +6502,8 @@ class TestExternalConnectivityBase(object):
             mock_notif.has_calls([mock.call(mock.ANY, p[1]),
                                   mock.call(mock.ANY, p[2])],
                                  any_order=True)
+            fip2 = self._show('floatingips', fip2['id'])['floatingip']
+            self.assertEqual('ACTIVE', fip2['status'])
 
             mock_notif.reset_mock()
             fip2 = self._update('floatingips', fip2['id'],
@@ -6474,6 +6512,8 @@ class TestExternalConnectivityBase(object):
             calls = [mock.call(mock.ANY, p[1]), mock.call(mock.ANY, p[2])]
             self.assertEqual(len(calls), mock_notif.call_count)
             mock_notif.has_calls(calls)
+            self.assertEqual('ACTIVE', fip2['status'])
+            fip2 = self._show('floatingips', fip2['id'])['floatingip']
             self.assertEqual('ACTIVE', fip2['status'])
 
             mock_notif.reset_mock()
@@ -7060,35 +7100,45 @@ class TestSnatIpAllocation(ApicAimTestCase):
             {'subnet': {SNAT_POOL: False}}, expected_code=409)
         self._delete('subnets', sub1['id'], expected_code=409)
 
-    def _setup_router_with_ext_net(self):
+    def _setup_routers_with_ext_net(self):
         ext_net = self._make_ext_network('ext-net1',
                                          dn=self.dn_t1_l1_n1)
         self._make_subnet(
             self.fmt, {'network': ext_net}, '100.100.100.1',
             '100.100.100.0/24')
 
-        net = self._make_network(self.fmt, 'pvt-net1', True)['network']
-        pvt_sub = self._make_subnet(
-            self.fmt, {'network': net}, '10.10.1.1',
+        net1 = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        pvt_sub1 = self._make_subnet(
+            self.fmt, {'network': net1}, '10.10.1.1',
             '10.10.1.0/24')['subnet']
 
-        rtr = self._make_router(
-            self.fmt, net['tenant_id'], 'router1',
-            external_gateway_info={'network_id': ext_net['id']})['router']
-        self._router_interface_action('add', rtr['id'], pvt_sub['id'], None)
+        net2 = self._make_network(self.fmt, 'pvt-net2', True)['network']
+        pvt_sub2 = self._make_subnet(
+            self.fmt, {'network': net2}, '10.10.2.1',
+            '10.10.2.0/24')['subnet']
 
-        sub2 = self._make_subnet(
+        rtr1 = self._make_router(
+            self.fmt, net1['tenant_id'], 'router1',
+            external_gateway_info={'network_id': ext_net['id']})['router']
+        self._router_interface_action('add', rtr1['id'], pvt_sub1['id'], None)
+
+        rtr2 = self._make_router(
+            self.fmt, net2['tenant_id'], 'router2',
+            external_gateway_info={'network_id': ext_net['id']})['router']
+        self._router_interface_action('add', rtr2['id'], pvt_sub2['id'], None)
+
+        snat_sub = self._make_subnet(
             self.fmt, {'network': ext_net}, '200.100.100.1',
             '200.100.100.0/29')['subnet']
-        self._update('subnets', sub2['id'],
+        self._update('subnets', snat_sub['id'],
                      {'subnet': {SNAT_POOL: True}})
         alloc = self.driver.get_or_allocate_snat_ip(
             n_context.get_admin_context(), 'h0', ext_net)
         self.assertIsNotNone(alloc)
-        self.assertEqual("ACTIVE", self._get_snat_ports(sub2)[0]["status"])
-        self.assertTrue(self._get_snat_ports(sub2)[0]["admin_state_up"])
+        self.assertEqual("ACTIVE", self._get_snat_ports(snat_sub)[0]["status"])
+        self.assertTrue(self._get_snat_ports(snat_sub)[0]["admin_state_up"])
 
-        return sub2, rtr, pvt_sub
+        return snat_sub, rtr1, pvt_sub1, rtr2, pvt_sub2
 
     def _get_snat_ports(self, snat_subnet):
         snat_ports = self._list('ports',
@@ -7098,24 +7148,29 @@ class TestSnatIpAllocation(ApicAimTestCase):
                 if p['fixed_ips'][0]['subnet_id'] == snat_subnet['id']]
 
     def test_snat_port_delete_on_router_gw_clear(self):
-        snat_sub, rtr, _ = self._setup_router_with_ext_net()
+        snat_sub, rtr1, _, rtr2, _ = self._setup_routers_with_ext_net()
         self.assertTrue(self._get_snat_ports(snat_sub))
 
-        self._update('routers', rtr['id'],
+        self._update('routers', rtr1['id'],
+                     {'router': {'external_gateway_info': None}})
+        self.assertTrue(self._get_snat_ports(snat_sub))
+
+        self._update('routers', rtr2['id'],
                      {'router': {'external_gateway_info': None}})
         self.assertFalse(self._get_snat_ports(snat_sub))
-        self._update('subnets', snat_sub['id'],
-                     {'subnet': {SNAT_POOL: False}})
 
     def test_snat_port_delete_on_router_intf_remove(self):
-        snat_sub, rtr, pvt_sub = self._setup_router_with_ext_net()
+        (snat_sub, rtr1, pvt_sub1, rtr2,
+         pvt_sub2) = self._setup_routers_with_ext_net()
         self.assertTrue(self._get_snat_ports(snat_sub))
 
-        self._router_interface_action('remove', rtr['id'], pvt_sub['id'],
+        self._router_interface_action('remove', rtr1['id'], pvt_sub1['id'],
+                                      None)
+        self.assertTrue(self._get_snat_ports(snat_sub))
+
+        self._router_interface_action('remove', rtr2['id'], pvt_sub2['id'],
                                       None)
         self.assertFalse(self._get_snat_ports(snat_sub))
-        self._update('subnets', snat_sub['id'],
-                     {'subnet': {SNAT_POOL: False}})
 
     def test_floatingip_alloc_in_snat_pool(self):
         ext_net = self._make_ext_network('ext-net1',
