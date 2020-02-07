@@ -71,6 +71,7 @@ import oslo_messaging
 from oslo_service import loopingcall
 from oslo_utils import importutils
 
+from gbpservice.common import utils as gbp_utils
 from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3 as a_l3
@@ -209,6 +210,7 @@ class KeystoneNotificationEndpoint(object):
             return oslo_messaging.NotificationResult.HANDLED
 
 
+@registry.has_registry_receivers
 class ApicMechanismDriver(api_plus.MechanismDriver,
                           db.DbMixin,
                           extension_db.ExtensionDbMixin,
@@ -1543,15 +1545,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         dname = aim_utils.sanitize_display_name(dname)
         self.aim.update(aim_ctx, vrf, display_name=dname)
 
-    def create_router(self, context, current):
-        LOG.debug("APIC AIM MD creating router: %s", current)
+    @registry.receives(resources.ROUTER, [events.PRECOMMIT_CREATE])
+    def _create_router_precommit(self, resource, event, trigger, context,
+                                 router, router_id, router_db):
+        LOG.debug("APIC AIM MD creating router: %s", router)
 
         session = context.session
         aim_ctx = aim_context.AimContext(session)
 
-        contract, subject = self._map_router(session, current)
+        # Persist extension attributes.
+        self.l3_plugin.set_router_extn_db(session, router_id, router)
 
-        dname = aim_utils.sanitize_display_name(current['name'])
+        contract, subject = self._map_router(session, router)
+
+        dname = aim_utils.sanitize_display_name(router['name'])
 
         contract.display_name = dname
         self.aim.create(aim_ctx, contract)
@@ -1560,24 +1567,24 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         subject.bi_filters = [self._any_filter_name]
         self.aim.create(aim_ctx, subject)
 
-        # External-gateway information about the router will be handled
-        # when the first router-interface port is created
+        # Creating the external gateway, if needed, is handled via
+        # port_create_precommit.
 
-        # REVISIT(rkukura): Consider having L3 plugin extend router
-        # dict again after calling this function.
-        sync_state = cisco_apic.SYNC_SYNCED
-        sync_state = self._merge_status(aim_ctx, sync_state, contract)
-        sync_state = self._merge_status(aim_ctx, sync_state, subject)
-        current[cisco_apic.DIST_NAMES] = {a_l3.CONTRACT: contract.dn,
-                                          a_l3.CONTRACT_SUBJECT:
-                                          subject.dn}
-        current[cisco_apic.SYNC_STATE] = sync_state
+    @registry.receives(resources.ROUTER, [events.PRECOMMIT_UPDATE])
+    def _update_router_precommit(self, resource, event, trigger, payload):
+        LOG.debug("APIC AIM MD updating router: %s", payload.resource_id)
 
-    def update_router(self, context, current, original):
-        LOG.debug("APIC AIM MD updating router: %s", current)
-
+        context = payload.context
         session = context.session
         aim_ctx = aim_context.AimContext(session)
+
+        # Persist extension attribute updates.
+        self.l3_plugin.set_router_extn_db(
+            session, payload.resource_id, payload.request_body)
+
+        original = payload.states[0]
+        current = self.l3_plugin.get_router(
+            payload.context, payload.resource_id)
 
         if current['name'] != original['name']:
             contract, subject = self._map_router(session, current)
@@ -1622,61 +1629,67 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     sn = self._map_subnet(subnet_db, intf.ip_address, bd)
                     self.aim.update(aim_ctx, sn, display_name=dname)
 
+        # Any changes to the external gateway are handled via
+        # port_create_precommit and port_delete_precommit and are not
+        # visible here. Therefore, just handle changes to extension
+        # attributes that effect external connectivity for the
+        # current gateway, if there is one.
+        gateway_info = current.get('external_gateway_info')
+        if not gateway_info or not gateway_info.get('network_id'):
+            return
+
         def is_diff(old, new, attr):
             return sorted(old[attr]) != sorted(new[attr])
 
-        old_net = (original.get('external_gateway_info') or
-                   {}).get('network_id')
-        new_net = (current.get('external_gateway_info') or
-                   {}).get('network_id')
-        if old_net and not new_net:
-            self._delete_snat_ip_ports_if_reqd(context, old_net,
-                                               current['id'])
-        if ((old_net != new_net or
-             is_diff(original, current, a_l3.EXTERNAL_PROVIDED_CONTRACTS) or
-             is_diff(original, current, a_l3.EXTERNAL_CONSUMED_CONTRACTS)) and
-            self._get_router_intf_count(session, current)):
+        if (is_diff(original, current, a_l3.EXTERNAL_PROVIDED_CONTRACTS) or
+            is_diff(original, current, a_l3.EXTERNAL_CONSUMED_CONTRACTS)):
 
-            if old_net == new_net:
-                old_net = None
+            self._update_router_external_connectivity(
+                context, current, gateway_info['network_id'])
+
+    def _update_router_external_connectivity(self, context, router, ext_net_id,
+                                             notify=False, removing=False):
+        session = context.session
+        if self._get_router_intf_count(session, router):
+            # REVISIT: Move notification logic to
+            # port_create_postcommit and port_delete_postcommit?
+            if not notify:
                 affected_port_ids = []
             else:
                 # SNAT information of ports on the subnet that interface
                 # with the router will change because router's gateway
                 # changed.
-                sub_ids = self._get_router_interface_subnets(session,
-                                                             [current['id']])
+                sub_ids = self._get_router_interface_subnets(
+                    session, [router['id']])
                 affected_port_ids = self._get_compute_dhcp_ports_in_subnets(
-                                                            session, sub_ids)
+                    session, sub_ids)
 
-            old_net = self.plugin.get_network(context,
-                                              old_net) if old_net else None
-            new_net = self.plugin.get_network(context,
-                                              new_net) if new_net else None
-            vrfs = self._get_vrfs_for_router(session, current['id'])
+            ext_net = self.plugin.get_network(context, ext_net_id)
+            old_net = ext_net if removing else None
+            new_net = ext_net if not removing else None
+            vrfs = self._get_vrfs_for_router(session, router['id'])
             for vrf in vrfs:
                 self._manage_external_connectivity(
-                    context, current, old_net, new_net, vrf)
+                    context, router, old_net, new_net, vrf)
 
             # Send a port update so that SNAT info may be recalculated for
             # affected ports in the interfaced subnets.
+            #
+            # REVISIT: Move to postcommit?
             self._notify_port_update_bulk(context, affected_port_ids)
 
-        # REVISIT(rkukura): Update extension attributes?
-
-    def delete_router(self, context, current):
-        LOG.debug("APIC AIM MD deleting router: %s", current)
+    @registry.receives(resources.ROUTER, [events.PRECOMMIT_DELETE])
+    def _delete_router_precommit(self, resource, event, trigger, context,
+                                 router_db, router_id):
+        LOG.debug("APIC AIM MD deleting router: %s", router_id)
 
         session = context.session
         aim_ctx = aim_context.AimContext(session)
 
-        # Handling of external-gateway information is done when the router
-        # interface ports are deleted, or the external-gateway is
-        # cleared through update_router. At least one of those need
-        # to happen before a router can be deleted, so we don't
-        # need to do anything special when router is deleted
+        # Deleting the external gateway, if one exists, is handled via
+        # port_delete_precommit.
 
-        contract, subject = self._map_router(session, current)
+        contract, subject = self._map_router(session, router_db)
 
         self.aim.delete(aim_ctx, subject)
         self.aim.delete(aim_ctx, contract)
@@ -1736,14 +1749,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         LOG.debug("APIC AIM MD extending dict for router: %s", result)
         self.extend_router_dict_bulk(session, [result])
 
-    def add_router_interface(self, context, router, port, subnets):
+    def _add_router_interface(self, context, router_db, port, subnets):
         LOG.debug("APIC AIM MD adding subnets %(subnets)s to router "
                   "%(router)s as interface port %(port)s",
-                  {'subnets': subnets, 'router': router, 'port': port})
+                  {'subnets': subnets, 'router': router_db, 'port': port})
 
         session = context.session
         aim_ctx = aim_context.AimContext(session)
 
+        router_id = router_db.id
         network_id = port['network_id']
         network_db = self.plugin._get_network(context, network_id)
 
@@ -1774,7 +1788,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Find number of existing interface ports on the router for
         # this scope, excluding the one we are adding.
         router_intf_count = self._get_router_intf_count(
-            session, router, scope_id)
+            session, router_db, scope_id)
 
         # Find up to two existing router interfaces for this
         # network. The interface currently being added is not
@@ -1810,7 +1824,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if not context.override_network_routing_topology_validation:
                 different_router = False
                 different_subnet = False
-                router_id = router['id']
                 subnet_ids = [subnet['id'] for subnet in subnets]
                 for existing_router_id, existing_subnet in net_intfs:
                     if router_id != existing_router_id:
@@ -1858,7 +1871,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             vrf = self._get_address_scope_vrf(scope_db.aim_mapping)
         else:
             intf_topology = self._network_topology(session, network_db)
-            router_topology = self._router_topology(session, router['id'])
+            router_topology = self._router_topology(session, router_id)
 
             intf_shared_net = self._topology_shared(intf_topology)
             router_shared_net = self._topology_shared(router_topology)
@@ -1948,7 +1961,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
 
                 dname = aim_utils.sanitize_display_name(
-                    router['name'] + "-" +
+                    router_db.name + "-" +
                     (subnet['name'] or subnet['cidr']))
 
                 sn = self._map_subnet(subnet, gw_ip, bd)
@@ -1956,7 +1969,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 sn = self.aim.create(aim_ctx, sn)
 
         # Ensure network's EPG provides/consumes router's Contract.
-        contract = self._map_router(session, router, True)
+        contract = self._map_router(session, router_db, True)
 
         # this could be internal or external EPG
         epg = self.aim.get(aim_ctx, epg)
@@ -1974,23 +1987,23 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # If external-gateway is set, handle external-connectivity changes.
         # External network is not supported for SVI network for now.
-        if router.gw_port_id and not self._is_svi_db(network_db):
-            net = self.plugin.get_network(context,
-                                          router.gw_port.network_id)
+        if router_db.gw_port_id and not self._is_svi_db(network_db):
+            net = self.plugin.get_network(
+                context, router_db.gw_port.network_id)
             # If this is first interface-port, then that will determine
             # the VRF for this router. Setup external-connectivity for VRF.
             if not router_intf_count:
-                self._manage_external_connectivity(context, router, None, net,
-                                                   vrf)
+                self._manage_external_connectivity(
+                    context, router_db, None, net, vrf)
             elif router_topo_moved:
                 # Router moved from router_vrf to vrf, so
                 # 1. Update router_vrf's external connectivity to exclude
                 #    router
                 # 2. Update vrf's external connectivity to include router
-                self._manage_external_connectivity(context, router, net, None,
-                                                   router_vrf)
-                self._manage_external_connectivity(context, router, None, net,
-                                                   vrf)
+                self._manage_external_connectivity(
+                    context, router_db, net, None, router_vrf)
+                self._manage_external_connectivity(
+                    context, router_db, None, net, vrf)
 
             aim_l3out, _, ns = self._get_aim_nat_strategy(net)
             if aim_l3out and ns:
@@ -2014,14 +2027,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if vrfs_to_notify:
             self._notify_vrf_update(context, vrfs_to_notify)
 
-    def remove_router_interface(self, context, router_id, port, subnets):
+    def _remove_router_interface(self, context, router_db, port, subnets):
         LOG.debug("APIC AIM MD removing subnets %(subnets)s from router "
                   "%(router)s as interface port %(port)s",
-                  {'subnets': subnets, 'router': router_id, 'port': port})
+                  {'subnets': subnets, 'router': router_db, 'port': port})
 
         session = context.session
         aim_ctx = aim_context.AimContext(session)
 
+        router_id = router_db.id
         network_id = port['network_id']
         network_db = self.plugin._get_network(context, network_id)
 
@@ -2145,9 +2159,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if not self._get_router_intf_count(session, router_db, scope_id):
                 self._manage_external_connectivity(
                     context, router_db, net, None, old_vrf)
-
-                self._delete_snat_ip_ports_if_reqd(context, net['id'],
-                                                   router_id)
             elif router_topo_moved:
                 # Router moved from old_vrf to router_vrf, so
                 # 1. Update old_vrf's external connectivity to exclude router
@@ -2395,6 +2406,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             context, port, port['security_groups'], is_delete=False)
         self._insert_provisioning_block(context)
 
+        # Handle router gateway port creation.
+        if self._is_port_router_gateway(port):
+            router = self.l3_plugin.get_router(
+                context._plugin_context, port['device_id'])
+            self._update_router_external_connectivity(
+                context._plugin_context, router, port['network_id'],
+                notify=True)
+
+        # Handle router interface port creation.
+        if self._is_port_router_interface(port):
+            self._process_router_interface_port(
+                context, port['fixed_ips'], [])
+
     def _insert_provisioning_block(self, context):
         # we insert a status barrier to prevent the port from transitioning
         # to active until the agent reports back that the wiring is done
@@ -2441,6 +2465,54 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             self.delete_port_id_for_ha_ipaddress(
                                 port['id'], ip, session=session)
 
+    # NOTE: This event is generated by the ML2 plugin in three places,
+    # all outside of transactions. It is generated from update_port
+    # and from _update_individual_port_db_status without the
+    # orig_binding and new_binding kwargs, and it is generated with
+    # those args from _commit_port_binding.
+    @registry.receives(resources.PORT, [events.BEFORE_UPDATE])
+    def _before_update_port(self, resource, event, trigger, context,
+                            port, original_port,
+                            orig_binding=None, new_binding=None):
+        # We are only interested in port update callbacks from
+        # _commit_port_binding, in which the port is about to become
+        # bound. Any other callbacks using this event are ignored.
+        if not (orig_binding and
+                orig_binding.vif_type == portbindings.VIF_TYPE_UNBOUND and
+                new_binding and
+                new_binding.vif_type != portbindings.VIF_TYPE_UNBOUND):
+            return
+
+        # The bind_context containing the binding levels is not passed
+        # to this callback, and the binding levels haven't been
+        # persisted yet, so find the _commit_port_binding method's
+        # bind_context local variable on the stack. NOTE: This may
+        # require updating when forward-porting to newer upstream
+        # releases.
+        bind_context = gbp_utils.get_function_local_from_stack(
+            '_commit_port_binding', 'bind_context')
+        if not bind_context:
+            LOG.warning("Unabled to find bind_context on stack in "
+                        "_before_update_port.")
+            return
+
+        # Nothing to do unless the network is SVI.
+        if not (bind_context.network and
+                bind_context.network.current and
+                self._is_svi(bind_context.network.current)):
+            return
+
+        # Get the static ports for the new binding.
+        with db_api.context_manager.reader.using(context):
+            static_ports = self._get_static_ports(
+                context, bind_context.host, bind_context.bottom_bound_segment,
+                port_context=bind_context)
+
+        # Make sure SVI IPs are allocated for each node of each
+        # static_port.
+        self._ensure_svi_ips_for_static_ports(
+            context, static_ports, bind_context.network.current)
+
     def update_port_precommit(self, context):
         port = context.current
         self._check_active_active_aap(context, port)
@@ -2464,6 +2536,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._insert_provisioning_block(context)
         registry.notify(aim_cst.GBP_PORT, events.PRECOMMIT_UPDATE,
                         self, driver_context=context)
+
+        # No need to handle router gateway port update, as we don't
+        # care about its fixed_ips.
+
+        # Handle router interface port update.
+        if (self._is_port_router_interface(port) or
+            self._is_port_router_interface(context.original)):
+            self._process_router_interface_port(
+                context,
+                port['fixed_ips']
+                if self._is_port_router_interface(port) else [],
+                context.original['fixed_ips']
+                if self._is_port_router_interface(context.original) else [])
 
     def update_port_postcommit(self, context):
         port = context.current
@@ -2490,6 +2575,91 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.disassociate_domain(context)
         self._really_update_sg_rule_with_remote_group_set(
             context, port, port['security_groups'], is_delete=True)
+
+        # Handle router gateway port deletion.
+        if self._is_port_router_gateway(port):
+            router = self.l3_plugin.get_router(
+                context._plugin_context, port['device_id'])
+            self._update_router_external_connectivity(
+                context._plugin_context, router, port['network_id'],
+                notify=True, removing=True)
+
+        # Handle router interface port deletion.
+        if self._is_port_router_interface(port):
+            # The RouterPort would be cascade-deleted with this Port,
+            # but delete it now so its not considered by queries while
+            # removing the interface.
+            self._delete_router_port(
+                context._plugin_context.session, port['id'])
+            self._process_router_interface_port(
+                context, [], port['fixed_ips'])
+
+    def delete_port_postcommit(self, context):
+        port = context.current
+        plugin_context = context._plugin_context
+        if (port.get('binding:vif_details') and
+                port['binding:vif_details'].get('dvs_port_group_name')) and (
+                self.dvs_notifier):
+            self.dvs_notifier.delete_port_call(
+                context.current,
+                context.original,
+                context.bottom_bound_segment,
+                context.host
+            )
+
+        # Handle router gateway port deletion.
+        if self._is_port_router_gateway(port):
+            self._delete_unneeded_snat_ip_ports(
+                plugin_context, port['network_id'])
+
+        # Handle router interface port deletion.
+        if self._is_port_router_interface(port):
+            router_db = self.l3_plugin._get_router(
+                plugin_context, port['device_id'])
+            if router_db and router_db.gw_port:
+                self._delete_unneeded_snat_ip_ports(
+                    plugin_context, router_db.gw_port.network_id)
+
+    def _is_port_router_gateway(self, port):
+        return (port['device_owner'] == n_constants.DEVICE_OWNER_ROUTER_GW
+                and port['device_id'])
+
+    def _is_port_router_interface(self, port):
+        return (port['device_owner'] == n_constants.DEVICE_OWNER_ROUTER_INTF
+                and port['device_id'])
+
+    def _process_router_interface_port(self, context, new_ips, old_ips):
+        router_id = context.current['device_id']
+        if not router_id:
+            return
+        new_subnet_ids = set([ip['subnet_id'] for ip in new_ips])
+        old_subnet_ids = set([ip['subnet_id'] for ip in old_ips])
+        added_subnet_ids = list(new_subnet_ids - old_subnet_ids)
+        removed_subnet_ids = list(old_subnet_ids - new_subnet_ids)
+        if added_subnet_ids or removed_subnet_ids:
+            router_db = self.l3_plugin._get_router(
+                context._plugin_context, router_id)
+        if added_subnet_ids:
+            subnets = self.plugin.get_subnets(
+                context._plugin_context.elevated(),
+                filters={'id': added_subnet_ids})
+            self._add_router_interface(
+                context._plugin_context, router_db, context.current, subnets)
+        if removed_subnet_ids:
+            subnets = self.plugin.get_subnets(
+                context._plugin_context.elevated(),
+                filters={'id': removed_subnet_ids})
+            self._remove_router_interface(
+                context._plugin_context, router_db, context.current, subnets)
+
+    def _delete_router_port(self, session, port_id):
+        query = BAKERY(lambda s: s.query(
+            l3_db.RouterPort))
+        query += lambda q: q.filter_by(
+            port_id=sa.bindparam('port_id'))
+        db_obj = query(session).params(
+            port_id=port_id).one()
+        session.delete(db_obj)
 
     def create_security_group_precommit(self, context):
         session = context._plugin_context.session
@@ -2627,18 +2797,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             name=sg_rule['id'])
         self.aim.delete(aim_ctx, sg_rule_aim)
 
-    def delete_port_postcommit(self, context):
-        port = context.current
-        if (port.get('binding:vif_details') and
-                port['binding:vif_details'].get('dvs_port_group_name')) and (
-                self.dvs_notifier):
-            self.dvs_notifier.delete_port_call(
-                context.current,
-                context.original,
-                context.bottom_bound_segment,
-                context.host
-            )
-
     def create_floatingip(self, context, current):
         if current['port_id']:
             current['status'] = n_constants.FLOATINGIP_STATUS_ACTIVE
@@ -2667,11 +2825,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                   ', '.join([str(p) for p in
                              (host, interface, mac, switch, module, port,
                               pod_id, port_description)]))
-        with db_api.context_manager.writer.using(context):
-            if not switch:
-                return
-
-            session = context.session
+        if not switch:
+            return
+        with db_api.context_manager.writer.using(context) as session:
             aim_ctx = aim_context.AimContext(db_session=session)
             hlink = self.aim.get(aim_ctx,
                                  aim_infra.HostLink(host_name=host,
@@ -2690,17 +2846,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                            interface_name=interface,
                                            **attrs)
                 self.aim.create(aim_ctx, hlink, overwrite=True)
-            self._update_network_links(context, host)
+        self._update_network_links(context, host)
 
     # Topology RPC method handler
     def delete_link(self, context, host, interface, mac, switch, module, port):
         LOG.debug('Topology RPC: delete_link: %s',
                   ', '.join([str(p) for p in
                              (host, interface, mac, switch, module, port)]))
-        session = context.session
-        aim_ctx = aim_context.AimContext(db_session=session)
-
-        with db_api.context_manager.writer.using(context):
+        with db_api.context_manager.writer.using(context) as session:
+            aim_ctx = aim_context.AimContext(db_session=session)
             hlink = self.aim.get(aim_ctx,
                                  aim_infra.HostLink(host_name=host,
                                                     interface_name=interface))
@@ -2709,7 +2863,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return
 
             self.aim.delete(aim_ctx, hlink)
-            self._update_network_links(context, host)
+        self._update_network_links(context, host)
 
     def _update_network_links(self, context, host):
         # Update static paths of all EPGs with ports on the host.
@@ -2720,16 +2874,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # this is all good in theory, it would require some extra design
         # due to the fact that VPC interfaces have the same path but
         # two different ifaces assigned to them.
-        aim_ctx = aim_context.AimContext(db_session=context.session)
-        hlinks = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
-        nets_segs = self._get_non_opflex_segments_on_host(context, host)
+        with db_api.context_manager.writer.using(context) as session:
+            aim_ctx = aim_context.AimContext(db_session=session)
+            hlinks = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
+            nets_segs = self._get_non_opflex_segments_on_host(context, host)
+            registry.notify(aim_cst.GBP_NETWORK_LINK,
+                            events.PRECOMMIT_UPDATE, self, context=context,
+                            networks_map=nets_segs, host_links=hlinks,
+                            host=host)
         for net, seg in nets_segs:
             self._rebuild_host_path_for_network(context, net, seg, host,
                                                 hlinks)
-        registry.notify(aim_cst.GBP_NETWORK_LINK,
-                        events.PRECOMMIT_UPDATE, self, context=context,
-                        networks_map=nets_segs, host_links=hlinks,
-                        host=host)
 
     def _agent_bind_port(self, context, agent_type, bind_strategy):
         current = context.current
@@ -3910,21 +4065,32 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
              'gateway_ip': <gateway_ip of subnet>,
              'prefixlen': <prefix_length_of_subnet>}
         """
-        session = plugin_context.session
+        with db_api.context_manager.reader.using(plugin_context) as session:
+            # Query for existing SNAT port.
+            query = BAKERY(lambda s: s.query(
+                models_v2.IPAllocation.ip_address,
+                models_v2.Subnet.gateway_ip,
+                models_v2.Subnet.cidr))
+            query += lambda q: q.join(
+                models_v2.Subnet,
+                models_v2.Subnet.id == models_v2.IPAllocation.subnet_id)
+            query += lambda q: q.join(
+                models_v2.Port,
+                models_v2.Port.id == models_v2.IPAllocation.port_id)
+            query += lambda q: q.filter(
+                models_v2.Port.network_id == sa.bindparam('network_id'),
+                models_v2.Port.device_id == sa.bindparam('device_id'),
+                models_v2.Port.device_owner == aim_cst.DEVICE_OWNER_SNAT_PORT)
+            result = query(session).params(
+                network_id=ext_network['id'],
+                device_id=host_or_vrf).first()
+            if result:
+                return {'host_snat_ip': result[0],
+                        'gateway_ip': result[1],
+                        'prefixlen': int(result[2].split('/')[1])}
 
-        query = BAKERY(lambda s: s.query(
-            models_v2.Port))
-        query += lambda q: q.filter(
-            models_v2.Port.network_id == sa.bindparam('network_id'),
-            models_v2.Port.device_id == sa.bindparam('device_id'),
-            models_v2.Port.device_owner == aim_cst.DEVICE_OWNER_SNAT_PORT)
-        snat_port = query(session).params(
-            network_id=ext_network['id'],
-            device_id=host_or_vrf).first()
-
-        snat_ip = None
-        if not snat_port or snat_port.fixed_ips is None:
-            # allocate SNAT port
+            # None found, so query for subnets on which to allocate
+            # SNAT port.
             extn_db_sn = extension_db.SubnetExtensionDb
 
             query = BAKERY(lambda s: s.query(
@@ -3944,43 +4110,52 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                          'SNAT-pool',
                          ext_network['id'])
                 return
-            for snat_subnet in snat_subnets:
-                try:
-                    # REVISIT:  This is a temporary fix and needs to be redone.
-                    # We need to make sure that we do a proper bind.  Currently
-                    # the SNAT endpoint is created by looking at VM port bind.
-                    attrs = {'device_id': host_or_vrf,
-                             'device_owner': aim_cst.DEVICE_OWNER_SNAT_PORT,
-                             'tenant_id': ext_network['tenant_id'],
-                             'name': 'snat-pool-port:%s' % host_or_vrf,
-                             'network_id': ext_network['id'],
-                             'mac_address': n_constants.ATTR_NOT_SPECIFIED,
-                             'fixed_ips': [{'subnet_id': snat_subnet.id}],
-                             'status': "ACTIVE",
-                             'admin_state_up': True}
-                    port = self.plugin.create_port(plugin_context,
-                                                   {'port': attrs})
-                    if port and port['fixed_ips']:
-                        snat_ip = port['fixed_ips'][0]['ip_address']
-                        break
-                except n_exceptions.IpAddressGenerationFailure:
-                    LOG.info('No more addresses available in subnet %s '
-                             'for SNAT IP allocation',
-                             snat_subnet['id'])
-        else:
-            snat_ip = snat_port.fixed_ips[0]['ip_address']
 
-            query = BAKERY(lambda s: s.query(
-                models_v2.Subnet))
-            query += lambda q: q.filter(
-                models_v2.Subnet.id == sa.bindparam('subnet_id'))
-            snat_subnet = query(session).params(
-                subnet_id=snat_port.fixed_ips[0].subnet_id).one()
+        # Outside the transaction, try allocating SNAT port from
+        # available subnets.
+        #
+        # REVISIT: Although unlikely, creating the SNAT port outside
+        # this transaction means multiple SNAT ports could be created
+        # by different threads for the same host on the same external
+        # network. Furthermore, once created, any of these ports could
+        # be found and used by other threads, so checking after the
+        # port is created is not sufficient. To eliminate this race
+        # condition, consider having create_port_precommit validate
+        # that no other equivalent SNAT port already exists. If that
+        # validation resulted in an exception from create_port, a loop
+        # encompassing this entire method would retry the initial
+        # query, which should then find the existing equivalent SNAT
+        # port.
+        for snat_subnet in snat_subnets:
+            try:
+                # REVISIT:  This is a temporary fix and needs to be redone.
+                # We need to make sure that we do a proper bind.  Currently
+                # the SNAT endpoint is created by looking at VM port bind.
+                attrs = {'device_id': host_or_vrf,
+                         'device_owner': aim_cst.DEVICE_OWNER_SNAT_PORT,
+                         'tenant_id': ext_network['tenant_id'],
+                         'name': 'snat-pool-port:%s' % host_or_vrf,
+                         'network_id': ext_network['id'],
+                         'mac_address': n_constants.ATTR_NOT_SPECIFIED,
+                         'fixed_ips': [{'subnet_id': snat_subnet.id}],
+                         'status': "ACTIVE",
+                         'admin_state_up': True}
+                port = self.plugin.create_port(
+                    plugin_context, {'port': attrs})
+                if port and port['fixed_ips']:
+                    snat_ip = port['fixed_ips'][0]['ip_address']
+                    return {'host_snat_ip': snat_ip,
+                            'gateway_ip': snat_subnet['gateway_ip'],
+                            'prefixlen':
+                            int(snat_subnet['cidr'].split('/')[1])}
+            except n_exceptions.IpAddressGenerationFailure:
+                LOG.info('No more addresses available in subnet %s '
+                         'for SNAT IP allocation',
+                         snat_subnet['id'])
 
-        if snat_ip:
-            return {'host_snat_ip': snat_ip,
-                    'gateway_ip': snat_subnet['gateway_ip'],
-                    'prefixlen': int(snat_subnet['cidr'].split('/')[1])}
+        # Failed to allocate SNAT port.
+        LOG.warning("Failed to allocate SNAT IP on external network %s" %
+                    ext_network['id'])
 
     def _has_snat_ip_ports(self, plugin_context, subnet_id):
         session = plugin_context.session
@@ -3997,38 +4172,56 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return query(session).params(
             subnet_id=subnet_id).first()
 
-    def _delete_snat_ip_ports_if_reqd(self, plugin_context,
-                                      ext_network_id, exclude_router_id):
-        e_context = plugin_context.elevated()
-        session = plugin_context.session
-
-        # if there are no routers uplinked to the external network,
-        # then delete any ports allocated for SNAT IP
-        query = BAKERY(lambda s: s.query(
-            models_v2.Port))
-        query += lambda q: q.filter(
-            models_v2.Port.network_id == sa.bindparam('ext_network_id'),
-            models_v2.Port.device_owner == n_constants.DEVICE_OWNER_ROUTER_GW,
-            models_v2.Port.device_id != sa.bindparam('exclude_router_id'))
-        if not query(session).params(
-                ext_network_id=ext_network_id,
-                exclude_router_id=exclude_router_id).first():
-
+    def _delete_unneeded_snat_ip_ports(self, plugin_context, ext_network_id):
+        snat_port_ids = []
+        with db_api.context_manager.reader.using(plugin_context) as session:
+            # Query for any interfaces of routers with gateway ports
+            # on this external network.
             query = BAKERY(lambda s: s.query(
-                models_v2.Port.id))
+                l3_db.RouterPort.port_id))
+            query += lambda q: q.join(
+                l3_db.Router,
+                l3_db.Router.id == l3_db.RouterPort.router_id)
+            query += lambda q: q.join(
+                models_v2.Port,
+                models_v2.Port.id == l3_db.Router.gw_port_id)
             query += lambda q: q.filter(
                 models_v2.Port.network_id == sa.bindparam('ext_network_id'),
-                models_v2.Port.device_owner == aim_cst.DEVICE_OWNER_SNAT_PORT)
-            snat_ports = query(session).params(
-                ext_network_id=ext_network_id).all()
+                models_v2.Port.device_owner ==
+                n_constants.DEVICE_OWNER_ROUTER_GW,
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF)
+            if not query(session).params(
+                ext_network_id=ext_network_id).first():
+                # No such interfaces exist, so query for any SNAT
+                # ports on this external network.
+                query = BAKERY(lambda s: s.query(
+                    models_v2.Port.id))
+                query += lambda q: q.filter(
+                    models_v2.Port.network_id ==
+                    sa.bindparam('ext_network_id'),
+                    models_v2.Port.device_owner ==
+                    aim_cst.DEVICE_OWNER_SNAT_PORT)
+                snat_port_ids = [p[0] for p in query(session).params(
+                    ext_network_id=ext_network_id).all()]
 
-            for p in snat_ports:
-                try:
-                    self.plugin.delete_port(e_context, p[0])
-                except n_exceptions.NeutronException as ne:
-                    LOG.warning('Failed to delete SNAT port %(port)s: '
-                                '%(ex)s',
-                                {'port': p, 'ex': ne})
+        # Outside the transaction, delete any unneeded SNAT ports.
+        #
+        # REVISIT: Although unlikely, deleting an SNAT port outside
+        # the transaction means it could become needed again before
+        # it is actually deleted. To eliminate this race condition,
+        # consider having delete_port_precommit validate that the SNAT
+        # port is still not needed by querying again for interfaces of
+        # routers with gateway ports on that network, and if any are
+        # found, raising an exception that would be silently ignored
+        # below.
+        e_context = plugin_context.elevated()
+        for port_id in snat_port_ids:
+            try:
+                self.plugin.delete_port(e_context, port_id)
+            except n_exceptions.NeutronException as ne:
+                LOG.warning("Failed to delete SNAT port %(port)s: %(ex)s",
+                            {'port': port_id, 'ex': ne})
 
     # Called by l3_plugin.
     def check_floatingip_external_address(self, context, floatingip):
@@ -4122,40 +4315,51 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _rebuild_host_path_for_network(self, plugin_context, network, segment,
                                        host, host_links):
         # Look up the static ports for this host and segment.
-        aim_ctx = aim_context.AimContext(db_session=plugin_context.session)
-        static_ports = self._get_static_ports(plugin_context, host, segment)
+        with db_api.context_manager.reader.using(plugin_context):
+            static_ports = self._get_static_ports(
+                plugin_context, host, segment)
 
+        # If network is SVI, make sure SVI IPs are allocated for each
+        # node of each static_port.
         if self._is_svi(network):
-            l3out, _, _ = self._get_aim_external_objects(network)
-            # Nuke existing interfaces for host
-            search_args = {
-                'tenant_name': l3out.tenant_name,
-                'l3out_name': l3out.name,
-                'node_profile_name': L3OUT_NODE_PROFILE_NAME,
-                'interface_profile_name': L3OUT_IF_PROFILE_NAME,
-                'host': host
-            }
-            for aim_l3out_if in self.aim.find(
-                    aim_ctx, aim_resource.L3OutInterface, **search_args):
-                self.aim.delete(aim_ctx, aim_l3out_if, cascade=True)
-            for static_port in static_ports:
-                self._update_static_path_for_svi(
-                    plugin_context.session, plugin_context, network,
-                    l3out, static_port)
-        else:
-            epg = self.get_epg_for_network(plugin_context.session, network)
-            if not epg:
-                LOG.info('Network %s does not map to any EPG', network['id'])
-                return
-            epg = self.aim.get(aim_ctx, epg)
-            # Update old host values.
-            paths = set([(x['path'], x['encap'], x['host'])
-                         for x in epg.static_paths if x['host'] != host])
-            # Add new static ports.
-            paths |= set([(x.link.path, x.encap, x.link.host_name)
-                         for x in static_ports])
-            self.aim.update(aim_ctx, epg, static_paths=[
-                {'path': x[0], 'encap': x[1], 'host': x[2]} for x in paths])
+            self._ensure_svi_ips_for_static_ports(
+                plugin_context, static_ports, network)
+
+        # Rebuild the static paths.
+        with db_api.context_manager.writer.using(plugin_context) as session:
+            aim_ctx = aim_context.AimContext(db_session=session)
+            if self._is_svi(network):
+                l3out, _, _ = self._get_aim_external_objects(network)
+                # Nuke existing interfaces for host
+                search_args = {
+                    'tenant_name': l3out.tenant_name,
+                    'l3out_name': l3out.name,
+                    'node_profile_name': L3OUT_NODE_PROFILE_NAME,
+                    'interface_profile_name': L3OUT_IF_PROFILE_NAME,
+                    'host': host
+                }
+                for aim_l3out_if in self.aim.find(
+                        aim_ctx, aim_resource.L3OutInterface, **search_args):
+                    self.aim.delete(aim_ctx, aim_l3out_if, cascade=True)
+                for static_port in static_ports:
+                    self._update_static_path_for_svi(
+                        session, plugin_context, network, l3out, static_port)
+            else:
+                epg = self.get_epg_for_network(session, network)
+                if not epg:
+                    LOG.info('Network %s does not map to any EPG',
+                             network['id'])
+                    return
+                epg = self.aim.get(aim_ctx, epg)
+                # Update old host values.
+                paths = set([(x['path'], x['encap'], x['host'])
+                             for x in epg.static_paths if x['host'] != host])
+                # Add new static ports.
+                paths |= set([(x.link.path, x.encap, x.link.host_name)
+                              for x in static_ports])
+                self.aim.update(aim_ctx, epg, static_paths=[
+                    {'path': x[0], 'encap': x[1], 'host': x[2]}
+                    for x in paths])
 
     def _get_topology_from_path(self, path):
         """Convert path string to toplogy elements.
@@ -4211,6 +4415,49 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 LOG.error('Unsupported static path format: %s', path)
                 return (False, None, None, None, None, None)
 
+    def _ensure_svi_ips_for_static_ports(self, context, static_ports, network):
+        for static_port in static_ports:
+            if not static_port.encap:
+                continue
+
+            # Get the nodes from the static port's path.
+            _, _, nodes, _, _, _ = self._get_topology_from_path(
+                static_port.link.path)
+
+            for node in nodes:
+                # See if this node already has an IP for SVI for this
+                # network. If not, allocate a port (and therefore IP)
+                # for the SVI interface on this node.
+                filters = {'network_id': [network['id']],
+                           'name': ['apic-svi-port:node-%s' % node]}
+                svi_ports = self.plugin.get_ports(context, filters)
+                if svi_ports and svi_ports[0]['fixed_ips']:
+                    # We already have an IP for this node.
+                    break
+                # We don't have an IP for this node, so create a port.
+                #
+                # REVISIT: The node identifier should be in device_id
+                # rather than name, but changing this would require a
+                # data migration.
+                attrs = {'device_id': '',
+                         'device_owner': aim_cst.DEVICE_OWNER_SVI_PORT,
+                         'tenant_id': network['tenant_id'],
+                         'name': 'apic-svi-port:node-%s' % node,
+                         'network_id': network['id'],
+                         'mac_address': n_constants.ATTR_NOT_SPECIFIED,
+                         'fixed_ips': [{'subnet_id':
+                                        network['subnets'][0]}],
+                         'admin_state_up': False}
+                try:
+                    port = self.plugin.create_port(context, {'port': attrs})
+                    LOG.info("Allocated IP %(ip)s for node %(node)s on SVI "
+                             "network %(net)s",
+                             {'ip': port['fixed_ips'][0]['ip_address'],
+                              'node': node, 'net': network['id']})
+                except Exception as e:
+                    LOG.warning("Failed to create SVI port %(port)s: %(ex)s",
+                            {'port': attrs, 'ex': e})
+
     def _update_static_path_for_svi(self, session, plugin_context, network,
                                     l3out, static_port, remove=False):
         """Configure static path for an SVI on a L3 Out
@@ -4259,9 +4506,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
             primary_ips = []
             for node in nodes:
-                # See if this node already has an IP for SVI under the L3 Out
-                # for this network. If not, allocate a port (and therefore IP)
-                # for the SVI interface on this node.
+                # Get the IP of the SVI port for this node on this network.
+                #
+                # REVISIT: The node identifier should be in device_id
+                # rather than name, but changing this would require a
+                # data migration.
                 filters = {'network_id': [network['id']],
                            'name': ['apic-svi-port:node-%s' % node]}
                 svi_ports = self.plugin.get_ports(plugin_context, filters)
@@ -4269,24 +4518,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     ip = svi_ports[0]['fixed_ips'][0]['ip_address']
                     primary_ips.append(ip + '/' + mask)
                 else:
-                    attrs = {'device_id': '',
-                             'device_owner': aim_cst.DEVICE_OWNER_SVI_PORT,
-                             'tenant_id': network['tenant_id'],
-                             'name': 'apic-svi-port:node-%s' % node,
-                             'network_id': network['id'],
-                             'mac_address': n_constants.ATTR_NOT_SPECIFIED,
-                             'fixed_ips': [{'subnet_id':
-                                            network['subnets'][0]}],
-                             'admin_state_up': False}
-                    port = self.plugin.create_port(plugin_context,
-                                                   {'port': attrs})
-                    if port and port['fixed_ips']:
-                        ip = port['fixed_ips'][0]['ip_address']
-                        primary_ips.append(ip + '/' + mask)
-                    else:
-                        LOG.error('cannot allocate a port for the SVI primary'
-                                  ' addr')
-                        return
+                    # No SVI port was found. This may mean
+                    # _ensure_svi_ips_for_static_ports could not
+                    # create one, possibly due to the subnet being
+                    # exhausted, which would result in a separate
+                    # warning being logged. It is also possible,
+                    # though very unlikely, that relevant AIM HostLink
+                    # state has changed since the call to
+                    # _ensure_svi_ips_for_static_ports that would have
+                    # allocated the SVI port. If this happens due to a
+                    # rapid series of topology RPCs, the port should
+                    # be found when processing the final RPC in the
+                    # series.
+                    LOG.warning("SVI port not found for node %(node)s on SVI "
+                                "network %(net)s",
+                                {'node': node, 'net': network['id']})
+                    return
 
             # We only need one interface profile, even if it's a VPC.
             secondary_ip = subnet['gateway_ip'] + '/' + mask
@@ -4985,14 +5232,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         port_id = port['id']
         path = encap = host = None
         if self._is_port_bound(port):
-            __, binding = n_db.get_locked_port_and_binding(plugin_context,
-                                                           port_id)
-            levels = n_db.get_binding_levels(plugin_context, port_id,
-                                             binding.host)
-            network = self.plugin.get_network(
-                plugin_context, port['network_id'])
-            port_context = ml2_context.PortContext(
-                self, plugin_context, port, network, binding, levels)
+            port_context = self.make_port_context(plugin_context, port_id)
             host = port_context.host
             segment = port_context.bottom_bound_segment
             static_ports = self._get_static_ports(plugin_context,
@@ -5050,8 +5290,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if not dom_mappings:
                 return None, None
 
-            port_context = self.plugin.get_bound_port_context(
-                plugin_context, port['id'], host_id)
+            port_context = self.make_port_context(plugin_context, port['id'])
             if self._use_static_path(port_context.bottom_bound_segment):
                 phys = [{'domain_name': x.domain_name,
                          'domain_type': x.domain_type}
@@ -5062,6 +5301,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     return phys[0]['domain_type'], phys[0]['domain_name']
             # We do not support the workflow on VMM Domains yet - WIP.
         return None, None
+
+    # Similar to ML2's get_bound_port_context, but does not try to
+    # bind port if unbound. Called internally and by GBP policy
+    # driver.
+    #
+    # REVISIT: Callers often only need the bottom bound segment and
+    # maybe the host, so consider a simpler alternative.
+    def make_port_context(self, plugin_context, port_id):
+        with db_api.context_manager.reader.using(plugin_context):
+            port_db = self.plugin._get_port(plugin_context, port_id)
+            port = self.plugin._make_port_dict(port_db)
+            network = self.plugin.get_network(
+                plugin_context, port_db.network_id)
+            host = port_db.port_binding.host if port_db.port_binding else None
+            levels = (n_db.get_binding_levels(plugin_context, port_id, host)
+                      if host else None)
+            return ml2_context.PortContext(
+                self.plugin, plugin_context, port, network,
+                port_db.port_binding, levels)
 
     def _add_network_mapping_and_notify(self, context, network_id, bd, epg,
                                         vrf):
@@ -5173,7 +5431,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if mgr.should_repair(
                     "legacy APIC driver SNAT port %s" % port_id, "Deleting"):
                 try:
-                    self.plugin.delete_port(mgr.actual_context, port_id)
+                    # REVISIT: Move outside of transaction.
+                    with gbp_utils.transaction_guard_disabled(
+                            mgr.actual_context):
+                        self.plugin.delete_port(mgr.actual_context, port_id)
                 except n_exceptions.NeutronException as exc:
                     mgr.validation_failed(
                         "deleting legacy APIC driver SNAT port %s failed "
@@ -5211,8 +5472,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             subnet['network_id'] = ext_net.id
                             subnet['name'] = 'SNAT host pool'
                             subnet[cisco_apic.SNAT_HOST_POOL] = True
-                            subnet = self.plugin.create_subnet(
-                                mgr.actual_context, {'subnet': subnet})
+                            # REVISIT: Move outside of transaction.
+                            with gbp_utils.transaction_guard_disabled(
+                                    mgr.actual_context):
+                                subnet = self.plugin.create_subnet(
+                                    mgr.actual_context, {'subnet': subnet})
                         except n_exceptions.NeutronException as exc:
                             mgr.validation_failed(
                                 "Migrating legacy APIC driver SNAT subnet %s "
@@ -5221,7 +5485,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     "legacy APIC driver SNAT subnet %s" % subnet_id,
                     "Deleting"):
                 try:
-                    self.plugin.delete_subnet(mgr.actual_context, subnet_id)
+                    # REVISIT: Move outside of transaction.
+                    with gbp_utils.transaction_guard_disabled(
+                            mgr.actual_context):
+                        self.plugin.delete_subnet(
+                            mgr.actual_context, subnet_id)
                 except n_exceptions.NeutronException as exc:
                     mgr.validation_failed(
                         "deleting legacy APIC driver SNAT subnet %s failed "
@@ -5237,7 +5505,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     "legacy APIC driver SNAT network %s" % net_id,
                     "Deleting"):
                 try:
-                    self.plugin.delete_network(mgr.actual_context, net_id)
+                    # REVISIT: Move outside of transaction.
+                    with gbp_utils.transaction_guard_disabled(
+                            mgr.actual_context):
+                        self.plugin.delete_network(mgr.actual_context, net_id)
                 except n_exceptions.NeutronException as exc:
                     mgr.validation_failed(
                         "deleting legacy APIC driver SNAT network %s failed "

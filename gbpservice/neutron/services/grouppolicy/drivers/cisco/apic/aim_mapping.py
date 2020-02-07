@@ -718,8 +718,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             # REVISIT: Add port extension to specify the EPG so the
             # mechanism driver can take care of domain association
             # itself.
-            port_context = self._core_plugin.get_bound_port_context(
-                        context._plugin_context, context.current['port_id'])
+            port_context = self.aim_mech_driver.make_port_context(
+                context._plugin_context, context.current['port_id'])
             self.aim_mech_driver.associate_domain(port_context)
 
     @log.log_method_call
@@ -748,9 +748,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if context.current.get('port_id'):
             # REVISIT: Add port extension to specify the EPG so the
             # mechanism driver can take care of domain association
-            # itself. Also, get_bound_port_context should not be
-            # called within a transaction.
-            port_context = self._core_plugin.get_bound_port_context(
+            # itself.
+            port_context = self.aim_mech_driver.make_port_context(
                 context._plugin_context, context.current['port_id'])
             self.aim_mech_driver.disassociate_domain(port_context)
 

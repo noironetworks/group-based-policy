@@ -1025,15 +1025,10 @@ class ApicRpcHandlerMixin(object):
             else:
                 # No existing SNAT IP for this external network on
                 # this host, so allocate one.
-                #
-                # REVISIT: Should this have a retry loop/decorator so
-                # that we don't have to retry the entire RPC handler
-                # if we get a retriable exception?
                 ctx = n_context.get_admin_context()
-                with db_api.context_manager.writer.using(ctx):
-                    snat_ip = self.get_or_allocate_snat_ip(
-                        ctx, host, {'id': ext_net.network_id,
-                                    'tenant_id': ext_net.project_id})
+                snat_ip = self.get_or_allocate_snat_ip(
+                    ctx, host, {'id': ext_net.network_id,
+                                'tenant_id': ext_net.project_id})
             if snat_ip:
                 snat_ip['ext_net_id'] = ext_net.network_id
                 snat_ip['external_segment_name'] = (

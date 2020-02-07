@@ -60,21 +60,28 @@ nlib_ctx.get_admin_context = new_get_admin_context
 from neutron.plugins.ml2 import ovo_rpc
 
 
-# The Neutron code is instrumented to warn whenever AFTER_CREATE/UPDATE event
-# notification handling is done within a transaction. With the combination of
-# GBP plugin and aim_mapping policy driver this is expected to happen all the
-# time. Hence we chose to suppress this warning. It can be turned on again by
-# setting the following to True.
-WARN_ON_SESSION_SEMANTIC_VIOLATION = False
+# The Neutron code is instrumented to warn whenever
+# AFTER_CREATE/UPDATE event notification handling is done within a
+# transaction. To prevent this warning from being triggered when
+# Neutron API methods are called within a transaction from the
+# validation tool, we monkey-patch Neutron to not enforce this session
+# semantic when GUARD_TRANSACTION is set to False on the context.
+#
+# REVISIT: Eliminate this monkey-patch when the validation tool no
+# longer calls Neutron REST API methods inside a transaction.
+
+orig_is_session_semantic_violated = (
+    ovo_rpc._ObjectChangeHandler._is_session_semantic_violated)
 
 
 def new_is_session_semantic_violated(self, context, resource, event):
-    return
+    if getattr(context, 'GUARD_TRANSACTION', True):
+        return orig_is_session_semantic_violated(
+            self, context, resource, event)
 
 
-if not WARN_ON_SESSION_SEMANTIC_VIOLATION:
-    setattr(ovo_rpc._ObjectChangeHandler, '_is_session_semantic_violated',
-            new_is_session_semantic_violated)
+setattr(ovo_rpc._ObjectChangeHandler, '_is_session_semantic_violated',
+        new_is_session_semantic_violated)
 
 
 from neutron_lib.callbacks import registry
@@ -254,8 +261,13 @@ from neutron.plugins.ml2 import models
 from sqlalchemy.orm import exc
 
 
-# REVISIT: This method gets decorated in Pike for removal in Queens. So this
-# patching might need to be changed in Pike and removed in Queens.
+# REVISIT: This method is patched here to remove calls to
+# with_lockmode('update') from the two queries it makes. It is no
+# longer used directly by any code in this repository, was no longer
+# called by upstream neutron runtime code in pike, and was completely
+# removed from upstream neutron in queens. The patch remains in case
+# it is needed in ocata and earlier, but should definitely be
+# eliminated from pike and later branches.
 def patched_get_locked_port_and_binding(context, port_id):
     """Get port and port binding records for update within transaction."""
     LOG.debug("Using patched_get_locked_port_and_binding")

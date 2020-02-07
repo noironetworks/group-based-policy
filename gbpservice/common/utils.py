@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import contextlib
 import sys
 
 from neutron_lib import context as n_context
@@ -22,6 +23,26 @@ from gbpservice._i18n import _
 
 LOG = logging.getLogger(__name__)
 cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
+
+
+# REVISIT: Avoid using this in new code, and remove it when no longer
+# needed. Neutron and GBP REST API methods should not be called from
+# within transactions.
+@contextlib.contextmanager
+def transaction_guard_disabled(context):
+    try:
+        context.GUARD_TRANSACTION = False
+        yield
+    finally:
+        context.GUARD_TRANSACTION = True
+
+
+def get_function_local_from_stack(function, local):
+    frame = sys._getframe()
+    while frame:
+        if frame.f_code.co_name == function:
+            return frame.f_locals.get(local)
+        frame = frame.f_back
 
 
 def get_obj_from_stack(cls):
