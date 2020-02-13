@@ -354,26 +354,31 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if update_ports:
             self._notify_port_update_bulk(self.admin_context, update_ports)
 
-    def _query_used_apic_router_ids(self, aim_ctx):
-        used_ids = netaddr.IPSet()
-        # Find the l3out_nodes created by us
-        aim_l3out_nodes = self.aim.find(
-            aim_ctx, aim_resource.L3OutNode,
-            node_profile_name=L3OUT_NODE_PROFILE_NAME,
-            monitored=False)
-        for aim_l3out_node in aim_l3out_nodes:
-            used_ids.add(aim_l3out_node.router_id)
-        return used_ids
+    def _allocate_apic_router_ids(self, aim_ctx,l3out, node_path):
+        aim_l3out = self.aim.find(
+            aim_ctx, aim_resource.L3Outside,
+            name=l3out.name
+            )
+        if not aim_l3out:
+            # This should never happen
+            LOG.error("Somehow the l3out %s did not exist", l3out.name )
+            raise exceptions.InternalError()
 
-    def _allocate_apic_router_ids(self, aim_ctx, node_path):
-        aim_l3out_nodes = self.aim.find(
-            aim_ctx, aim_resource.L3OutNode,
-            node_profile_name=L3OUT_NODE_PROFILE_NAME,
-            node_path=node_path)
-        for aim_l3out_node in aim_l3out_nodes:
-            if aim_l3out_node.router_id:
-                return aim_l3out_node.router_id
-        used_ids = self._query_used_apic_router_ids(aim_ctx)
+        all_l3outs_in_vrf = self.aim.find(
+            aim_ctx, aim_resource.L3Outside,
+            vrf_name=aim_l3out[0].vrf_name
+            )
+
+        used_ids = netaddr.IPSet()
+
+        for l3out in all_l3outs_in_vrf:
+            aim_l3out_nodes = self.aim.find(
+                aim_ctx, aim_resource.L3OutNode,
+                l3out_name=l3out.name)
+            for aim_l3out_node in aim_l3out_nodes:
+                if aim_l3out_node.node_path == node_path:
+                    return aim_l3out_node.router_id
+                used_ids.add(aim_l3out_node.router_id)
         available_ids = self.apic_router_id_subnet - used_ids
         for ip_address in available_ids:
             return str(ip_address)
