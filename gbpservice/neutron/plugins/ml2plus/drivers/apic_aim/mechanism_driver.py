@@ -2707,7 +2707,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _opflex_bind_port(self, context, segment, agent):
         network_type = segment[api.NETWORK_TYPE]
-        if self._is_opflex_type(network_type):
+        if (self._is_opflex_type(network_type) or
+            network_type == pconst.TYPE_VLAN):
             opflex_mappings = agent['configurations'].get('opflex_networks')
             LOG.debug("Checking segment: %(segment)s "
                       "for physical network: %(mappings)s ",
