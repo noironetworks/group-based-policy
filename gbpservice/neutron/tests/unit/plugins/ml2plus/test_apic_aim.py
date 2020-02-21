@@ -313,6 +313,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                 ['physnet1:1000:1099', 'physnet2:123:165',
                     'physnet3:347:513'], group='ml2_type_vlan')
         service_plugins = {
+            'TRUNK': 'neutron.services.trunk.plugin.TrunkPlugin',
             'L3_ROUTER_NAT':
             'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
 
@@ -361,6 +362,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                 self.plugin.__dict__['_aliases'].remove(
                         'dhcp_agent_scheduler')
         self._mock_aim_obj_eq_operator()
+        self.expected_binding_info = [('openvswitch', 'vlan')]
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
@@ -558,6 +560,61 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             self.assertFalse(plugin_context.session.is_active)
             return mock.DEFAULT
         return verify
+
+    def _check_binding(self, port_id, expected_binding_info=None,
+                       top_bound_physnet=None, bottom_bound_physnet=None):
+        port_context = self.plugin.get_bound_port_context(
+            n_context.get_admin_context(), port_id)
+        self.assertIsNotNone(port_context)
+        binding_info = [(bl['bound_driver'],
+                         bl['bound_segment']['network_type'])
+                        for bl in port_context.binding_levels]
+        self.assertEqual(expected_binding_info or self.expected_binding_info,
+                         binding_info)
+        if top_bound_physnet:
+            self.assertEqual(top_bound_physnet, port_context.
+                             top_bound_segment['physical_network'])
+        if bottom_bound_physnet:
+            self.assertEqual(bottom_bound_physnet, port_context.
+                             bottom_bound_segment['physical_network'])
+        if not (top_bound_physnet and bottom_bound_physnet):
+            self.assertEqual(port_context.
+                             top_bound_segment['physical_network'],
+                             port_context.
+                             bottom_bound_segment['physical_network'])
+        return port_context.bottom_bound_segment['segmentation_id']
+
+    def _check_no_dynamic_segment(self, network_id):
+        dyn_segments = segments_db.get_network_segments(
+            n_context.get_admin_context(), network_id,
+            filter_dynamic=True)
+        self.assertEqual(0, len(dyn_segments))
+
+    def _show_trunk(self, project_id, trunk_id):
+        req = self.new_show_request('trunks', trunk_id, self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def _make_trunk(self, project_id, port_id, name, subports=None):
+        subports = subports if subports else []
+        data = {'trunk': {'name': name,
+                          'port_id': port_id,
+                          'sub_ports': subports,
+                          'project_id': project_id}}
+        req = self.new_create_request('trunks', data, self.fmt)
+        return self.deserialize(self.fmt, req.get_response(self.api))
+
+    def _update_trunk(self, project_id, trunk_id, subports=None, remove=False):
+        if remove:
+            subports = [{'port_id': subport['port_id']}
+                        for subport in subports] if subports else []
+            action = 'remove_subports'
+        else:
+            subports = subports if subports else []
+            action = 'add_subports'
+        data = {'sub_ports': subports}
+        req = self.new_update_request('trunks', data, trunk_id, self.fmt,
+                                      subresource=action)
+        return self.deserialize(self.fmt, req.get_response(self.api))
 
 
 class TestRpcListeners(ApicAimTestCase):
@@ -4985,6 +5042,148 @@ class TestPortBinding(ApicAimTestCase):
         else:
             self.assertEqual(port[portbindings.VIF_TYPE],
                              portbindings.VIF_TYPE_BINDING_FAILED)
+
+    def test_baremetal_trunk_opflex(self):
+        self._test_baremetal_trunk()
+
+    def test_baremetal_trunk_vlan(self):
+        self._test_baremetal_trunk(network_type='vlan',
+                                   physical_network='physnet2')
+
+    def test_baremetal_trunk_opflex_with_subports(self):
+        self._test_baremetal_trunk(with_subports=True)
+
+    def test_baremetal_trunk_vlan_with_subports(self):
+        self._test_baremetal_trunk(with_subports=True,
+            network_type='vlan', physical_network='physnet2')
+
+    def test_baremetal_trunk_opflex_with_inherit_subports(self):
+        self._test_baremetal_trunk(with_subports=True, inherit=True)
+
+    def test_baremetal_trunk_vlan_with_inherit_subports(self):
+        self._test_baremetal_trunk(with_subports=True,
+            network_type='vlan', physical_network='physnet2', inherit=True)
+
+    def _test_baremetal_trunk(self, with_subports=False,
+            network_type='opflex', physical_network='physnet1', inherit=False):
+        arg_list = self.extension_attributes + ('provider:physical_network',)
+        kwargs = {'provider:network_type': network_type,
+                  'provider:physical_network': physical_network}
+        net1 = self._make_network(self.fmt, 'parent_net', True,
+                                  arg_list=arg_list, **kwargs)
+        self._make_subnet(self.fmt, net1, '10.0.1.1', '10.0.1.0/24')
+        parent_port = self._make_baremetal_port(net1['network']['tenant_id'],
+                                                net1['network']['id'])['port']
+        parent_port_id = parent_port['id']
+        subports = []
+        if network_type == 'vlan':
+            # The port should be bound to the VLAN type static segment
+            # if it was created with a VLAN type static segment.
+            physnet = physical_network
+        elif network_type == 'opflex':
+            # For binding to networks with only opflex type static segments,
+            # a dynamic VLAN segment is created using the physnet found in
+            # the binding:profile, assuming its a physnet that's configured
+            # in neutron.
+            physnet = 'physnet3'
+        if with_subports:
+            kwargs = {'provider:network_type': 'vlan',
+                      'provider:physical_network': physnet}
+            sb_net1 = self._make_network(self.fmt, 'subport_net1', True,
+                                         arg_list=arg_list, **kwargs)
+            self._make_subnet(self.fmt, sb_net1, '20.0.1.1', '20.0.1.0/24')
+            subport_net1_port = self._make_baremetal_port(
+                sb_net1['network']['tenant_id'],
+                sb_net1['network']['id'])['port']
+            subports = [{'port_id': subport_net1_port['id'],
+                         'segmentation_type': 'inherit' if inherit else
+                         sb_net1['network']['provider:network_type']}]
+            if not inherit:
+                subports[0]['segmentation_id'] = 134
+
+            sb_net2 = self._make_network(self.fmt, 'subport_net2', True,
+                                         arg_list=arg_list, **kwargs)
+            self._make_subnet(self.fmt, sb_net2, '20.0.1.1', '20.0.1.0/24')
+            subport_net2_port = self._make_baremetal_port(
+                sb_net2['network']['tenant_id'],
+                sb_net2['network']['id'])['port']
+
+        trunk = self._make_trunk(net1['network']['tenant_id'],
+                         parent_port_id, "t1", subports=subports)['trunk']
+        # Status is DOWN because it's not yet bound
+        self.assertEqual('DOWN', trunk['status'])
+        phys_str = "physical_network:%(net)s,physical_domain=%(dom)s" % {
+            'net': physnet, 'dom': 'physdom1'}
+        kwargs = {portbindings.PROFILE: {
+            'local_link_information': [
+                {"switch_info":
+                 "apic_dn:topology/pod-1/paths-501/pathep-[eth1/1]," +
+                 phys_str,
+                 "port_id": "Eth1/1", "switch_id": "00:c0:4a:21:23:24"}
+                 ]}}
+        parent_port = self._bind_port_to_host(parent_port_id, 'host1',
+                                              **kwargs)['port']
+        if network_type == 'opflex':
+            access_vlan = self._check_binding(parent_port['id'],
+                top_bound_physnet='physnet1',
+                bottom_bound_physnet='physnet3',
+                expected_binding_info=[(u'apic_aim', u'opflex'),
+                                       (u'apic_aim', u'vlan')])
+        else:
+            access_vlan = self._check_binding(parent_port['id'],
+                expected_binding_info=[(u'apic_aim', u'vlan')])
+            self.assertEqual(access_vlan,
+                             net1['network']['provider:segmentation_id'])
+        trunk = self._show_trunk(net1['network']['tenant_id'],
+                                 trunk['id'])['trunk']
+        self.assertEqual('ACTIVE', trunk['status'])
+        self.assertEqual(kwargs['binding:profile'],
+                         parent_port['binding:profile'])
+        self.assertEqual('host1', parent_port['binding:host_id'])
+        self.assertEqual({}, parent_port['binding:vif_details'])
+        self.assertEqual('other', parent_port['binding:vif_type'])
+
+        if with_subports:
+            expected_binding_info = [(u'apic_aim', u'vlan')]
+            self._check_binding(subport_net1_port['id'],
+                expected_binding_info=expected_binding_info)
+            # Check the subport binding
+            subport = self._show('ports', subport_net1_port['id'])['port']
+            self.assertEqual({}, subport['binding:profile'])
+            self.assertEqual({}, subport['binding:vif_details'])
+            self.assertEqual('other', subport['binding:vif_type'])
+            self.assertEqual('host1', subport['binding:host_id'])
+            # Check the other binding (not yet a subport)
+            subport = self._show('ports', subport_net2_port['id'])['port']
+            self.assertEqual('unbound', subport['binding:vif_type'])
+
+            # Test addition and deletion of subports to the
+            # trunk, and verify their port bindings
+            add_subports = [{'port_id': subport_net2_port['id'],
+                             'segmentation_type': 'inherit' if inherit else
+                            sb_net2['network']['provider:network_type']}]
+            if not inherit:
+                add_subports[0]['segmentation_id'] = 135
+            self._update_trunk(net1['network']['tenant_id'],
+                               trunk['id'], add_subports)
+            # Check the subport binding
+            subport = self._show('ports', subport_net2_port['id'])['port']
+            self.assertEqual({}, subport['binding:profile'])
+            self.assertEqual({}, subport['binding:vif_details'])
+            self.assertEqual('other', subport['binding:vif_type'])
+            self.assertEqual('host1', subport['binding:host_id'])
+            subports.extend(add_subports)
+            self._update_trunk(net1['network']['tenant_id'],
+                               trunk['id'], subports, remove=True)
+            for subport in (subport_net1_port, subport_net2_port):
+                subport = self._show('ports', subport['id'])['port']
+                self.assertEqual({}, subport['binding:profile'])
+                self.assertEqual({}, subport['binding:vif_details'])
+                self.assertEqual('unbound', subport['binding:vif_type'])
+                self.assertEqual('', subport['binding:host_id'])
+            trunk = self._show_trunk(net1['network']['tenant_id'],
+                                     trunk['id'])['trunk']
+            self.assertEqual('DOWN', trunk['status'])
     # TODO(rkukura): Add tests for opflex, local and unsupported
     # network_type values.
 
@@ -7242,8 +7441,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self._register_agent('h1', AGENT_CONF_OVS)
         self.aim_mgr.create(aim_ctx, self.hlink1)
 
-        self.expected_binding_info = [('openvswitch', 'vlan')]
-
     def _net_2_epg(self, network):
         if network['router:external']:
             epg = aim_resource.EndpointGroup.from_dn(
@@ -7255,35 +7452,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 app_profile_name=self._app_profile_name,
                 name=self.name_mapper.network(None, network['id']))
         return epg
-
-    def _check_binding(self, port_id, expected_binding_info=None,
-                       top_bound_physnet=None, bottom_bound_physnet=None):
-        port_context = self.plugin.get_bound_port_context(
-            n_context.get_admin_context(), port_id)
-        self.assertIsNotNone(port_context)
-        binding_info = [(bl['bound_driver'],
-                         bl['bound_segment']['network_type'])
-                        for bl in port_context.binding_levels]
-        self.assertEqual(expected_binding_info or self.expected_binding_info,
-                         binding_info)
-        if top_bound_physnet:
-            self.assertEqual(top_bound_physnet, port_context.
-                             top_bound_segment['physical_network'])
-        if bottom_bound_physnet:
-            self.assertEqual(bottom_bound_physnet, port_context.
-                             bottom_bound_segment['physical_network'])
-        if not (top_bound_physnet and bottom_bound_physnet):
-            self.assertEqual(port_context.
-                             top_bound_segment['physical_network'],
-                             port_context.
-                             bottom_bound_segment['physical_network'])
-        return port_context.bottom_bound_segment['segmentation_id']
-
-    def _check_no_dynamic_segment(self, network_id):
-        dyn_segments = segments_db.get_network_segments(
-            n_context.get_admin_context(), network_id,
-            filter_dynamic=True)
-        self.assertEqual(0, len(dyn_segments))
 
     def _do_test_port_lifecycle(self, external_net=False):
         mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
