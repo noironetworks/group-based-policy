@@ -52,8 +52,12 @@ from neutron.plugins.ml2 import driver_context as ml2_context
 from neutron.plugins.ml2.drivers.openvswitch.agent.common import (
     constants as a_const)
 from neutron.plugins.ml2 import models
+from neutron.services.trunk import constants as trunk_consts
+from neutron.services.trunk import exceptions as trunk_exc
 from neutron_lib.api.definitions import external_net
 from neutron_lib.api.definitions import portbindings
+from neutron_lib.api.definitions import trunk
+from neutron_lib.api.definitions import trunk_details
 from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib.callbacks import resources
@@ -227,6 +231,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.aim = aim_manager.AimManager()
         self._core_plugin = None
         self._l3_plugin = None
+        self._trunk_plugin = None
         self._gbp_plugin = None
         self._gbp_driver = None
         # Get APIC configuration and subscribe for changes
@@ -2569,6 +2574,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 context.bottom_bound_segment,
                 context.host
             )
+        elif (context.original_host != context.host) and (
+                self._is_baremetal_vnic_type(port) and
+                port.get(trunk_details.TRUNK_DETAILS)):
+            # For trunk parent ports, handle binding of any subports and
+            # setting the value of the trunk's status.
+            subport_ids = [sp['port_id'] for sp in
+                port[trunk_details.TRUNK_DETAILS][trunk.SUB_PORTS]]
+            owner = ('' if not port['binding:host_id']
+                     else trunk_consts.TRUNK_SUBPORT_OWNER)
+            self._update_trunk_status_and_subports(context._plugin_context,
+                port[trunk_details.TRUNK_DETAILS]['trunk_id'],
+                port[portbindings.HOST_ID], subport_ids, owner)
 
         self._send_postcommit_notifications(context._plugin_context)
 
@@ -2987,15 +3004,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         Support binding baremetal VNIC types to networks that have
         an opflex type static segment, or networks with vlan segments.
         For vlan type segments, these can be static segments or dynamically
-        created segments from HPB. The topology information for the port
-        should contain the physical_network that the baremetal VNIC is
-        connected to. This is used to match the segment when binding
+        created segments from HPB. Trunk parent ports are handled like
+        normal baremetal VNICs, but subports need to get their topology
+        information from the trunk parent port. The topology information
+        for the port should contain the physical_network that the baremetal
+        VNIC is connected to. This is used to match the segment when binding
         the port to vlan type segments, and as the physical_network
         when creating dynamic vlan type segments for HPB.
         """
         if not self._is_baremetal_port_bindable(context):
             return False
-        _, _, physnet, _ = self._get_baremetal_topology(context.current)
+        _, _, physnet, _ = self._get_baremetal_topology(
+             context._plugin_context, context.current)
         # First attempt binding vlan type segments, in order to avoid
         # dynamically allocating vlan segments if they're not needed.
         for seg in context.segments_to_bind:
@@ -3119,6 +3139,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not self._l3_plugin:
             self._l3_plugin = directory.get_plugin(n_constants.L3)
         return self._l3_plugin
+
+    @property
+    def trunk_plugin(self):
+        if not self._trunk_plugin:
+            self._trunk_plugin = directory.get_plugin('trunk')
+        return self._trunk_plugin
 
     @property
     def dvs_notifier(self):
@@ -4657,9 +4683,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return []
         if port_context and self._is_baremetal_vnic_type(port_context.current):
             # Check if there's any topology information available
-            topology = self._get_baremetal_topology(port_context.current)
+            topology = self._get_baremetal_topology(plugin_context,
+                                                    port_context.current)
             if not any(topology):
-                topology = self._get_baremetal_topology(port_context.original)
+                topology = self._get_baremetal_topology(plugin_context,
+                                                        port_context.original)
                 if not any(topology):
                     LOG.warning("Invalid topology: port %(port)s does not "
                                 "contain required topology information in the "
@@ -4685,22 +4713,115 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     self._filter_host_links_by_segment(session,
                                                        segment, host_links)]
 
+    def _get_parent_port_for_subport(self, plugin_context, subport_id):
+        subport_db = self.plugin._get_port(plugin_context, subport_id)
+        if hasattr(subport_db.sub_port, 'trunk_id'):
+            trunk = self.trunk_plugin.get_trunk(plugin_context,
+                                                subport_db.sub_port.trunk_id)
+            return self.plugin.get_port(plugin_context, trunk['port_id'])
+
+    @db_api.retry_if_session_inactive()
+    def _safe_update_trunk_status(self, context, trunk_id, status):
+        self.trunk_plugin.update_trunk(context, trunk_id,
+                                       {'trunk': {'status': status}})
+
+    def _handle_subport_binding(self, context, port_id,
+                                trunk_id, host_id, owner):
+        """Bind the given trunk subport to the given host.
+
+           :param context: The context to use for the operation
+           :param port_id: The UUID of the port to be bound
+           :param trunk_id: The trunk ID that the given port belongs to
+           :param host_id: The host to bind the given port to
+           :param owner: The value for the device_owner of the port
+        """
+        port = self.plugin.update_port(
+            context, port_id,
+            {'port': {portbindings.HOST_ID: host_id,
+                      'device_owner': owner}})
+        vif_type = port.get(portbindings.VIF_TYPE)
+        if vif_type == portbindings.VIF_TYPE_BINDING_FAILED:
+            raise trunk_exc.SubPortBindingError(port_id=port_id,
+                                                trunk_id=trunk_id)
+        return port
+
+    # Set up listener for adding or removing subports from a trunk.
+    @registry.receives(trunk_consts.SUBPORTS,
+                       [events.AFTER_CREATE, events.AFTER_DELETE])
+    def _after_subport_event(self, resource, event, trunk_plugin, payload):
+        context = payload.context
+        subports = payload.subports
+        if event == events.AFTER_DELETE:
+            host_id = ''
+            owner = ''
+        else:
+            parent_port = self._get_parent_port_for_subport(
+                context, subports[0].port_id)
+            host_id = parent_port['binding:host_id']
+            owner = trunk_consts.TRUNK_SUBPORT_OWNER
+        subport_ids = [subport.port_id for subport in subports]
+        self._update_trunk_status_and_subports(context, payload.trunk_id,
+                                               host_id, subport_ids, owner)
+
+    def _update_trunk_status_and_subports(self, context, trunk_id,
+                                          trunk_host, subport_ids, owner):
+        # Set to BUILD status to indicate there's a change.
+        self._safe_update_trunk_status(
+            context, trunk_id, trunk_consts.BUILD_STATUS)
+        updated_ports = []
+        for subport_id in subport_ids:
+            try:
+                updated_port = self._handle_subport_binding(
+                    context, subport_id,
+                    trunk_id, trunk_host, owner)
+                updated_ports.append(updated_port)
+            except trunk_exc.SubPortBindingError as e:
+                LOG.error("Failed to bind subport: %s", e)
+
+                # NOTE(status_police) The subport binding has failed in a
+                # manner in which we cannot proceed and the user must take
+                # action to bring the trunk back to a sane state.
+                self._safe_update_trunk_status(
+                    context, trunk_id, trunk_consts.ERROR_STATUS)
+                return []
+            except Exception as e:
+                msg = ("Failed to bind subport port %(port)s on trunk "
+                       "%(trunk)s: %(exc)s")
+                LOG.error(msg, {'port': subport_id,
+                                'trunk': trunk_id, 'exc': e})
+
+        if len(subport_ids) != len(updated_ports):
+            status = trunk_consts.DEGRADED_STATUS
+        elif not trunk_host:
+            status = trunk_consts.DOWN_STATUS
+        else:
+            status = trunk_consts.ACTIVE_STATUS
+        self._safe_update_trunk_status(context, trunk_id, status)
+
     def _is_baremetal_port_bindable(self, port_context):
         """Verify that a port is a valid baremetal port.
 
         :param port_context : Port context instance
         :returns: True if bindable baremetal vnic, False otherwise
 
-        The binding is valid for a baremetal port which has valid topology
-        information in the local_link_information list contained inside the
-        binding:profile.
+        There are several valid bindings:
+        1) regular baremetal port, which should have valid topology information
+           in the local_link_information list contained inside the
+           binding:profile.
+        2) trunk baremetal parent port, which should have valid topology
+           information in the local_link_information list contained inside
+           the binding:profile.
+        3) trunk baremetal subport, which doesn't have local_link_information,
+           but whose parent port does have local_link_information, and contains
+           valid topology information.
         """
         if self._is_baremetal_vnic_type(port_context.current):
-            if any(self._get_baremetal_topology(port_context.current)):
+            if any(self._get_baremetal_topology(port_context._plugin_context,
+                                                port_context.current)):
                 return True
         return False
 
-    def _get_baremetal_topology(self, port):
+    def _get_baremetal_topology(self, plugin_context, port):
         """Return topology information for a port of vnic_type baremetal.
 
         :param port : Port instance
@@ -4731,12 +4852,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         If the topology information is invalid, a tuple of None values
         is  returned instead.
         """
-        # REVISIT: Add checks for trunk parent and sub-ports.
+        if port['device_owner'] == trunk_consts.TRUNK_SUBPORT_OWNER:
+            topology_port = self._get_parent_port_for_subport(
+                plugin_context, port['id'])
+            if not topology_port:
+                return (None, None, None, None)
+        else:
+            topology_port = port
         interfaces = []
         static_path = None
         physical_domain = None
         physical_network = None
-        lli_list = port.get(portbindings.PROFILE, {}).get(LL_INFO, [])
+        lli_list = topology_port.get(portbindings.PROFILE, {}).get(LL_INFO, [])
         for lli_idx in range(len(lli_list)):
             # 2 entries is VPC, one is single link. Others are
             # invalid.
@@ -4744,7 +4871,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 LOG.error("Invalid topology: port %(port)s has more than "
                           "two elements in the binding:profile's "
                           "local_link_information array.",
-                          {'port': port['id']})
+                          {'port': topology_port['id']})
                 return (None, None, None, None)
             lli = lli_list[lli_idx]
             mac = lli.get('switch_id')
@@ -4767,7 +4894,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                               "elements [apic_dn's: %(dn1)s:%(dn2)s]. The "
                               "switch_info field must be identical for all "
                               "ports used within a portgroup for a baremetal "
-                              "VNIC.", {'port': port['id'],
+                              "VNIC.", {'port': topology_port['id'],
                                'dn1': static_path, 'dn2': dn})
                     return (None, None, None, None)
                 static_path = dn
@@ -4784,7 +4911,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                               "The switch_info field must be identical for "
                               "all ports used within a portgroup for a "
                               "baremetal VNIC.",
-                              {'port': port['id'], 'pn1': physical_network,
+                              {'port': topology_port['id'],
+                               'pn1': physical_network,
                                'pn2': physnet})
                     return (None, None, None, None)
                 physical_network = physnet
@@ -4799,8 +4927,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                               "The switch_info field must be identical for "
                               "all ports used within a portgroup for a "
                               "baremetal VNIC.",
-                              {'port': port['id'], 'pd1': physical_domain,
-                              'pn2': pd})
+                              {'port': topology_port['id'],
+                               'pd1': physical_domain,
+                               'pn2': pd})
                     return (None, None, None, None)
                 physical_domain = pd
 
@@ -4960,7 +5089,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # disambiguate interfaces on the same host through matching
                 # by PhysDom.
                 if self._is_baremetal_vnic_type(port):
-                    _, _, _, physdom = self._get_baremetal_topology(port)
+                    _, _, _, physdom = self._get_baremetal_topology(
+                        port_context._plugin_context, port)
                     if physdom:
                         aim_hd_mappings = [aim_infra.HostDomainMappingV2(
                                 domain_type='PhysDom', domain_name=physdom,
@@ -5017,7 +5147,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # disambiguate interfaces on the same host through matching
             # by PhysDom.
             if self._is_baremetal_vnic_type(port):
-                _, _, _, physdom = self._get_baremetal_topology(port)
+                _, _, _, physdom = self._get_baremetal_topology(
+                    port_context._plugin_context, port)
                 if physdom:
                     aim_hd_mappings = [aim_infra.HostDomainMappingV2(
                             domain_type='PhysDom', domain_name=physdom,
