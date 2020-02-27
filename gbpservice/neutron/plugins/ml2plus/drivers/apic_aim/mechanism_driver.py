@@ -264,6 +264,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         "faults and loss of connectivity, so please eliminate "
                         "any existing overlap and set this option to False "
                         "(the default) as soon as possible.")
+        self.use_nested_domain_params_for_openshift_network = (
+            cfg.CONF.ml2_apic_aim.
+            use_nested_domain_params_for_openshift_network)
         self._setup_nova_vm_update()
         local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         self._ensure_static_resources()
