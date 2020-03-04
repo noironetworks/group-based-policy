@@ -5776,7 +5776,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         ip_owner_info = {'port': p_active_aap['id'],
                          'ip_address_v4': owned_addr_active_aap[0],
                          'network_id': p_active_aap['network_id']}
-        self.mech_driver.update_ip_owner(ip_owner_info)
+        self.driver.update_ip_owner(ip_owner_info)
         details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p_active_aap['id'],
             host='h1')
