@@ -7524,6 +7524,11 @@ class TestPortVlanNetwork(ApicAimTestCase):
     def test_pre_existing_l3out_svi_bgp(self):
         aim_ctx = aim_context.AimContext(self.db_session)
 
+        myl3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
+        self.aim_mgr.create(aim_ctx, myl3out)
+        myl3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l2')
+        self.aim_mgr.create(aim_ctx, myl3out)
+
         net1 = self._make_network(
             self.fmt, 'net1', True,
             arg_list=self.extension_attributes,
