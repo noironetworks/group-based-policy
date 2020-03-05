@@ -357,31 +357,79 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if update_ports:
             self._notify_port_update_bulk(self.admin_context, update_ports)
 
-    def _query_used_apic_router_ids(self, aim_ctx):
-        used_ids = netaddr.IPSet()
-        # Find the l3out_nodes created by us
-        aim_l3out_nodes = self.aim.find(
-            aim_ctx, aim_resource.L3OutNode,
-            node_profile_name=L3OUT_NODE_PROFILE_NAME,
-            monitored=False)
+    def _allocate_apic_router_ids(self, aim_ctx, l3_out, node_path):
+        aim_l3out_nodes = self._get_nodes_for_l3out_vrf(aim_ctx, l3_out)
         for aim_l3out_node in aim_l3out_nodes:
-            used_ids.add(aim_l3out_node.router_id)
-        return used_ids
-
-    def _allocate_apic_router_ids(self, aim_ctx, node_path):
-        aim_l3out_nodes = self.aim.find(
-            aim_ctx, aim_resource.L3OutNode,
-            node_profile_name=L3OUT_NODE_PROFILE_NAME,
-            node_path=node_path)
-        for aim_l3out_node in aim_l3out_nodes:
-            if aim_l3out_node.router_id:
+            if aim_l3out_node.node_path == node_path and (
+                   aim_l3out_node.router_id):
                 return aim_l3out_node.router_id
-        used_ids = self._query_used_apic_router_ids(aim_ctx)
+        used_ids = netaddr.IPSet([n.router_id for n in aim_l3out_nodes])
         available_ids = self.apic_router_id_subnet - used_ids
         for ip_address in available_ids:
             return str(ip_address)
         raise exceptions.ExhaustedApicRouterIdPool(
             pool=self.apic_router_id_pool)
+
+    def _get_nodes_for_l3out_vrf(self, aim_ctx, l3_out):
+        # First get the L3 out, as that has the VRF name.
+        aim_l3out = self.aim.get(aim_ctx, l3_out)
+        l3outs_in_vrf = self._get_l3outs_in_vrf_for_l3out(aim_ctx, aim_l3out)
+
+        # Build the list of node profiles in this VRF by iterating
+        # through the l3outs.
+        aim_l3out_nodes = []
+        for l3out in l3outs_in_vrf:
+            l3out_nodes = self.aim.find(
+                aim_ctx, aim_resource.L3OutNode,
+                tenant_name=l3out.tenant_name,
+                l3out_name=l3out.name)
+            if l3out_nodes:
+                aim_l3out_nodes.extend(l3out_nodes)
+        return aim_l3out_nodes
+
+    def _get_l3outs_in_vrf_for_l3out(self, aim_ctx, aim_l3out):
+        # We need to find the VRF for this L3 out, since
+        # we only have the VRF name. It's either in the same
+        # ACI tenant, or it's in the common tenant. We have
+        # to prioritize the non-common tenant case first,
+        # since that's how APIC resolves VRF references.
+        vrf = self.aim.get(aim_ctx, aim_resource.VRF(
+                               tenant_name=aim_l3out.tenant_name,
+                               name=aim_l3out.vrf_name))
+        if (not vrf and
+            aim_l3out.tenant_name != COMMON_TENANT_NAME):
+            vrf = self.aim.get(aim_ctx, aim_resource.VRF(
+                                   tenant_name=COMMON_TENANT_NAME,
+                                   name=aim_l3out.vrf_name))
+        if not vrf:
+            return []
+        if vrf.tenant_name == 'common':
+            # L3outs in all tenants are candidates - locate all L3outs whose
+            # vrf_name matches vrf.name, and exclude those that have a
+            # local VRF aliasing the given VRF, since APIC will resolve
+            # those L3 outs to the tenant-local VRF first.
+            all_l3outs = self.aim.find(aim_ctx, aim_resource.L3Outside,
+                                       vrf_name=vrf.name)
+            l3out_tenants = set([l3out.tenant_name for l3out in all_l3outs])
+            l3out_tenants = [t for t in l3out_tenants
+                             if t == COMMON_TENANT_NAME or
+                             not self.aim.get(
+                                 aim_ctx, aim_resource.VRF(tenant_name=t,
+                                                           name=vrf.name))]
+            return [l3out for l3out in all_l3outs
+                    if l3out.tenant_name in l3out_tenants]
+        else:
+            # VRF and L3out are visible only to L3out's tenant.
+            return self.aim.find(aim_ctx, aim_resource.L3Outside,
+                                 tenant_name=aim_l3out.tenant_name,
+                                 vrf_name=vrf.name)
+        # Other combinations of L3Out and VRF are not valid
+        # configurations and can be excluded:
+        # 1. L3out in common, VRF not in common: VRF is not
+        #    visible to L3out.
+        # 2. L3Out and VRF are in different non-common tenants:
+        #    VRF is not visible to L3out.
+        return []
 
     @db_api.retry_db_errors
     def _ensure_static_resources(self):
@@ -4266,6 +4314,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # REVISIT: We should check to see if this node is
                 # already present under the node profile.
                 apic_router_id = self._allocate_apic_router_ids(aim_ctx,
+                                                                l3out,
                                                                 node_path)
                 aim_l3out_node = aim_resource.L3OutNode(
                     tenant_name=l3out.tenant_name, l3out_name=l3out.name,
