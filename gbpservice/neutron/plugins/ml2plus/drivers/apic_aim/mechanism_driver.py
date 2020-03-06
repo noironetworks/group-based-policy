@@ -2921,14 +2921,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _opflex_bind_port(self, context, segment, agent):
         network_type = segment[api.NETWORK_TYPE]
-        if (self._is_opflex_type(network_type) or
-            network_type == n_constants.TYPE_VLAN):
+        if self._is_opflex_type(network_type):
             opflex_mappings = agent['configurations'].get('opflex_networks')
             LOG.debug("Checking segment: %(segment)s "
                       "for physical network: %(mappings)s ",
                       {'segment': segment, 'mappings': opflex_mappings})
             if (opflex_mappings is not None and
                 segment[api.PHYSICAL_NETWORK] not in opflex_mappings):
+                return False
+        elif network_type == n_constants.TYPE_VLAN:
+            vlan_mappings = agent['configurations'].get('vlan_networks')
+            LOG.debug("Checking segment: %(segment)s "
+                      "for physical network: %(mappings)s ",
+                      {'segment': segment, 'mappings': vlan_mappings})
+            if (vlan_mappings is not None and
+                segment[api.PHYSICAL_NETWORK] not in vlan_mappings):
                 return False
         elif network_type != 'local':
             return False
