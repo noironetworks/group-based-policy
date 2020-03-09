@@ -8965,6 +8965,12 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             self.assertEqual(set(['ph1', 'ph2']),
                              set(self._doms(epg1.physical_domains,
                                             with_type=False)))
+            # Unbind the port and verify that the right static path is removed
+            kwargs = {portbindings.PROFILE: {}}
+            self._bind_port_to_host(p1['id'], None, **kwargs)['port']
+            epg1 = self.aim_mgr.get(aim_ctx, epg1)
+            self.assertNotIn(static_path_1, epg1.static_paths)
+            self.assertIn(static_path_2, epg1.static_paths)
 
     def test_no_host_domain_mappings(self):
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -9372,8 +9378,8 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
 
         def validate_static_path_and_doms(aim_ctx, is_svi, net, kv_dict,
                                           physical_domain, vlan, delete=False):
-            static_path = {'path': kv_dict['apic_dn'],
-                           'encap': 'vlan-%s' % vlan, 'mode': 'untagged'}
+            static_path = [{'path': kv_dict['apic_dn'],
+                            'encap': 'vlan-%s' % vlan, 'mode': 'untagged'}]
             if is_svi:
                 ext_net = aim_resource.ExternalNetwork.from_dn(
                     net[DN]['ExternalNetwork'])
@@ -9390,7 +9396,7 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
                         l3out_name=ext_net.l3out_name,
                         node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
                         interface_profile_name=md.L3OUT_IF_PROFILE_NAME,
-                        interface_path=static_path['path'])
+                        interface_path=static_path[0]['path'])
                     l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
                     if delete:
                         self.assertIsNone(l3out_if)
@@ -9401,15 +9407,16 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
             else:
                 epg = self._net_2_epg(net)
                 epg = self.aim_mgr.get(aim_ctx, epg)
+                # REVISIT: It looks like dissociating PhysDoms when using
+                # the default mapping fails (likely not specific to baremetal
+                # VNICs).
+                doms = [physical_domain]
                 if delete:
-                    doms = []
-                else:
-                    doms = [physical_domain]
+                    static_path = []
+                self.assertEqual(static_path, epg.static_paths)
                 self.assertEqual(set(doms),
                                  set(self._doms(epg.physical_domains,
                                                 with_type=False)))
-
-                self.assertEqual([static_path], epg.static_paths)
 
         if net_type == 'vlan':
             expected_binding_info = [('apic_aim', 'vlan')]
@@ -9459,21 +9466,23 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
             self.assertNotEqual(vlan_p1, vlan_p2)
             validate_static_path_and_doms(aim_ctx, is_svi, net2, kv_dict_2,
                                           physical_domain, vlan_p2)
+            # Verify port and EPG after unbinding
+            kwargs = {portbindings.PROFILE: {}}
+            p2 = self._bind_port_to_host(p2['id'], None, **kwargs)['port']
+            validate_static_path_and_doms(aim_ctx, is_svi, net2, kv_dict_2,
+                                          physical_domain, vlan_p2,
+                                          delete=True)
 
         self._delete('ports', p2['id'])
         self._check_no_dynamic_segment(net2['id'])
         validate_static_path_and_doms(aim_ctx, is_svi, net1, kv_dict_1,
                                       physical_domain, vlan_p1)
-        # REVISIT: It looks like dissociation PhysDoms when using
-        # the default mapping fails (likely not specific to baremetal VNICs)
-        #validate_static_path_and_doms(aim_ctx, is_svi, net2, kv_dict_2,
-        #                              physical_domain, vlan_p2, delete=True)
+        validate_static_path_and_doms(aim_ctx, is_svi, net2, kv_dict_2,
+                                      physical_domain, vlan_p2, delete=True)
         self._delete('ports', p1['id'])
         self._check_no_dynamic_segment(net1['id'])
-        # REVISIT: It looks like dissociation PhysDoms when using
-        # the default mapping fails (likely not specific to baremetal VNICs)
-        #validate_static_path_and_doms(aim_ctx, is_svi, net1, kv_dict_1,
-        #                              physical_domain, vlan_p1, delete=True)
+        validate_static_path_and_doms(aim_ctx, is_svi, net1, kv_dict_1,
+                                      physical_domain, vlan_p1, delete=True)
 
 
 class TestOpflexRpc(ApicAimTestCase):
