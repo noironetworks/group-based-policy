@@ -2807,7 +2807,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         the port to vlan type segments, and as the physical_network
         when creating dynamic vlan type segments for HPB.
         """
-        if not self._is_baremetal_port_bindable(context.current):
+        if not self._is_baremetal_port_bindable(context):
             return False
         _, _, physnet, _ = self._get_baremetal_topology(context.current)
         # First attempt binding vlan type segments, in order to avoid
@@ -4345,13 +4345,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                   epg, epg.static_paths)
         self.aim.update(aim_ctx, epg, static_paths=epg.static_paths)
 
-    def _get_static_ports(self, plugin_context, host, segment, port=None):
+    def _get_static_ports(self, plugin_context, host, segment,
+                          port_context=None):
         """Get StaticPort objects for ACI.
 
         :param plugin_context : plugin context
         :param host : host ID for the static port
         :param segment : bound segment of this host
-        :param port : port instance
+        :param port_context : port context instance
         :returns: List of zero or more static port objects
 
         This method should be called when a neutron port requires
@@ -4369,14 +4370,23 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         encap = self._segment_to_vlan_encap(segment)
         if not encap:
             return []
-        if port and self._is_baremetal_vnic_type(port) and (
-                self._is_baremetal_port_bindable(port)):
+        if port_context and self._is_baremetal_vnic_type(port_context.current):
+            # Check if there's any topology information available
+            topology = self._get_baremetal_topology(port_context.current)
+            if not any(topology):
+                topology = self._get_baremetal_topology(port_context.original)
+                if not any(topology):
+                    LOG.warning("Invalid topology: port %(port)s does not "
+                                "contain required topology information in the "
+                                "binding:profile's local_link_information "
+                                "array.", {'port': port_context.current['id']})
+                    return []
             # The local_link_information should be populated, and
             # will have the static path.
-            sp, ifs, pn, pd = self._get_baremetal_topology(port)
+            static_path, _, _, _ = topology
 
             hlink = aim_infra.HostLink(host_name='',
-                                       interface_name='', path=sp)
+                                       interface_name='', path=static_path)
             return [StaticPort(hlink, encap, 'untagged')]
         else:
             # If it's not baremetal, return qualifying entries from the
@@ -4390,18 +4400,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     self._filter_host_links_by_segment(session,
                                                        segment, host_links)]
 
-    def _is_baremetal_port_bindable(self, port):
+    def _is_baremetal_port_bindable(self, port_context):
         """Verify that a port is a valid baremetal port.
 
-        :param port : Port instance
+        :param port_context : Port context instance
         :returns: True if bindable baremetal vnic, False otherwise
 
         The binding is valid for a baremetal port which has valid topology
         information in the local_link_information list contained inside the
         binding:profile.
         """
-        if self._is_baremetal_vnic_type(port):
-            if any(self._get_baremetal_topology(port)):
+        if self._is_baremetal_vnic_type(port_context.current):
+            if any(self._get_baremetal_topology(port_context.current)):
                 return True
         return False
 
@@ -4511,10 +4521,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # We at least need the static path and physical_network
         if not static_path or not physical_network:
-            LOG.warning("Invalid topology: port %(port)s does not contain "
-                        "required topology information in the "
-                        "binding:profile's local_link_information array.",
-                        {'port': port['id']})
             return (None, None, None, None)
 
         return (static_path, interfaces, physical_network, physical_domain)
@@ -4548,7 +4554,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         static_ports = self._get_static_ports(port_context._plugin_context,
                                               host, segment,
-                                              port=port_context.current)
+                                              port_context=port_context)
         for static_port in static_ports:
             if self._is_svi(port_context.network.current):
                 l3out, _, _ = self._get_aim_external_objects(
