@@ -13,7 +13,6 @@
 from neutron_lib.plugins import directory
 from oslo_log import helpers as log
 
-from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     implicit_policy as ipd)
@@ -35,7 +34,6 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
         self._cached_agent_notifier = None
         self._gbp_plugin = None
         super(CommonNeutronBase, self).initialize()
-        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
 
     @property
     def gbp_plugin(self):

@@ -32,7 +32,6 @@ import sqlalchemy as sa
 
 from gbpservice._i18n import _
 from gbpservice.common import utils
-from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.servicechain.plugins.ncp import (
     exceptions as exc)
@@ -68,7 +67,6 @@ LOG = logging.getLogger(__name__)
 # REVISIT: L2 insertion not supported
 GATEWAY_PLUMBER_TYPE = [pconst.FIREWALL, pconst.VPN]
 nfp_context_store = threading.local()
-local_api.BATCH_NOTIFICATIONS = True
 
 
 class InvalidServiceType(exc.NodeCompositionPluginBadRequest):
@@ -476,16 +474,6 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
             NFPContext.clear_nfp_context(context.instance['id'])
             raise e
 
-    def _queue_notification(self, context, method, args):
-        LOG.debug("Queuing notification, notifier_method: %s "
-                  "arguments: %s" % (method, args))
-        txn = local_api.get_outer_transaction(
-                  context.plugin_context.session.transaction)
-        local_api.send_or_queue_notification(
-                  context.plugin_context.session,
-                  txn, self.nfp_notifier,
-                  method, args)
-
     def create(self, context):
         try:
             context._plugin_context = self._get_resource_owner_context(
@@ -640,10 +628,8 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                 self._update_node_instance_network_function_map(
                     context, updated_network_function_map)
                 network_function_id = network_function_map.network_function_id
-                self._queue_notification(
-                        context, 'policy_target_added_notification',
-                        [context.plugin_context, network_function_id,
-                         policy_target])
+                self.nfp_notifier.policy_target_added_notification(
+                    context.plugin_context, network_function_id, policy_target)
 
     def update_policy_target_removed(self, context, policy_target):
         if context.current_profile['service_type'] == pconst.LOADBALANCERV2:
@@ -664,10 +650,8 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                 self._update_node_instance_network_function_map(
                     context, updated_network_function_map)
                 network_function_id = network_function_map.network_function_id
-                self._queue_notification(
-                        context, 'policy_target_removed_notification',
-                        [context.plugin_context, network_function_id,
-                         policy_target])
+                self.nfp_notifier.policy_target_removed_notification(
+                    context.plugin_context, network_function_id, policy_target)
 
     def notify_chain_parameters_updated(self, context):
         pass  # We are not using the classifier specified in redirect Rule
@@ -694,10 +678,9 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                 self._update_node_instance_network_function_map(context,
                         updated_network_function_map)
                 network_function_id = network_function_map.network_function_id
-                self._queue_notification(
-                        context, 'consumer_ptg_added_notification',
-                        [context.plugin_context, network_function_id,
-                         policy_target_group])
+                self.nfp_notifier.consumer_ptg_added_notification(
+                    context.plugin_context, network_function_id,
+                    policy_target_group)
 
     def update_node_consumer_ptg_removed(self, context, policy_target_group):
         # When a group is created which is both consumer and provider.
@@ -720,10 +703,9 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                 self._update_node_instance_network_function_map(
                     context, updated_network_function_map)
                 network_function_id = network_function_map.network_function_id
-                self._queue_notification(
-                        context, 'consumer_ptg_removed_notification',
-                        [context.plugin_context, network_function_id,
-                         policy_target_group])
+                self.nfp_notifier.consumer_ptg_removed_notification(
+                    context.plugin_context, network_function_id,
+                    policy_target_group)
 
     def policy_target_group_updated(self, context, old_ptg, current_ptg):
         if not (old_ptg and current_ptg):
@@ -882,10 +864,9 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                     'status_details': 'node driver processing node update'}
                 self._update_node_instance_network_function_map(
                     context, updated_network_function_map)
-                self._queue_notification(context, 'update_network_function',
-                                         [context.plugin_context,
-                                          network_function_id,
-                                          context.current_node['config']])
+                self.nfp_notifier.update_network_function(
+                    context.plugin_context, network_function_id,
+                    context.current_node['config'])
             except Exception:
                 LOG.exception("Update Network service Failed for "
                               "network function: %(nf_id)s",
@@ -1226,8 +1207,8 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                  "%(service_profile)s",
                  {'tenant_id': nfp_create_nf_data['tenant_id'],
                   'service_profile': nfp_create_nf_data['service_profile']})
-        self._queue_notification(context, 'create_network_function',
-                                 [context.plugin_context, nfp_create_nf_data])
+        self.nfp_notifier.create_network_function(
+            context.plugin_context, nfp_create_nf_data)
 
     def _delete_network_function(self, context, network_function_id):
         nfp_delete_nf_data = self._get_nfp_network_function(context)
@@ -1241,9 +1222,8 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                  "%(service_profile)s",
                  {'tenant_id': nfp_delete_nf_data['tenant_id'],
                   'service_profile': nfp_delete_nf_data['service_profile']})
-        self._queue_notification(context, 'delete_network_function',
-            [context.plugin_context, network_function_id,
-             nfp_delete_nf_data])
+        self.nfp_notifier.delete_network_function(
+            context.plugin_context, network_function_id, nfp_delete_nf_data)
 
     def _detach_port_from_pts(self, context, policy_targets):
         '''

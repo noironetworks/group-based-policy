@@ -33,7 +33,6 @@ from oslo_utils import excutils
 
 from gbpservice._i18n import _
 from gbpservice.common import utils as gbp_utils
-from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import cisco_apic
@@ -140,7 +139,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self.create_per_l3p_implicit_contracts = (
                 cfg.CONF.aim_mapping.create_per_l3p_implicit_contracts)
         self.advertise_mtu = cfg.CONF.aim_mapping.advertise_mtu
-        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
         if self.create_per_l3p_implicit_contracts:
             LOG.info('Implicit AIM contracts will be created '
                      'for l3_policies which do not have them.')

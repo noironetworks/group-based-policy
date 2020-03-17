@@ -35,7 +35,6 @@ import unittest2
 import webob.exc
 
 from gbpservice.common import utils
-from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db import servicechain_db
 from gbpservice.neutron.services.grouppolicy import (
@@ -112,7 +111,6 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self._l3_plugin = directory.get_plugin(cst.L3)
         self.saved_keystone_client = resource_mapping.k_client.Client
         resource_mapping.k_client.Client = mock.Mock()
-        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
         pdm.PolicyDriverManager.get_policy_target_group_status = (
             mock.MagicMock({}))
         try:
