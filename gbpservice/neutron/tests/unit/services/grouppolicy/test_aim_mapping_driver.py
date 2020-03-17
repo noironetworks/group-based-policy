@@ -11,8 +11,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
-
 import copy
 import hashlib
 import mock
@@ -34,7 +32,6 @@ from neutron.notifiers import nova
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_securitygroup
-from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib.plugins import directory
@@ -212,10 +209,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
-        # We need to do the following to avoid non-aim tests
-        # picking up the patched version of the method in patch_neutron
-        registry._get_callback_manager()._notify_loop = (
-            patch_neutron.original_notify_loop)
         super(AIMBaseTestCase, self).tearDown()
 
     def _setup_external_network(self, name, dn=None, router_tenant=None):
@@ -4425,19 +4418,6 @@ class NotificationTest(AIMBaseTestCase):
 
         local_api.send_or_queue_notification = send_or_queue_notification
 
-        self.orig_send_or_queue_registry_notification = (
-            local_api.send_or_queue_registry_notification)
-
-        def send_or_queue_registry_notification(
-            session, transaction_key, resource, event, trigger, **kwargs):
-            self.orig_send_or_queue_registry_notification(session,
-                transaction_key, resource, event, trigger, **kwargs)
-            if session:
-                self.notification_queue = session.notification_queue
-
-        local_api.send_or_queue_registry_notification = (
-            send_or_queue_registry_notification)
-
         self.orig_post_notifications_from_queue = (
             local_api.post_notifications_from_queue)
 
@@ -4465,8 +4445,6 @@ class NotificationTest(AIMBaseTestCase):
         local_api._enqueue = self.orig_enqueue
         local_api.send_or_queue_notification = (
             self.orig_send_or_queue_notification)
-        local_api.send_or_queue_registry_notification = (
-            self.orig_send_or_queue_registry_notification)
         local_api.post_notifications_from_queue = (
             self.orig_post_notifications_from_queue)
         local_api.discard_notifications_after_rollback = (

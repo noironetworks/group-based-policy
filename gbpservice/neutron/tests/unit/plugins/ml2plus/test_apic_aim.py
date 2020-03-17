@@ -49,7 +49,6 @@ from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_tracked_resources as tr_res
 from neutron.tests.unit import testlib_api
 from neutron_lib.api.definitions import portbindings
-from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
 from neutron_lib.plugins import directory
@@ -69,7 +68,6 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
-from gbpservice.neutron.plugins.ml2plus import patch_neutron
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as pd_api)
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
@@ -366,10 +364,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
-        # We need to do the following to avoid non-aim tests
-        # picking up the patched version of the method in patch_neutron
-        registry._get_callback_manager()._notify_loop = (
-            patch_neutron.original_notify_loop)
         super(ApicAimTestCase, self).tearDown()
 
     def _validate(self):

@@ -84,66 +84,6 @@ setattr(ovo_rpc._ObjectChangeHandler, '_is_session_semantic_violated',
         new_is_session_semantic_violated)
 
 
-from neutron_lib.callbacks import registry
-
-from gbpservice.network.neutronv2 import local_api
-
-
-def notify(resource, event, trigger, **kwargs):
-    if 'context' in kwargs:
-        session = kwargs['context'].session
-    else:
-        session = get_current_session()
-
-    txn = None
-    if session:
-        txn = local_api.get_outer_transaction(session.transaction)
-    local_api.send_or_queue_registry_notification(
-        session, txn, resource, event, trigger, **kwargs)
-
-
-registry.notify = notify
-
-
-from neutron_lib.callbacks import events
-from neutron_lib.callbacks import exceptions
-from oslo_log import log as logging
-
-
-LOG = logging.getLogger(__name__)
-
-
-def _notify_loop(resource, event, trigger, **kwargs):
-    """The notification loop."""
-    errors = []
-    callbacks = kwargs.pop('callbacks', None)
-    if not callbacks:
-        callbacks = list(registry._get_callback_manager()._callbacks[
-            resource].get(event, {}).items())
-    LOG.debug("Notify callbacks %s for %s, %s", callbacks, resource, event)
-    for callback_id, callback in callbacks:
-        try:
-            callback(resource, event, trigger, **kwargs)
-        except Exception as e:
-            abortable_event = (
-                event.startswith(events.BEFORE) or
-                event.startswith(events.PRECOMMIT)
-            )
-            if not abortable_event:
-                LOG.exception("Error during notification for "
-                              "%(callback)s %(resource)s, %(event)s",
-                              {'callback': callback_id,
-                               'resource': resource, 'event': event})
-            else:
-                LOG.error("Callback %(callback)s raised %(error)s",
-                          {'callback': callback_id, 'error': e})
-            errors.append(exceptions.NotificationError(callback_id, e))
-    return errors
-
-
-original_notify_loop = registry._get_callback_manager()._notify_loop
-
-
 from inspect import isclass
 from inspect import isfunction
 from inspect import ismethod
@@ -258,7 +198,11 @@ exc_filters.LOG.exception = exc_filters.LOG.debug
 from neutron.db import models_v2
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.plugins.ml2 import models
+from oslo_log import log as logging
 from sqlalchemy.orm import exc
+
+
+LOG = logging.getLogger(__name__)
 
 
 # REVISIT: This method is patched here to remove calls to

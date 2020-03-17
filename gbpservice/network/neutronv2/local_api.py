@@ -14,7 +14,6 @@
 from neutron.extensions import securitygroup as ext_sg
 from neutron.notifiers import nova
 from neutron import quota
-from neutron_lib.callbacks import registry
 from neutron_lib import constants as nl_const
 from neutron_lib import exceptions as n_exc
 from neutron_lib.exceptions import address_scope as as_exc
@@ -43,22 +42,9 @@ def get_outer_transaction(transaction):
 # Note: QUEUE_OUT_OF_PROCESS_NOTIFICATIONS can be set to
 # True only by drivers which use the ml2plus neutron plugin
 QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
-NOVA_NOTIFIER_METHOD = 'send_network_change'
-DHCP_NOTIFIER_METHOD = 'notify'
 NOTIFIER_REF = 'notifier_object_reference'
 NOTIFIER_METHOD = 'notifier_method_name'
 NOTIFICATION_ARGS = 'notification_args'
-REGISTRY_RESOURCE = 'registry_resource'
-REGISTRY_EVENT = 'registry_event'
-REGISTRY_TRIGGER = 'registry_trigger'
-# Add known agent RPC notifiers here. These notifiers will be invoked
-# in a delayed manner after the outermost transaction that initiated
-# the notification has completed.
-# These module names/prefixes are mutually exclusive from the
-# notifiers/notifications that are handled in process.
-OUT_OF_PROCESS_NOTIFICATIONS = ['neutron.api.rpc.agentnotifiers',
-                                'neutron.notifiers.nova', 'opflexagent.rpc',
-                                'neutron.plugins.ml2.ovo_rpc']
 
 
 def _enqueue(session, transaction_key, entry):
@@ -75,46 +61,9 @@ def _queue_notification(session, transaction_key, notifier_obj,
     _enqueue(session, transaction_key, entry)
 
 
-def _queue_registry_notification(session, transaction_key, resource,
-                                 event, trigger, **kwargs):
-    entry = {REGISTRY_RESOURCE: resource, REGISTRY_EVENT: event,
-             REGISTRY_TRIGGER: trigger, NOTIFICATION_ARGS: kwargs}
-    _enqueue(session, transaction_key, entry)
-
-
 def send_or_queue_notification(session, transaction_key, notifier_obj,
                                notifier_method, args):
-    rname = ''
-    if notifier_method == NOVA_NOTIFIER_METHOD:
-        # parse argument like "create_subnetpool"
-        rname = args[0].split('_', 1)[1]
-        event_name = 'after_' + args[0].split('_')[0]
-        registry_method = getattr(notifier_obj,
-                                  '_send_nova_notification')
-    elif notifier_method == DHCP_NOTIFIER_METHOD:
-        # parse argument like "subnetpool.create.end"
-        rname = args[2].split('.')[0]
-        event_name = 'after_' + args[2].split('.')[1]
-        registry_method = getattr(notifier_obj,
-                                  '_native_event_send_dhcp_notification')
-    if rname:
-        cbacks = registry._get_callback_manager()._callbacks.get(rname, None)
-        if cbacks and event_name in cbacks.keys():
-            for entry in cbacks.values():
-                method = entry.values()[0]
-                if registry_method == method:
-                    # This notification is already being sent by Neutron
-                    # soe we will avoid sending a duplicate notification
-                    return
-
-    if not transaction_key or 'subnet.delete.end' in args or (
-        not QUEUE_OUT_OF_PROCESS_NOTIFICATIONS):
-        # We make an exception for the dhcp agent notification
-        # for port and subnet delete since the implementation
-        # for sending that notification checks for the existence
-        # of the associated network, which is not present in certain
-        # cases if the delete notification is queued and sent after
-        # the network delete.
+    if not transaction_key or not QUEUE_OUT_OF_PROCESS_NOTIFICATIONS:
         getattr(notifier_obj, notifier_method)(*args)
         return
 
@@ -122,93 +71,11 @@ def send_or_queue_notification(session, transaction_key, notifier_obj,
                         notifier_method, args)
 
 
-def _get_callbacks_for_resource_event(resource, event):
-    return list(registry._get_callback_manager()._callbacks[
-        resource].get(event, {}).items())
-
-
-def _get_in_process_callbacks(callbacks):
-    return [i for i in callbacks if not [
-        j for j in OUT_OF_PROCESS_NOTIFICATIONS if i[0].startswith(j)]]
-
-
-def _registry_notify(resource, event, trigger, **kwargs):
-    # This invokes neutron's original (unpatched) registry notification
-    # method.
-    registry._get_callback_manager().notify(
-        resource, event, trigger, **kwargs)
-
-
-def send_or_queue_registry_notification(
-    session, transaction_key, resource, event, trigger, **kwargs):
-    if not QUEUE_OUT_OF_PROCESS_NOTIFICATIONS:
-        # Queueing is not enabled, so no more processing required,
-        # relay notification to Neutron's callback registry
-        _registry_notify(resource, event, trigger, **kwargs)
-        return
-
-    # Both, in-process and agent, notifieres may be registered for the
-    # same event, so we might need to send and queue
-    send, queue = False, False
-    callbacks = _get_callbacks_for_resource_event(resource, event)
-    if resource in ['port', 'router_interface', 'subnet'] and (
-        event in ['after_update', 'after_delete', 'precommit_delete']):
-        # We make an exception for the dhcp agent notification
-        # for port and subnet since the implementation for
-        # sending that notification checks for the existence of the
-        # associated network, which is not present in certain
-        # cases if the notification is queued and sent after the network
-        # delete.
-        # All notifiers (in-process as well as agent) will be
-        # invoked in this case, no queueing of the notification
-        # is required.
-        send = True
-    if not session or not transaction_key:
-        # We can't queue notifications without session or transaction key
-        send = True
-
-    if not send:
-        # Build a list of all in-process registered callbacks
-        # for this resource
-        in_process_callbacks = _get_in_process_callbacks(callbacks)
-        # If there are notifiers registered which are not in-process,
-        # we need to queue up this notification
-        queue = (in_process_callbacks != callbacks)
-        if in_process_callbacks:
-            send = True
-            callbacks = in_process_callbacks
-
-    if send and callbacks:
-        # Note: For the following to work, the _notify_loop()
-        # function implemented in neutron.callbacks.manager
-        # needs to be patched to handle the callbacks argument
-        # like its being done in:
-        # gbpservice/neutron/plugins/ml2plus/patch_neutron.py
-        kwargs['callbacks'] = callbacks
-        _registry_notify(resource, event, trigger, **kwargs)
-
-    if queue and session and transaction_key:
-        _queue_registry_notification(session, transaction_key, resource,
-                                     event, trigger, **kwargs)
-
-
 def post_notifications_from_queue(session, transaction_key):
     queue = session.notification_queue[transaction_key]
     for entry in queue:
-        if REGISTRY_RESOURCE in entry:
-            callbacks = _get_callbacks_for_resource_event(
-                entry[REGISTRY_RESOURCE], entry[REGISTRY_EVENT])
-            in_process_callbacks = _get_in_process_callbacks(callbacks)
-            # Only process out-of-process notifications
-            callbacks = list(set(callbacks) - set(in_process_callbacks))
-            if callbacks:
-                entry[NOTIFICATION_ARGS]['callbacks'] = callbacks
-                _registry_notify(
-                    entry[REGISTRY_RESOURCE], entry[REGISTRY_EVENT],
-                    entry[REGISTRY_TRIGGER], **entry[NOTIFICATION_ARGS])
-        else:
-            getattr(entry[NOTIFIER_REF],
-                    entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
+        getattr(entry[NOTIFIER_REF],
+                entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
     del session.notification_queue[transaction_key]
 
 
