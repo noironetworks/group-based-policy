@@ -30,59 +30,6 @@ from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 LOG = logging.getLogger(__name__)
 
 
-def get_outer_transaction(transaction):
-    if not transaction:
-        return
-    if not transaction._parent:
-        return transaction
-    else:
-        return get_outer_transaction(transaction._parent)
-
-
-# Note: QUEUE_OUT_OF_PROCESS_NOTIFICATIONS can be set to
-# True only by drivers which use the ml2plus neutron plugin
-QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
-NOTIFIER_REF = 'notifier_object_reference'
-NOTIFIER_METHOD = 'notifier_method_name'
-NOTIFICATION_ARGS = 'notification_args'
-
-
-def _enqueue(session, transaction_key, entry):
-    if transaction_key not in session.notification_queue:
-        session.notification_queue[transaction_key] = [entry]
-    else:
-        session.notification_queue[transaction_key].append(entry)
-
-
-def _queue_notification(session, transaction_key, notifier_obj,
-                        notifier_method, args):
-    entry = {NOTIFIER_REF: notifier_obj, NOTIFIER_METHOD: notifier_method,
-             NOTIFICATION_ARGS: args}
-    _enqueue(session, transaction_key, entry)
-
-
-def send_or_queue_notification(session, transaction_key, notifier_obj,
-                               notifier_method, args):
-    if not transaction_key or not QUEUE_OUT_OF_PROCESS_NOTIFICATIONS:
-        getattr(notifier_obj, notifier_method)(*args)
-        return
-
-    _queue_notification(session, transaction_key, notifier_obj,
-                        notifier_method, args)
-
-
-def post_notifications_from_queue(session, transaction_key):
-    queue = session.notification_queue[transaction_key]
-    for entry in queue:
-        getattr(entry[NOTIFIER_REF],
-                entry[NOTIFIER_METHOD])(*entry[NOTIFICATION_ARGS])
-    del session.notification_queue[transaction_key]
-
-
-def discard_notifications_after_rollback(session):
-    session.notification_queue.pop(session.transaction, None)
-
-
 class LocalAPI(object):
     """API for interacting with the neutron Plugins directly."""
 

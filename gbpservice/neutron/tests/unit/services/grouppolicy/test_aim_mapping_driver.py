@@ -28,7 +28,6 @@ from neutron.db import api as db_api
 from neutron.db.models import securitygroup as sg_models
 from neutron.db.port_security import models as psec_models
 from neutron.extensions import dns
-from neutron.notifiers import nova
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_securitygroup
@@ -39,7 +38,6 @@ from opflexagent import constants as ocst
 from oslo_config import cfg
 import webob.exc
 
-from gbpservice.network.neutronv2 import local_api
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
@@ -4380,75 +4378,10 @@ class NotificationTest(AIMBaseTestCase):
 
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               l3_plugin=None, sc_plugin=None, **kwargs):
-        self.queue_notification_call_count = 0
-        self.max_notification_queue_length = 0
-        self.notification_queue = None
-        self.post_notifications_from_queue_call_count = 0
-
         super(NotificationTest, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
             ml2_options=ml2_options, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin, **kwargs)
-
-        self.orig_enqueue = local_api._enqueue
-
-        # The functions are patched below to instrument how
-        # many times the functions are called and also to track
-        # the queue length.
-        def _enqueue(session, transaction_key, entry):
-            self.queue_notification_call_count += 1
-            self.orig_enqueue(session, transaction_key, entry)
-            if session.notification_queue:
-                key = session.notification_queue.keys()[0]
-                length = len(session.notification_queue[key])
-                if length > self.max_notification_queue_length:
-                    self.max_notification_queue_length = length
-            self.notification_queue = session.notification_queue
-
-        local_api._enqueue = _enqueue
-
-        self.orig_send_or_queue_notification = (
-            local_api.send_or_queue_notification)
-
-        def send_or_queue_notification(
-            session, transaction_key, notifier_obj, notifier_method, args):
-            self.orig_send_or_queue_notification(session,
-                transaction_key, notifier_obj, notifier_method, args)
-            self.notification_queue = session.notification_queue
-
-        local_api.send_or_queue_notification = send_or_queue_notification
-
-        self.orig_post_notifications_from_queue = (
-            local_api.post_notifications_from_queue)
-
-        def post_notifications_from_queue(session, transaction_key):
-            self.post_notifications_from_queue_call_count += 1
-            self.orig_post_notifications_from_queue(session, transaction_key)
-            self.notification_queue = session.notification_queue
-
-        local_api.post_notifications_from_queue = (
-            post_notifications_from_queue)
-
-        self.orig_discard_notifications_after_rollback = (
-            local_api.discard_notifications_after_rollback)
-
-        def discard_notifications_after_rollback(session):
-            self.orig_discard_notifications_after_rollback(session)
-            self.notification_queue = session.notification_queue
-
-        local_api.discard_notifications_after_rollback = (
-            discard_notifications_after_rollback)
-
-    def tearDown(self):
-        super(NotificationTest, self).tearDown()
-        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = False
-        local_api._enqueue = self.orig_enqueue
-        local_api.send_or_queue_notification = (
-            self.orig_send_or_queue_notification)
-        local_api.post_notifications_from_queue = (
-            self.orig_post_notifications_from_queue)
-        local_api.discard_notifications_after_rollback = (
-            self.orig_discard_notifications_after_rollback)
 
     def _expected_dhcp_agent_call_list(self):
         # This testing strategy assumes the sequence of notifications
@@ -4469,9 +4402,7 @@ class NotificationTest(AIMBaseTestCase):
             mock.call().notify(mock.ANY, mock.ANY, "network.delete.end")]
         return calls
 
-    def _test_notifier(self, notifier, expected_calls,
-                       batch_notifications=False):
-            local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = batch_notifications
+    def _test_notifier(self, notifier, expected_calls):
             ptg = self.create_policy_target_group(name="ptg1")
             ptg_id = ptg['policy_target_group']['id']
             pt = self.create_policy_target(
@@ -4495,107 +4426,13 @@ class NotificationTest(AIMBaseTestCase):
                     call_list.append(call)
             new_mock.mock_calls = call_list
             new_mock.assert_has_calls(expected_calls(), any_order=False)
-            # test that no notifications have been left out
-            self.assertEqual({}, self.notification_queue)
             return new_mock
-
-    def _deep_replace_in_value(self, d, str1, str2):
-        for k, v in d.items():
-            if isinstance(v, str) and str1 in v:
-                d[k] = v.replace(str1, str2)
-            if isinstance(v, dict):
-                self._deep_replace_in_value(v, str1, str2)
-
-    def _deep_replace_by_key(self, d, key, str2):
-        if not isinstance(d, dict):
-            return
-
-        if key in d:
-            d[key] = str2
-
-        for k, v in d.items():
-            if isinstance(v, dict):
-                self._deep_replace_by_key(v, key, str2)
-            if isinstance(v, list):
-                for i in v:
-                    self._deep_replace_by_key(i, key, str2)
-
-    def _test_notifications(self, no_batch, with_batch):
-        for n1, n2 in zip(no_batch, with_batch):
-            # replace ids from resource dicts since its random
-            # id can appear in inner dictionaries: we use deep replace
-            for n in [n1, n2]:
-                for resource, dct in n[0][1].items():
-                    if 'id' in dct:
-                        self._deep_replace_in_value(dct, dct['id'], 'XXX')
-                    for random_key in ('subnetpool_id', 'network_id',
-                                       'mac_address', 'subnet_id',
-                                       'ip_address', 'device_id',
-                                       'security_groups', 'id'):
-                        self._deep_replace_by_key(dct, random_key, 'XXX')
-
-            # test the resource objects are identical with and without batch
-            self.assertEqual(n1[0][1], n2[0][1])
-            # test that all the same events are pushed with and without batch
-            self.assertEqual(n1[0][2], n2[0][2])
 
     def test_dhcp_notifier(self):
         with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
-                               'notify') as dhcp_notifier_no_batch:
-            no_batch = self._test_notifier(dhcp_notifier_no_batch,
-                self._expected_dhcp_agent_call_list, False)
-
-        self.assertEqual(0, self.queue_notification_call_count)
-        self.assertEqual(0, self.max_notification_queue_length)
-        self.assertEqual(0, self.post_notifications_from_queue_call_count)
-        self.fake_uuid = 0
-
-        with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
-                               'notify') as dhcp_notifier_with_batch:
-            batch = self._test_notifier(dhcp_notifier_with_batch,
-                self._expected_dhcp_agent_call_list, True)
-
-        self.assertLess(0, self.queue_notification_call_count)
-        self.assertLess(0, self.max_notification_queue_length)
-
-        # There are 6 top-level transactions with notifications
-        # queued, from the following Neutron APIs: create_subnetpool,
-        # create_subnet, add_router_interface,
-        # remove_router_interface, delete_subnet, and
-        # delete_subnetpool.
-        self.assertEqual(6, self.post_notifications_from_queue_call_count)
-
-        self._test_notifications(no_batch.call_args_list, batch.call_args_list)
-
-    def test_notifiers_with_transaction_rollback(self):
-        # No notifications should get pushed in this case
-        orig_func = self.dummy.create_policy_target_group_precommit
-        self.dummy.create_policy_target_group_precommit = mock.Mock(
-            side_effect=Exception)
-        local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS = True
-        with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,
                                'notify') as dhcp_notifier:
-            with mock.patch.object(nova.Notifier,
-                                   'send_network_change') as nova_notifier:
-                self.create_policy_target_group(name="ptg1",
-                                                expected_res_status=500)
-                # Remove any port updates, as those don't count
-                args_list = []
-                new_dhcp = mock.MagicMock()
-                for call_args in dhcp_notifier.call_args_list:
-                    if call_args[0][-1] != 'port.update.end':
-                        args_list.append(call_args)
-                new_dhcp.call_args_list = args_list
-                # test that notifier was not called
-                self.assertEqual([], new_dhcp.call_args_list)
-                self.assertEqual([], nova_notifier.call_args_list)
-                # test that notification queue has been flushed
-                self.assertEqual({}, self.notification_queue)
-                # test that the push notifications func itself was not called
-                self.assertEqual(
-                    0, self.post_notifications_from_queue_call_count)
-        # restore mock
-        self.dummy.create_policy_target_group_precommit = orig_func
+            self._test_notifier(dhcp_notifier,
+                                self._expected_dhcp_agent_call_list)
 
 
 class TestImplicitExternalSegment(AIMBaseTestCase):

@@ -10,7 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
+
 from neutron.api import extensions
+from neutron.api.v2 import resource as neutron_resource
 from neutron.db import address_scope_db
 from neutron.db import api as db_api
 from neutron.db import common_db_mixin
@@ -19,71 +22,19 @@ from neutron.db import models_v2
 from neutron.db import securitygroups_db
 from neutron.objects import subnetpool as subnetpool_obj
 from neutron.plugins.ml2 import db as ml2_db
+from neutron.quota import resource as quota_resource
 from neutron_lib.api import attributes
 from neutron_lib.api import validators
 from neutron_lib import exceptions
 from neutron_lib.exceptions import address_scope as as_exc
+from neutron_lib.plugins import directory
 from oslo_log import log
 from oslo_utils import excutils
-from sqlalchemy import event
-from sqlalchemy.orm import session as sql_session
+
+from gbpservice.common import utils as gbp_utils
 
 
 LOG = log.getLogger(__name__)
-PUSH_NOTIFICATIONS_METHOD = None
-DISCARD_NOTIFICATIONS_METHOD = None
-
-
-def gbp_after_transaction(session, transaction):
-    if transaction and not transaction._parent and (
-        not transaction.is_active and not transaction.nested):
-        if transaction in session.notification_queue:
-            # push the queued notifications only when the
-            # outermost transaction completes
-            PUSH_NOTIFICATIONS_METHOD(session, transaction)
-
-
-def gbp_after_rollback(session):
-    # We discard all queued notifiactions if the transaction fails.
-    DISCARD_NOTIFICATIONS_METHOD(session)
-
-
-# This module is loaded twice, once by way of imports,
-# and once explicitly by Neutron's extension loading
-# mechanism. We do the following to ensure that the
-# patching happens only once and we preserve the reference
-# to the original method.
-if not hasattr(sql_session.Session, 'GBP_PATCHED'):
-    orig_session_init = getattr(sql_session.Session, '__init__')
-
-    def new_session_init(self, **kwargs):
-        self.notification_queue = {}
-
-        orig_session_init(self, **kwargs)
-
-        from gbpservice.network.neutronv2 import local_api
-        if local_api.QUEUE_OUT_OF_PROCESS_NOTIFICATIONS:
-            global PUSH_NOTIFICATIONS_METHOD
-            global DISCARD_NOTIFICATIONS_METHOD
-            PUSH_NOTIFICATIONS_METHOD = (
-                local_api.post_notifications_from_queue)
-            DISCARD_NOTIFICATIONS_METHOD = (
-                local_api.discard_notifications_after_rollback)
-            event.listen(self, "after_transaction_end",
-                         gbp_after_transaction)
-            event.listen(self, "after_rollback",
-                         gbp_after_rollback)
-
-    setattr(sql_session.Session, '__init__', new_session_init)
-    setattr(sql_session.Session, 'GBP_PATCHED', True)
-
-
-import copy
-from neutron.api.v2 import resource as neutron_resource
-from neutron.quota import resource as quota_resource
-from neutron_lib.plugins import directory
-
-from gbpservice.common import utils as gbp_utils
 
 
 if not hasattr(quota_resource, 'GBP_PATCHED'):
