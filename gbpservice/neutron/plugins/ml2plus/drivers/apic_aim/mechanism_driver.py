@@ -696,9 +696,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     tenant_name=tenant_aname,
                     l3out_name=aname,
                     external_network_name=L3OUT_EXT_EPG,
-                    cidr=aim_cst.IPV4_ANY_CIDR,
+                    cidr='0.0.0.0/1',
                     scope=scope,
-                    aggregate=aggregate)
+                    aggregate="")
+                self.aim.create(aim_ctx, aim_ext_subnet_ipv4)
+                aim_ext_subnet_ipv4 = aim_resource.ExternalSubnet(
+                    tenant_name=tenant_aname,
+                    l3out_name=aname,
+                    external_network_name=L3OUT_EXT_EPG,
+                    cidr='128.0.0.0/1',
+                    scope=scope,
+                    aggregate="")
                 self.aim.create(aim_ctx, aim_ext_subnet_ipv4)
                 aim_ext_subnet_ipv6 = aim_resource.ExternalSubnet(
                     tenant_name=tenant_aname,
