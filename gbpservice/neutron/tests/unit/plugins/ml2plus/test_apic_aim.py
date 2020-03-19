@@ -5271,26 +5271,11 @@ class TestExtensionAttributes(ApicAimTestCase):
     def test_network_with_nested_domain_lifecycle(self):
         session = db_api.get_reader_session()
         extn = extn_db.ExtensionDbMixin()
-
-        # This should prove to be a no-op.
-        self.driver.use_nested_domain_params_for_openshift_network = True
-        aim_ctx = aim_context.AimContext(self.db_session)
-        nested_parameter = aim_infra.NestedParameter(
-            project_id='tenant_1', cluster_name='cluster', domain_name='foo',
-            domain_type='myk8s', domain_infra_vlan='4093',
-            domain_service_vlan='1000', domain_node_vlan='1001',
-            vlan_range_list=[{'start': '2', 'end': '2'},
-                             {'start': '3', 'end': '8'},
-                             {'start': '4', 'end': '9'},
-                             {'start': '11', 'end': '14'}])
-        self.aim_mgr.create(aim_ctx, nested_parameter)
-
         vlan_dict = {'vlans_list': ['2', '3', '4', '3'],
                      'vlan_ranges': [{'start': '6', 'end': '9'},
                                      {'start': '11', 'end': '14'}]}
         expt_vlans = [2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14]
-        kwargs = {'tenant_id': 'tenant_1',
-                  'apic:nested_domain_name': 'myk8s',
+        kwargs = {'apic:nested_domain_name': 'myk8s',
                   'apic:nested_domain_type': 'k8s',
                   'apic:nested_domain_infra_vlan': '4093',
                   'apic:nested_domain_service_vlan': '1000',
@@ -5298,7 +5283,7 @@ class TestExtensionAttributes(ApicAimTestCase):
                   'apic:nested_domain_allowed_vlans': vlan_dict,
                   }
 
-        net1 = self._make_network(self.fmt, 'cluster-asdf-openshift', True,
+        net1 = self._make_network(self.fmt, 'net1', True,
                                   arg_list=tuple(kwargs.keys()),
                                   **kwargs)['network']
         self.assertEqual('myk8s', net1['apic:nested_domain_name'])
@@ -5336,63 +5321,6 @@ class TestExtensionAttributes(ApicAimTestCase):
         db_vlans = (session.query(
             extn_db.NetworkExtNestedDomainAllowedVlansDb).filter_by(
                 network_id=net1['id']).all())
-        self.assertEqual([], db_vlans)
-
-    def test_openshift_network_lifecycle(self):
-        session = db_api.get_writer_session()
-        extn = extn_db.ExtensionDbMixin()
-
-        self.driver.use_nested_domain_params_for_openshift_network = True
-        aim_ctx = aim_context.AimContext(self.db_session)
-        nested_parameter = aim_infra.NestedParameter(
-            project_id='tenant_1', cluster_name='cluster', domain_name='foo',
-            domain_type='myk8s', domain_infra_vlan='4093',
-            domain_service_vlan='1000', domain_node_vlan='1001',
-            vlan_range_list=[{'start': '2', 'end': '2'},
-                             {'start': '3', 'end': '8'},
-                             {'start': '4', 'end': '9'},
-                             {'start': '11', 'end': '14'}])
-        self.aim_mgr.create(aim_ctx, nested_parameter)
-
-        expt_vlans = [2, 3, 4, 5, 6, 7, 8, 9, 11, 12, 13, 14]
-        net = self._make_network(self.fmt, 'cluster-asdf-openshift',
-                                 True, tenant_id='tenant_1')['network']
-        self.assertEqual('foo', net['apic:nested_domain_name'])
-        self.assertEqual('myk8s', net['apic:nested_domain_type'])
-        self.assertEqual(4093, net['apic:nested_domain_infra_vlan'])
-        self.assertEqual(1000, net['apic:nested_domain_service_vlan'])
-        self.assertEqual(1001, net['apic:nested_domain_node_network_vlan'])
-        self.assertItemsEqual(expt_vlans,
-            net['apic:nested_domain_allowed_vlans'])
-
-        # Test the update.
-        vlan_dict = {'vlans_list': ['2', '3', '4', '3']}
-        expt_vlans = [2, 3, 4]
-        data = {'network': {'apic:nested_domain_name': 'new-myk8s',
-                            'apic:nested_domain_type': 'new-k8s',
-                            'apic:nested_domain_infra_vlan': '1093',
-                            'apic:nested_domain_service_vlan': '2000',
-                            'apic:nested_domain_node_network_vlan': '2001',
-                            'apic:nested_domain_allowed_vlans': vlan_dict}}
-        req = self.new_update_request('networks', data, net['id'],
-                                      self.fmt)
-        resp = req.get_response(self.api)
-        self.assertEqual(resp.status_code, 200)
-        net = self.deserialize(self.fmt, resp)['network']
-        self.assertEqual('new-myk8s', net['apic:nested_domain_name'])
-        self.assertEqual('new-k8s', net['apic:nested_domain_type'])
-        self.assertEqual(1093, net['apic:nested_domain_infra_vlan'])
-        self.assertEqual(2000, net['apic:nested_domain_service_vlan'])
-        self.assertEqual(2001, net['apic:nested_domain_node_network_vlan'])
-        self.assertItemsEqual(expt_vlans,
-                net['apic:nested_domain_allowed_vlans'])
-
-        # Test the delete.
-        self._delete('networks', net['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net['id']))
-        db_vlans = (session.query(
-            extn_db.NetworkExtNestedDomainAllowedVlansDb).filter_by(
-                network_id=net['id']).all())
         self.assertEqual([], db_vlans)
 
     def test_network_with_extra_contracts_lifecycle(self):

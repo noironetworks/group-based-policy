@@ -73,13 +73,6 @@ apic_opts = [
                       "this should only be used temporarily to enable "
                       "cleaning up overlapping routed subnets created before "
                       "overlap checking was implemented.")),
-    cfg.BoolOpt('use_nested_domain_params_for_openshift_network',
-                default=False,
-                help=("Set to True to allow extension driver to use nested "
-                      "domain parameters configured by the user in AIM for "
-                      "networks created by OpenShift installer. Note that "
-                      "this feature will be removed once a proper fix is in "
-                      "place for OpenShift installer.")),
 ]
 
 
