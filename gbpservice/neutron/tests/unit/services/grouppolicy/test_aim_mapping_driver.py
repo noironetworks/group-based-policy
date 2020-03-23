@@ -2783,7 +2783,7 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
             self.fmt, network, gw2_ip, cidr='10.0.2.0/24',
             subnetpool_id=pool_id)['subnet']
         # Make a DHCP port on each subnet
-        dhcp_subnet1 = [{'subnet_id': subnet1['id']}]
+        dhcp_subnet1 = [{'subnet_id': subnet1['id'], 'ip_address': '10.0.1.5'}]
         dhcp_p1 = self._make_port(self.fmt, net1['id'],
                                   device_owner='dhcp:',
                                   fixed_ips=dhcp_subnet1)['port']
