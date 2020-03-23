@@ -611,11 +611,12 @@ class TestNeutronMapping(AimValidationTestCase):
         self.aim_mgr.delete(self.aim_ctx, l3out)
         self._validate_repair_validate()
 
-        # Delete pre-existing AIM ExternalNetwork and test.
-        self.aim_mgr.delete(self.aim_ctx, ext_net)
+        # Delete pre-existing AIM ExternalNetwork, along with its
+        # child ExternalSubnet, and test.
+        self.aim_mgr.delete(self.aim_ctx, ext_net, cascade=True)
         self._validate_repair_validate()
 
-        # Delete pre-existing AIM ExternalSubnet and test.
+        # Delete just the pre-existing AIM ExternalSubnet and test.
         self.aim_mgr.delete(self.aim_ctx, ext_sn)
         self._validate_repair_validate()
 
