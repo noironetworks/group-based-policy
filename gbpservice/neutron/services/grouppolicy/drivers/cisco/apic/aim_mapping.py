@@ -242,31 +242,36 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def create_l3_policy_precommit(self, context):
         l3p_req = context.current
         self._check_l3policy_ext_segment(context, l3p_req)
-
-        # save VRF DN from v4 family address scope, if implicitly created,
-        # as we will need to reuse it if we also implicitly create a v6
-        # address scopes
-        context.saved_scope_vrf = None
-        self._create_l3p_subnetpools(context)
-        # reset the temporarily saved scope
-        context.saved_scope_vrf = None
-
         self._validate_address_scopes(context)
 
-        # REVISIT: Check if the following constraint still holds
+        # REVISIT: Check if the following constraint still holds.
         if len(l3p_req['routers']) > 1:
             raise exc.L3PolicyMultipleRoutersNotSupported()
+
         # REVISIT: Validate non overlapping IPs in the same tenant.
         #          Currently this validation is not required for the
         #          AIM driver, and since the AIM driver is the only
         #          driver inheriting from this driver, we are okay
         #          without the check.
         self._reject_invalid_router_access(context)
+
+    @log.log_method_call
+    def create_l3_policy_postcommit(self, context):
+        l3p_req = context.current
+
+        # Save VRF DN from v4 family address scope, if implicitly created,
+        # as we will need to reuse it if we also implicitly create a v6
+        # address scopes.
+        context.saved_scope_vrf = None
+        self._create_l3p_subnetpools_postcommit(context)
+        # Reset the temporarily saved scope.
+        context.saved_scope_vrf = None
+
         if not l3p_req['routers']:
             self._use_implicit_router(context)
-        if not context.current['external_segments']:
+        if not l3p_req['external_segments']:
             self._use_implicit_external_segment(context)
-        external_segments = context.current['external_segments']
+        external_segments = l3p_req['external_segments']
         if external_segments:
             self._plug_l3p_routers_to_ext_segment(context, l3p_req,
                                                   external_segments)
@@ -277,17 +282,22 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._reject_shared_update(context, 'l3_policy')
         if context.current['routers'] != context.original['routers']:
             raise exc.L3PolicyRoutersUpdateNotSupported()
+
         # Currently there is no support for router update in l3p update.
         # Added this check just in case it is supported in future.
         self._reject_invalid_router_access(context)
 
         self._validate_in_use_by_nsp(context)
-        self._update_l3p_subnetpools(context)
-
+        self._update_l3p_subnetpools_precommit(context)
+        self._check_l3policy_ext_segment(context, context.current)
         # TODO(Sumit): For extra safety add validation for address_scope change
+
+    @log.log_method_call
+    def update_l3_policy_postcommit(self, context):
+        self._update_l3p_subnetpools_postcommit(context)
+
         l3p_orig = context.original
         l3p_curr = context.current
-        self._check_l3policy_ext_segment(context, l3p_curr)
         old_segment_dict = l3p_orig['external_segments']
         new_segment_dict = l3p_curr['external_segments']
         if (l3p_curr['external_segments'] !=
@@ -307,33 +317,16 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def delete_l3_policy_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_l3_policy_postcommit(self, context):
         external_segments = context.current['external_segments']
         if external_segments:
-            self._unplug_l3p_routers_from_ext_segment(context,
-                context.current, external_segments.keys())
-        l3p_db = context._plugin._get_l3_policy(
-            context._plugin_context, context.current['id'])
-
-        v4v6subpools = {4: l3p_db.subnetpools_v4, 6: l3p_db.subnetpools_v6}
-
-        for k, v in six.iteritems(v4v6subpools):
-            subpools = [sp.subnetpool_id for sp in v]
-            for sp_id in subpools:
-                self._db_plugin(
-                    context._plugin)._remove_subnetpool_from_l3_policy(
-                        context._plugin_context, l3p_db['id'], sp_id,
-                        ip_version=k)
-                self._cleanup_subnetpool(context._plugin_context, sp_id)
-
-        for ascp in self.L3P_ADDRESS_SCOPE_KEYS.values():
-            if l3p_db[ascp]:
-                ascp_id = l3p_db[ascp]
-                l3p_db.update({ascp: None})
-                self._cleanup_address_scope(context._plugin_context, ascp_id)
-
+            self._unplug_l3p_routers_from_ext_segment(
+                context, context.current, external_segments.keys(), True)
+        self._delete_l3p_subnetpools_postcommit(context)
         for router_id in context.current['routers']:
-            self._db_plugin(context._plugin)._remove_router_from_l3_policy(
-                context._plugin_context, l3p_db['id'], router_id)
             self._cleanup_router(context._plugin_context, router_id)
         self._delete_implicit_contracts(context, context.current)
 
@@ -377,18 +370,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def create_l2_policy_precommit(self, context):
         self._reject_invalid_network_access(context)
         self._reject_non_shared_net_on_shared_l2p(context)
-        l2p_db = context._plugin._get_l2_policy(
-            context._plugin_context, context.current['id'])
+
+    @log.log_method_call
+    def create_l2_policy_postcommit(self, context):
         if not context.current['l3_policy_id']:
-            self._create_implicit_l3_policy(context)
-            l2p_db['l3_policy_id'] = context.current['l3_policy_id']
+            self._use_implicit_l3_policy(context)
         l3p_db = context._plugin._get_l3_policy(
-            context._plugin_context, l2p_db['l3_policy_id'])
+            context._plugin_context, context.current['l3_policy_id'])
         if not context.current['network_id']:
             self._use_implicit_network(
                 context, address_scope_v4=l3p_db['address_scope_v4_id'],
                 address_scope_v6=l3p_db['address_scope_v6_id'])
-            l2p_db['network_id'] = context.current['network_id']
         l2p = context.current
         net = self._get_network(context._plugin_context,
                                 l2p['network_id'])
@@ -415,21 +407,22 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             self._create_policy_target_group(context._plugin_context, data)
 
     @log.log_method_call
+    def update_l2_policy_precommit(self, context):
+        super(AIMMappingDriver, self).update_l2_policy_precommit(context)
+
+    @log.log_method_call
+    def update_l2_policy_postcommit(self, context):
+        pass
+
+    @log.log_method_call
     def delete_l2_policy_precommit(self, context):
         l2p_id = context.current['id']
         auto_ptg_id = self._get_auto_ptg_id(l2p_id)
         try:
             auto_ptg = context._plugin._get_policy_target_group(
                 context._plugin_context, auto_ptg_id)
-            self._process_subnets_for_ptg_delete(
-                context, auto_ptg, l2p_id)
             if auto_ptg['l2_policy_id']:
                 auto_ptg.update({'l2_policy_id': None})
-            # REVISIT: Consider calling the actual GBP plugin
-            # instead of it's base DB mixin class.
-            self._db_plugin(
-                context._plugin).delete_policy_target_group(
-                    context._plugin_context, auto_ptg['id'])
         except gpolicy.PolicyTargetGroupNotFound:
             LOG.info("Auto PTG with ID %(id)s for "
                      "for L2P %(l2p)s not found. If create_auto_ptg "
@@ -437,7 +430,31 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                      "creation, you can safely ignore this, else this "
                      "could potentially be indication of an error.",
                      {'id': auto_ptg_id, 'l2p': l2p_id})
-        super(AIMMappingDriver, self).delete_l2_policy_precommit(context)
+
+    @log.log_method_call
+    def delete_l2_policy_postcommit(self, context):
+        auto_ptg_id = self._get_auto_ptg_id(context.current['id'])
+        try:
+            auto_ptg = context._plugin._get_policy_target_group(
+                context._plugin_context, auto_ptg_id)
+            l3p_db = context._plugin._get_l3_policy(
+                context._plugin_context, context.current['l3_policy_id'])
+            subnet_ids = [assoc['subnet_id'] for assoc in auto_ptg.subnets]
+            router_ids = [assoc.router_id for assoc in l3p_db.routers]
+            context._plugin._remove_subnets_from_policy_target_group(
+                context._plugin_context, auto_ptg_id)
+            self._process_subnets_for_ptg_delete(
+                context, subnet_ids, router_ids)
+            # REVISIT: Consider calling the actual GBP plugin instead
+            # of it's base DB mixin class, eliminating the need to
+            # call _process_subnets_for_ptg_delete above.
+            self._db_plugin(
+                context._plugin).delete_policy_target_group(
+                    context._plugin_context, auto_ptg['id'])
+        except gpolicy.PolicyTargetGroupNotFound:
+            # Logged in precommit.
+            pass
+        super(AIMMappingDriver, self).delete_l2_policy_postcommit(context)
 
     @log.log_method_call
     def get_l2_policy_status(self, context):
@@ -471,53 +488,50 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def create_policy_target_group_precommit(self, context):
-        session = context._plugin_context.session
-
         if self._is_auto_ptg(context.current):
             if context.current['application_policy_group_id']:
                 raise ExplicitAPGAssociationNotSupportedForAutoPTG()
-            self._use_implicit_subnet(context)
-            self._handle_create_network_service_policy(context)
             return
 
         if context.current['subnets']:
             raise alib.ExplicitSubnetAssociationNotSupported()
 
+    @log.log_method_call
+    def create_policy_target_group_postcommit(self, context):
+        if self._is_auto_ptg(context.current):
+            self._use_implicit_subnet(context)
+            self._handle_create_network_service_policy(context)
+            return
+
         if not context.current['l2_policy_id']:
-            self._create_implicit_l2_policy(context)
-            ptg_db = context._plugin._get_policy_target_group(
-                context._plugin_context, context.current['id'])
-            ptg_db['l2_policy_id'] = l2p_id = context.current['l2_policy_id']
-        else:
-            l2p_id = context.current['l2_policy_id']
-
-        l2p_db = context._plugin._get_l2_policy(
-            context._plugin_context, l2p_id)
-
-        net = self._get_network(
-            context._plugin_context, l2p_db['network_id'])
+            self._use_implicit_l2_policy(context)
 
         self._use_implicit_subnet(context)
 
         self._handle_create_network_service_policy(context)
 
-        bd = self.aim_mech_driver.get_bd_for_network(session, net)
+        with db_api.context_manager.writer.using(context) as session:
+            l2p_db = context._plugin._get_l2_policy(
+                context._plugin_context, context.current['l2_policy_id'])
+            net = self._get_network(
+                context._plugin_context, l2p_db['network_id'])
+            bd = self.aim_mech_driver.get_bd_for_network(session, net)
 
-        provided_contracts = self._get_aim_contract_names(
-            session, context.current['provided_policy_rule_sets'])
-        consumed_contracts = self._get_aim_contract_names(
-            session, context.current['consumed_policy_rule_sets'])
+            provided_contracts = self._get_aim_contract_names(
+                session, context.current['provided_policy_rule_sets'])
+            consumed_contracts = self._get_aim_contract_names(
+                session, context.current['consumed_policy_rule_sets'])
 
-        self._create_aim_ap_for_ptg_conditionally(context, context.current)
-        aim_epg = self._aim_endpoint_group(
-            session, context.current, bd.name, bd.tenant_name,
-            provided_contracts=provided_contracts,
-            consumed_contracts=consumed_contracts,
-            policy_enforcement_pref=
-            self._get_policy_enforcement_pref(context.current))
+            self._create_aim_ap_for_ptg_conditionally(context, context.current)
+            aim_epg = self._aim_endpoint_group(
+                session, context.current, bd.name, bd.tenant_name,
+                provided_contracts=provided_contracts,
+                consumed_contracts=consumed_contracts,
+                policy_enforcement_pref=
+                self._get_policy_enforcement_pref(context.current))
 
-        # AIM EPG will be persisted in the following call
-        self._add_implicit_svc_contracts_to_epg(context, l2p_db, aim_epg)
+            # AIM EPG will be persisted in the following call
+            self._add_implicit_svc_contracts_to_epg(context, l2p_db, aim_epg)
 
     @log.log_method_call
     def update_policy_target_group_precommit(self, context):
@@ -535,7 +549,6 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if (context.current['network_service_policy_id'] !=
             context.original['network_service_policy_id']):
             self._validate_nat_pool_for_nsp(context)
-            self._handle_nsp_update_on_ptg(context)
 
         # The "original" version of the ptg is being used here since we
         # want to retrieve the aim_epg based on the existing AP that is
@@ -570,6 +583,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def update_policy_target_group_postcommit(self, context):
+        if (context.current['network_service_policy_id'] !=
+            context.original['network_service_policy_id']):
+            self._handle_nsp_update_on_ptg(context)
+
         if (context.current['application_policy_group_id'] !=
             context.original['application_policy_group_id']):
             ptargets = context._plugin.get_policy_targets(
@@ -591,35 +608,46 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             raise AutoPTGDeleteNotSupported(id=context.current['id'])
         ptg_db = context._plugin._get_policy_target_group(
             plugin_context, context.current['id'])
-        session = context._plugin_context.session
+        context.subnet_ids = [assoc['subnet_id'] for assoc in ptg_db.subnets]
+        context.router_ids = [assoc.router_id for assoc in
+                              ptg_db.l2_policy.l3_policy.routers]
 
+        session = context._plugin_context.session
         aim_ctx = self._get_aim_context(context)
         epg = self._aim_endpoint_group(session, context.current)
         self.aim.delete(aim_ctx, epg)
-        self._process_subnets_for_ptg_delete(
-            context, ptg_db, context.current['l2_policy_id'])
-
         self._delete_aim_ap_for_ptg_conditionally(context, ptg_db)
-        ptg_db.update({'application_policy_group_id': None})
 
-        if ptg_db['l2_policy_id']:
-            l2p_id = ptg_db['l2_policy_id']
-            ptg_db.update({'l2_policy_id': None})
+        if ptg_db['network_service_policy_id']:
+            # Also called from _cleanup_network_service_policy during
+            # postcommit, but needed during precommit to avoid foreign
+            # key constraint error.
+            self._delete_policy_ipaddress_mapping(plugin_context, ptg_db['id'])
+
+    @log.log_method_call
+    def delete_policy_target_group_postcommit(self, context):
+        self._process_subnets_for_ptg_delete(
+            context, context.subnet_ids, context.router_ids)
+
+        ptg = context.current.copy()
+        ptg['subnets'] = []
+
+        l2p_id = ptg['l2_policy_id']
+        if l2p_id:
             l2p_db = context._plugin._get_l2_policy(
-                plugin_context, l2p_id)
+                context._plugin_context, l2p_id)
             if not l2p_db['policy_target_groups'] or (
                 (len(l2p_db['policy_target_groups']) == 1) and (
                     self._is_auto_ptg(l2p_db['policy_target_groups'][0]))):
                 self._cleanup_l2_policy(context, l2p_id)
 
-        if ptg_db['network_service_policy_id']:
-            ptg_db.update({'network_service_policy_id': None})
+        if ptg['network_service_policy_id']:
             # REVISIT: Note that the RMD puts the following call in
             # try/except block since in deployment it was observed
             # that there are certain situations when the
             # sa_exc.ObjectDeletedError is thrown.
             self._cleanup_network_service_policy(
-                context, ptg_db, context.nsp_cleanup_ipaddress,
+                context, ptg, context.nsp_cleanup_ipaddress,
                 context.nsp_cleanup_fips)
 
     @log.log_method_call
@@ -633,6 +661,30 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         session = context._plugin_context.session
         epg = self._aim_endpoint_group(session, context.current)
         context.current['status'] = self._map_aim_status(session, epg)
+
+    @log.log_method_call
+    def create_application_policy_group_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def create_application_policy_group_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def update_application_policy_group_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def update_application_policy_group_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_application_policy_group_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_application_policy_group_postcommit(self, context):
+        pass
 
     def _get_application_profiles_mapped_to_apg(self, session, apg):
         aim_ctx = aim_context.AimContext(session)
@@ -657,24 +709,31 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def create_policy_target_precommit(self, context):
-        ptg = self._get_policy_target_group(
+        context.ptg = self._get_policy_target_group(
             context._plugin_context, context.current['policy_target_group_id'])
         policy.enforce(context._plugin_context, 'get_policy_target_group',
-                       ptg, pluralized='policy_target_groups')
-        if not context.current['port_id']:
-            subnets = self._get_subnets(
-                context._plugin_context, {'id': ptg['subnets']})
-            self._use_implicit_port(context, subnets=subnets)
-        # explicit port case
-        else:
+                       context.ptg, pluralized='policy_target_groups')
+        if context.current['port_id']:
+            # Explicit port case.
+            #
+            # REVISIT: Add port extension to specify the EPG so the
+            # mechanism driver can take care of domain association
+            # itself.
             port_context = self._core_plugin.get_bound_port_context(
                         context._plugin_context, context.current['port_id'])
             self.aim_mech_driver.associate_domain(port_context)
+
+    @log.log_method_call
+    def create_policy_target_postcommit(self, context):
+        if not context.current['port_id']:
+            # Implicit port case.
+            subnets = self._get_subnets(
+                context._plugin_context, {'id': context.ptg['subnets']})
+            self._use_implicit_port(context, subnets=subnets)
         self._associate_fip_to_pt(context)
 
     @log.log_method_call
     def update_policy_target_precommit(self, context):
-        # TODO(Sumit): Implement
         pass
 
     @log.log_method_call
@@ -687,19 +746,35 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def delete_policy_target_precommit(self, context):
+        if context.current.get('port_id'):
+            # REVISIT: Add port extension to specify the EPG so the
+            # mechanism driver can take care of domain association
+            # itself. Also, get_bound_port_context should not be
+            # called within a transaction.
+            port_context = self._core_plugin.get_bound_port_context(
+                context._plugin_context, context.current['port_id'])
+            self.aim_mech_driver.disassociate_domain(port_context)
+
+    @log.log_method_call
+    def delete_policy_target_postcommit(self, context):
         fips = self._get_pt_floating_ip_mapping(
             context._plugin_context, context.current['id'])
         for fip in fips:
             self._delete_fip(context._plugin_context, fip.floatingip_id)
-        pt_db = context._plugin._get_policy_target(
-            context._plugin_context, context.current['id'])
-        if pt_db['port_id']:
-            if not self._port_is_owned(context._plugin_context.session,
-                                       pt_db['port_id']):
-                port_context = self._core_plugin.get_bound_port_context(
-                        context._plugin_context, context.current['port_id'])
-                self.aim_mech_driver.disassociate_domain(port_context)
-            self._cleanup_port(context._plugin_context, pt_db['port_id'])
+        self._cleanup_port(
+            context._plugin_context, context.current.get('port_id'))
+
+    @log.log_method_call
+    def get_policy_target_status(self, context):
+        pass
+
+    @log.log_method_call
+    def create_policy_classifier_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def create_policy_classifier_postcommit(self, context):
+        pass
 
     @log.log_method_call
     def update_policy_classifier_precommit(self, context):
@@ -810,6 +885,50 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                                     overwrite=True)
 
     @log.log_method_call
+    def update_policy_classifier_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_policy_classifier_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_policy_classifier_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def get_policy_classifier_status(self, context):
+        pass
+
+    @log.log_method_call
+    def create_policy_action_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def create_policy_action_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def update_policy_action_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def update_policy_action_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_policy_action_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_policy_action_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def get_policy_action_status(self, context):
+        pass
+
+    @log.log_method_call
     def create_policy_rule_precommit(self, context):
         entries = alib.get_filter_entries_for_policy_rule(context)
         session = context._plugin_context.session
@@ -818,9 +937,17 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session, aim_ctx, context.current, entries)
 
     @log.log_method_call
+    def create_policy_rule_postcommit(self, context):
+        pass
+
+    @log.log_method_call
     def update_policy_rule_precommit(self, context):
         self.delete_policy_rule_precommit(context)
         self.create_policy_rule_precommit(context)
+
+    @log.log_method_call
+    def update_policy_rule_postcommit(self, context):
+        pass
 
     @log.log_method_call
     def delete_policy_rule_precommit(self, context):
@@ -833,6 +960,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session, context.current, reverse_prefix=True)
         for afilter in filter(None, [aim_filter, aim_reverse_filter]):
             self.aim.delete(aim_ctx, afilter)
+
+    @log.log_method_call
+    def delete_policy_rule_postcommit(self, context):
+        pass
 
     @log.log_method_call
     def extend_policy_rule_dict(self, session, result):
@@ -872,6 +1003,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         self._populate_aim_contract_subject(context, aim_contract, rules)
 
     @log.log_method_call
+    def create_policy_rule_set_postcommit(self, context):
+        pass
+
+    @log.log_method_call
     def update_policy_rule_set_precommit(self, context):
         if context.current['child_policy_rule_sets']:
             raise alib.HierarchicalContractsNotSupported()
@@ -884,12 +1019,20 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             context, aim_contract, rules)
 
     @log.log_method_call
+    def update_policy_rule_set_postcommit(self, context):
+        pass
+
+    @log.log_method_call
     def delete_policy_rule_set_precommit(self, context):
         aim_ctx = self._get_aim_context(context)
         session = context._plugin_context.session
         aim_contract = self._aim_contract(session, context.current)
         self._delete_aim_contract_subject(aim_ctx, aim_contract)
         self.aim.delete(aim_ctx, aim_contract)
+
+    @log.log_method_call
+    def delete_policy_rule_set_postcommit(self, context):
+        pass
 
     @log.log_method_call
     def extend_policy_rule_set_dict(self, session, result):
@@ -926,11 +1069,14 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         db_es.ip_version = subnet['ip_version']
         context.current['cidr'] = db_es.cidr
         context.current['ip_version'] = db_es.ip_version
+        context.network_id = subnet['network_id']
 
+    @log.log_method_call
+    def create_external_segment_postcommit(self, context):
         cidrs = sorted([x['destination']
                         for x in context.current['external_routes']])
         self._update_network(context._plugin_context,
-                             subnet['network_id'],
+                             context.network_id,
                              {cisco_apic.EXTERNAL_CIDRS: cidrs})
 
     @log.log_method_call
@@ -941,6 +1087,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             if context.current[attr] != context.original[attr]:
                 raise exc.InvalidAttributeUpdateForES(attribute=attr)
 
+    @log.log_method_call
+    def update_external_segment_postcommit(self, context):
         old_cidrs = sorted([x['destination']
                             for x in context.original['external_routes']])
         new_cidrs = sorted([x['destination']
@@ -954,6 +1102,10 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def delete_external_segment_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_external_segment_postcommit(self, context):
         subnet = self._get_subnet(context._plugin_context,
                                   context.current['subnet_id'])
         self._update_network(context._plugin_context,
@@ -961,8 +1113,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                              {cisco_apic.EXTERNAL_CIDRS: ['0.0.0.0/0']})
 
     @log.log_method_call
+    def get_external_segment_status(self, context):
+        pass
+
+    @log.log_method_call
     def create_external_policy_precommit(self, context):
         self._check_external_policy(context, context.current)
+
+    @log.log_method_call
+    def create_external_policy_postcommit(self, context):
         if not context.current['external_segments']:
             self._use_implicit_external_segment(context)
 
@@ -973,9 +1132,12 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def update_external_policy_precommit(self, context):
+        self._check_external_policy(context, context.current)
+
+    @log.log_method_call
+    def update_external_policy_postcommit(self, context):
         ep = context.current
         old_ep = context.original
-        self._check_external_policy(context, ep)
         removed_segments = (set(old_ep['external_segments']) -
                             set(ep['external_segments']))
         added_segment = (set(ep['external_segments']) -
@@ -998,36 +1160,74 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     @log.log_method_call
     def delete_external_policy_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_external_policy_postcommit(self, context):
         routers = self._get_ext_policy_routers(context,
             context.current, context.current['external_segments'])
         for r in routers:
             self._set_router_ext_contracts(context, r, None)
 
     @log.log_method_call
+    def get_external_policy_status(self, context):
+        pass
+
+    @log.log_method_call
     def create_network_service_policy_precommit(self, context):
         self._validate_nsp_parameters(context)
+
+    @log.log_method_call
+    def create_network_service_policy_postcommit(self, context):
+        pass
 
     @log.log_method_call
     def update_network_service_policy_precommit(self, context):
         self._validate_nsp_parameters(context)
 
     @log.log_method_call
+    def update_network_service_policy_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_network_service_policy_precommit(self, context):
+        pass
+
+    @log.log_method_call
+    def delete_network_service_policy_postcommit(self, context):
+        pass
+
+    @log.log_method_call
+    def get_network_service_policy_status(self, context):
+        pass
+
+    @log.log_method_call
     def create_nat_pool_precommit(self, context):
         self._add_nat_pool_to_segment(context)
+
+    @log.log_method_call
+    def create_nat_pool_postcommit(self, context):
         self._add_implicit_subnet_for_nat_pool_create(context)
 
     @log.log_method_call
     def update_nat_pool_precommit(self, context):
         self._process_ext_segment_update_for_nat_pool(context)
+
+    @log.log_method_call
+    def update_nat_pool_postcommit(self, context):
         self._add_implicit_subnet_for_nat_pool_update(context)
 
     @log.log_method_call
     def delete_nat_pool_precommit(self, context):
         self._nat_pool_in_use(context)
-        np_db = context._plugin._get_nat_pool(
-            context._plugin_context, context.current['id'])
-        np_db.update({'subnet_id': None})
+
+    @log.log_method_call
+    def delete_nat_pool_postcommit(self, context):
         self._delete_subnet_on_nat_pool_delete(context)
+
+    @log.log_method_call
+    def get_nat_pool_status(self, context):
+        pass
 
     # REVISIT: Called by mechanism driver during port
     # binding. Consider replacing with a more general hook for the PD
@@ -1682,32 +1882,24 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         else:
             return gp_const.STATUS_ACTIVE
 
-    def _process_subnets_for_ptg_delete(self, context, ptg, l2p_id):
-        session = context._plugin_context.session
+    def _process_subnets_for_ptg_delete(self, context, subnet_ids, router_ids):
         plugin_context = context._plugin_context
-        subnet_ids = [assoc['subnet_id'] for assoc in ptg['subnets']]
-
-        context._plugin._remove_subnets_from_policy_target_group(
-            plugin_context, ptg['id'])
         if subnet_ids:
             for subnet_id in subnet_ids:
-                # clean-up subnet if this is the last PTG using the L2P
+                # Clean-up subnet if this is the last PTG using the L2P.
                 if not context._plugin._get_ptgs_for_subnet(
-                    plugin_context, subnet_id):
-                    if l2p_id:
-                        l3p = self._get_l3p_for_l2policy(context, l2p_id)
-                        for router_id in l3p['routers']:
-                            # If the subnet interface for this router has
-                            # already been removed (say manually), the
-                            # call to Neutron's remove_router_interface
-                            # will cause the transaction to exit immediately.
-                            # To avoid this, we first check if this subnet
-                            # still has an interface on this router.
-                            if self._get_router_interface_port_by_subnet(
+                        plugin_context, subnet_id):
+                    for router_id in router_ids:
+                        # If the subnet interface for this router has
+                        # already been removed (say manually), the
+                        # call to Neutron's remove_router_interface
+                        # will cause the transaction to exit immediately.
+                        # To avoid this, we first check if this subnet
+                        # still has an interface on this router.
+                        if self._get_router_interface_port_by_subnet(
                                 plugin_context, router_id, subnet_id):
-                                with session.begin(nested=True):
-                                    self._detach_router_from_subnets(
-                                        plugin_context, router_id, [subnet_id])
+                            self._detach_router_from_subnets(
+                                plugin_context, router_id, [subnet_id])
                     self._cleanup_subnet(plugin_context, subnet_id)
 
     def _map_aim_status(self, session, aim_resource_obj):
@@ -1869,7 +2061,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             self._attach_router_to_subnets(plugin_context, router_id, l3p_subs)
 
     def _unplug_l3p_routers_from_ext_segment(self, context, l3policy,
-                                             ext_seg_ids):
+                                             ext_seg_ids, deleting=False):
         plugin_context = context._plugin_context
         es_list = self._get_external_segments(plugin_context,
                                               filters={'id': ext_seg_ids})
@@ -1882,7 +2074,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                                                              r['id'])
             self._detach_router_from_subnets(plugin_context, r['id'],
                                              router_subs)
-            context.remove_router(r['id'])
+            if not deleting:
+                context.remove_router(r['id'])
             self._cleanup_router(plugin_context, r['id'])
 
     def _get_router_interface_subnets(self, plugin_context, router_id):

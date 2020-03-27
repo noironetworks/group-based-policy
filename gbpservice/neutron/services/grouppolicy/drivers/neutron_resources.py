@@ -44,19 +44,15 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
         return self._gbp_plugin
 
     @log.log_method_call
-    def create_l2_policy_precommit(self, context):
-        l2p_db = context._plugin._get_l2_policy(
-            context._plugin_context, context.current['id'])
+    def create_l2_policy_postcommit(self, context):
         if not context.current['l3_policy_id']:
-            self._create_implicit_l3_policy(context)
-            l2p_db['l3_policy_id'] = context.current['l3_policy_id']
+            self._use_implicit_l3_policy(context)
         l3p_db = context._plugin._get_l3_policy(
-            context._plugin_context, l2p_db['l3_policy_id'])
+            context._plugin_context, context.current['l3_policy_id'])
         if not context.current['network_id']:
             self._use_implicit_network(
                 context, address_scope_v4=l3p_db['address_scope_v4_id'],
                 address_scope_v6=l3p_db['address_scope_v6_id'])
-            l2p_db['network_id'] = context.current['network_id']
 
     @log.log_method_call
     def update_l2_policy_precommit(self, context):
@@ -68,16 +64,12 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
             raise exc.L3PolicyUpdateOfL2PolicyNotSupported()
 
     @log.log_method_call
-    def delete_l2_policy_precommit(self, context):
-        l2p_db = context._plugin._get_l2_policy(
-            context._plugin_context, context.current['id'])
-        if l2p_db['network_id']:
-            network_id = l2p_db['network_id']
-            l2p_db.update({'network_id': None})
+    def delete_l2_policy_postcommit(self, context):
+        network_id = context.current['network_id']
+        if network_id:
             self._cleanup_network(context._plugin_context, network_id)
-        if l2p_db['l3_policy_id']:
-            l3p_id = l2p_db['l3_policy_id']
-            l2p_db.update({'l3_policy_id': None})
+        l3p_id = context.current['l3_policy_id']
+        if l3p_id:
             self._cleanup_l3_policy(context, l3p_id)
 
     def _port_id_to_pt(self, plugin_context, port_id):
