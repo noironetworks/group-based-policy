@@ -147,6 +147,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                                           page_reverse=page_reverse)
         return self._make_routers_dict(routers_db, fields)
 
+    @db_api.retry_if_session_inactive()
     def create_router(self, context, router):
         LOG.debug("APIC AIM L3 Plugin creating router: %s", router)
         self._md.ensure_tenant(context, router['router']['tenant_id'])
@@ -163,6 +164,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             self._md.create_router(context, result)
             return result
 
+    @db_api.retry_if_session_inactive()
     def update_router(self, context, id, router):
         LOG.debug("APIC AIM L3 Plugin updating router %(id)s with: %(router)s",
                   {'id': id, 'router': router})
@@ -180,6 +182,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
             self._md.update_router(context, result, original)
             return result
 
+    @db_api.retry_if_session_inactive()
     def delete_router(self, context, id):
         LOG.debug("APIC AIM L3 Plugin deleting router: %s", id)
         with context.session.begin(subtransactions=True):
@@ -211,6 +214,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                           else {l3_ext.EXTERNAL_PROVIDED_CONTRACTS: [],
                                 l3_ext.EXTERNAL_CONSUMED_CONTRACTS: []})
 
+    @db_api.retry_if_session_inactive()
     def add_router_interface(self, context, router_id, interface_info):
         LOG.debug("APIC AIM L3 Plugin adding interface %(interface)s "
                   "to router %(router)s",
@@ -264,6 +268,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         self._md.add_router_interface(context, router, port, subnets)
         return port, subnets
 
+    @db_api.retry_if_session_inactive()
     def remove_router_interface(self, context, router_id, interface_info):
         LOG.debug("APIC AIM L3 Plugin removing interface %(interface)s "
                   "from router %(router)s",
@@ -302,6 +307,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         self._md.remove_router_interface(context, router_id, port_db, subnets)
         return port_db, subnets
 
+    @db_api.retry_if_session_inactive()
     def create_floatingip(self, context, floatingip):
         fip = floatingip['floatingip']
         self._md.ensure_tenant(context, fip['tenant_id'])
@@ -336,6 +342,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                                           result['status'])
         return result
 
+    @db_api.retry_if_session_inactive()
     def update_floatingip(self, context, id, floatingip):
         with context.session.begin(subtransactions=True):
             old_fip = self.get_floatingip(context, id)
@@ -347,6 +354,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                                               result['status'])
         return result
 
+    @db_api.retry_if_session_inactive()
     def delete_floatingip(self, context, id):
         with context.session.begin(subtransactions=True):
             old_fip = self.get_floatingip(context, id)
