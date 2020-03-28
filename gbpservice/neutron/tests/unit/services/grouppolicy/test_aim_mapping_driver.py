@@ -4580,11 +4580,12 @@ class NotificationTest(AIMBaseTestCase):
         self.assertLess(0, self.queue_notification_call_count)
         self.assertLess(0, self.max_notification_queue_length)
 
-        # There are 4 transactions - one for create PTG,
-        # one for create PT, one for delete PT, and one for
-        # delete PTG. Delete PT notification is sent without queueing,
-        # which leaves us with 3 sets of queued notifications.
-        self.assertEqual(3, self.post_notifications_from_queue_call_count)
+        # There are 6 top-level transactions with notifications
+        # queued, from the following Neutron APIs: create_subnetpool,
+        # create_subnet, add_router_interface,
+        # remove_router_interface, delete_subnet, and
+        # delete_subnetpool.
+        self.assertEqual(6, self.post_notifications_from_queue_call_count)
 
         self._test_notifications(no_batch.call_args_list, batch.call_args_list)
 
