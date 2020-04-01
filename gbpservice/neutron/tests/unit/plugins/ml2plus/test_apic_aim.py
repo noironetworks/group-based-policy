@@ -9885,7 +9885,7 @@ class TestOpflexRpc(ApicAimTestCase):
     def test_endpoint_details_bound_active_active_aap(self):
         self._test_endpoint_details_bound(active_active_aap=True)
 
-    def test_endpoint_details_bound_svi(self):
+    def _test_endpoint_details_bound_vlan_svi(self, apic_svi=False):
         self._register_agent('h1', AGENT_CONF_OPFLEX)
 
         aim_ctx = aim_context.AimContext(self.db_session)
@@ -9895,10 +9895,13 @@ class TestOpflexRpc(ApicAimTestCase):
             path='topology/pod-1/paths-102/pathep-[eth1/8]')
         self.aim_mgr.create(aim_ctx, hlink_1)
 
+        kwargs = {'provider:network_type': u'vlan'}
+        if apic_svi:
+            kwargs.update({'apic:svi': 'True'})
+
         network = self._make_network(self.fmt, 'net1', True,
                                      arg_list=self.extension_attributes,
-                                     **{'apic:svi': 'True',
-                                        'provider:network_type': u'vlan'})
+                                     **kwargs)
         net1 = network['network']
         gw1_ip = '10.0.1.1'
         self._make_subnet(self.fmt, network, gw1_ip, cidr='10.0.1.0/24')
@@ -9916,10 +9919,17 @@ class TestOpflexRpc(ApicAimTestCase):
         response = self.driver.request_endpoint_details(
             n_context.get_admin_context(), request=request, host='h1')
         gbp_details = response['gbp_details']
-        self.assertEqual(True, gbp_details.get('svi'))
+        if apic_svi:
+            self.assertEqual(True, gbp_details.get('svi'))
         neutron_details = response['neutron_details']
         self.assertEqual(net1['provider:segmentation_id'],
             neutron_details.get('segmentation_id'))
+
+    def test_endpoint_details_bound_vlan_not_svi(self):
+        self._test_endpoint_details_bound_vlan_svi()
+
+    def test_endpoint_details_bound_svi(self):
+        self._test_endpoint_details_bound_vlan_svi(apic_svi=True)
 
     def test_endpoint_details_unbound(self):
         host = 'host1'

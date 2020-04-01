@@ -11,10 +11,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import mock
+
 from aim.api import infra as aim_infra
 from aim.api import resource as aim_res
 from aim.api import service_graph as aim_sg
-import mock
 from networking_sfc.extensions import flowclassifier as flowc_ext
 from networking_sfc.extensions import sfc as sfc_ext
 from networking_sfc.services.flowclassifier.common import config as flc_cfg
@@ -26,6 +27,7 @@ from neutron.db.models import l3 as l3_db
 from neutron_lib.callbacks import exceptions as c_exc
 from neutron_lib import context
 from neutron_lib.plugins import directory
+from opflexagent import constants as ofcst
 from oslo_log import log as logging
 
 from gbpservice.neutron.services.grouppolicy import config
@@ -38,6 +40,13 @@ LOG = logging.getLogger(__name__)
 import six
 if six.PY3:
     from importlib import reload
+
+AGENT_CONF_OPFLEX = {'alive': True, 'binary': 'somebinary',
+                     'topic': 'sometopic',
+                     'agent_type': ofcst.AGENT_TYPE_OPFLEX_OVS,
+                     'configurations': {
+                         'opflex_networks': None,
+                         'bridge_mappings': {'physnet1': 'br-eth1'}}}
 
 
 class Rollback(Exception):
@@ -52,11 +61,12 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                                       group='flowclassifier')
         config.cfg.CONF.set_override(
             'network_vlan_ranges', ['physnet1:100:200'], group='ml2_type_vlan')
+        net_type = kwargs.pop('tenant_network_types', None) or ['vlan']
         ml2_options = {'mechanism_drivers': ['apic_aim', 'openvswitch'],
                        'extension_drivers': ['apic_aim', 'port_security',
                                              'dns'],
                        'type_drivers': ['opflex', 'local', 'vlan'],
-                       'tenant_network_types': ['vlan']}
+                       'tenant_network_types': net_type}
         # NOTE(ivar): the SFC and FLC driver managers load the driver names in
         # the default parameters of their INIT functions. In Python, default
         # params are evaluated only once when the module is loaded hence
@@ -708,6 +718,59 @@ class TestPortPair(TestAIMServiceFunctionChainingBase):
                             'segmentation_id': 100}]})
         self.create_port_pair(ingress=sp1['id'], egress=sp2['id'],
                               expected_res_status=201)
+
+
+class TestPortPairOpflexAgent(TestAIMServiceFunctionChainingBase):
+
+    def setUp(self):
+        kwargs = {'tenant_network_types': ['opflex']}
+        super(TestPortPairOpflexAgent, self).setUp(**kwargs)
+
+    def _register_agent(self, host, agent_conf):
+        agent = {'host': host}
+        agent.update(agent_conf)
+        self.aim_mech.plugin.create_or_update_agent(
+            context.get_admin_context(), agent)
+
+    def test_port_pair_with_opflex_agent_vlan_nets(self):
+        # Correct work flow with both nets of type vlan.
+        kwargs = {'provider:network_type': 'vlan'}
+        net1 = self._make_network(self.fmt, 'net1', True,
+            arg_list=tuple(kwargs.keys()), **kwargs)
+        self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
+        p1 = self._make_port(self.fmt, net1['network']['id'])['port']
+
+        net2 = self._make_network(self.fmt, 'net2', True,
+            arg_list=tuple(kwargs.keys()), **kwargs)
+        self._make_subnet(self.fmt, net2, '192.168.1.1', '192.168.1.0/24')
+        p2 = self._make_port(self.fmt, net2['network']['id'])['port']
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+        self._register_agent('h2', AGENT_CONF_OPFLEX)
+        self._bind_port_to_host(p1['id'], 'h1')
+        self._bind_port_to_host(p2['id'], 'h2')
+
+        self.create_port_pair(ingress=p1['id'], egress=p2['id'],
+                              expected_res_status=201)
+
+    def test_port_pair_invalid_with_opflex_agent_opflex_nets(self):
+        # Validate that opflex type nets are invalid.
+        kwargs = {'provider:network_type': 'vlan'}
+        net1 = self._make_network(self.fmt, 'net1', True,
+            arg_list=tuple(kwargs.keys()), **kwargs)
+        self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
+        p1 = self._make_port(self.fmt, net1['network']['id'])['port']
+
+        # create the second net as net type opflex.
+        net2 = self._make_network(self.fmt, 'net2', True)
+        self._make_subnet(self.fmt, net2, '192.168.1.1', '192.168.1.0/24')
+        p2 = self._make_port(self.fmt, net2['network']['id'])['port']
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+        self._register_agent('h2', AGENT_CONF_OPFLEX)
+        self._bind_port_to_host(p1['id'], 'h1')
+        self._bind_port_to_host(p2['id'], 'h2')
+
+        self.create_port_pair(ingress=p1['id'], egress=p2['id'],
+                              expected_res_status=500)
 
 
 class TestPortPairGroup(TestAIMServiceFunctionChainingBase):
