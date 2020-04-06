@@ -23,7 +23,6 @@ from neutron import policy
 from neutron.services.trunk.rpc import server as trunk_server
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2
-from neutron_lib import constants as nl_constants
 from neutron_lib import context
 from neutron_lib.plugins import constants
 from neutron_lib.plugins import directory
@@ -404,7 +403,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         plugins = directory.get_plugins()
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
         self._sc_plugin = plugins.get(constants.SERVICECHAIN)
-        self._l3_plugin = plugins.get(nl_constants.L3)
+        self._l3_plugin = plugins.get(constants.L3)
         self._set_notification_mocks()
         # The following is done to stop the neutron code from checking
         # for dhcp agents

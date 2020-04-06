@@ -12,7 +12,6 @@
 
 import ast
 
-from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
@@ -27,6 +26,7 @@ from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.extensions import servicechain as schain
 from gbpservice.neutron.services.servicechain.common import exceptions as s_exc
 
@@ -259,7 +259,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def create_servicechain_node(self, context, servicechain_node):
         node = servicechain_node['servicechain_node']
         tenant_id = self._get_tenant_id_for_create(context, node)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             node_db = ServiceChainNode(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=node['name'], description=node['description'],
@@ -275,7 +275,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def update_servicechain_node(self, context, servicechain_node_id,
                                  servicechain_node, set_params=False):
         node = servicechain_node['servicechain_node']
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             node_db = self._get_servicechain_node(context,
                                                   servicechain_node_id)
             node_db.update(node)
@@ -291,7 +291,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
 
     @log.log_method_call
     def delete_servicechain_node(self, context, servicechain_node_id):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             node_db = self._get_servicechain_node(context,
                                                   servicechain_node_id)
             if node_db.specs:
@@ -426,7 +426,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                  set_params=True):
         spec = servicechain_spec['servicechain_spec']
         tenant_id = self._get_tenant_id_for_create(context, spec)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             spec_db = ServiceChainSpec(id=uuidutils.generate_uuid(),
                                        tenant_id=tenant_id,
                                        name=spec['name'],
@@ -444,7 +444,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def update_servicechain_spec(self, context, spec_id,
                                  servicechain_spec, set_params=True):
         spec = servicechain_spec['servicechain_spec']
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             spec_db = self._get_servicechain_spec(context,
                                                   spec_id)
             spec = self._process_nodes_for_spec(context, spec_db, spec,
@@ -458,7 +458,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                                 context, filters={"action_value": [spec_id]})
         if policy_actions:
             raise schain.ServiceChainSpecInUse(spec_id=spec_id)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             spec_db = self._get_servicechain_spec(context,
                                                   spec_id)
             if spec_db.instances:
@@ -493,7 +493,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def create_servicechain_instance(self, context, servicechain_instance):
         instance = servicechain_instance['servicechain_instance']
         tenant_id = self._get_tenant_id_for_create(context, instance)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             if not instance.get('management_ptg_id'):
                 management_groups = (
                     self._grouppolicy_plugin.get_policy_target_groups(
@@ -525,7 +525,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def update_servicechain_instance(self, context, servicechain_instance_id,
                                      servicechain_instance):
         instance = servicechain_instance['servicechain_instance']
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             instance_db = self._get_servicechain_instance(
                 context, servicechain_instance_id)
             instance = self._process_specs_for_instance(context, instance_db,
@@ -535,7 +535,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
 
     @log.log_method_call
     def delete_servicechain_instance(self, context, servicechain_instance_id):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             instance_db = self._get_servicechain_instance(
                 context, servicechain_instance_id)
             context.session.delete(instance_db)
@@ -572,7 +572,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def create_service_profile(self, context, service_profile):
         profile = service_profile['service_profile']
         tenant_id = self._get_tenant_id_for_create(context, profile)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             profile_db = ServiceProfile(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=profile['name'], description=profile['description'],
@@ -590,7 +590,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def update_service_profile(self, context, service_profile_id,
                                service_profile):
         profile = service_profile['service_profile']
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             profile_db = self._get_service_profile(context,
                                                    service_profile_id)
             profile_db.update(profile)
@@ -598,7 +598,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
 
     @log.log_method_call
     def delete_service_profile(self, context, service_profile_id):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             profile_db = self._get_service_profile(context,
                                                    service_profile_id)
             if profile_db.nodes:

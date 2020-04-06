@@ -10,7 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.db import api as db_api
 from neutron.db import models_v2
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as nexc
@@ -21,6 +20,7 @@ from sqlalchemy import orm
 
 from gbpservice._i18n import _
 from gbpservice.common import utils as gbp_utils
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.extensions import group_policy as gpolicy
 from gbpservice.neutron.services.grouppolicy.common import exceptions
@@ -429,7 +429,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def create_policy_target(self, context, policy_target):
         pt = policy_target['policy_target']
         tenant_id = self._get_tenant_id_for_create(context, pt)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             self._validate_pt_port_exta_attributes(context, pt)
             pt_db = PolicyTargetMapping(id=uuidutils.generate_uuid(),
                                         tenant_id=tenant_id,
@@ -465,7 +465,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def create_policy_target_group(self, context, policy_target_group):
         ptg = policy_target_group['policy_target_group']
         tenant_id = self._get_tenant_id_for_create(context, ptg)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             if ptg['service_management']:
                 self._validate_service_management_ptg(context, tenant_id)
             uuid = ptg.get('id')
@@ -495,7 +495,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def update_policy_target_group(self, context, policy_target_group_id,
                                    policy_target_group):
         ptg = policy_target_group['policy_target_group']
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             ptg_db = self._get_policy_target_group(
                 context, policy_target_group_id)
             self._process_policy_rule_sets_for_ptg(context, ptg_db, ptg)
@@ -550,7 +550,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def create_l2_policy(self, context, l2_policy):
         l2p = l2_policy['l2_policy']
         tenant_id = self._get_tenant_id_for_create(context, l2p)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             l2p_db = L2PolicyMapping(id=uuidutils.generate_uuid(),
                                      tenant_id=tenant_id,
                                      name=l2p['name'],
@@ -591,7 +591,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         self.validate_subnet_prefix_length(l3p['ip_version'],
                                            l3p['subnet_prefix_length'],
                                            l3p.get('ip_pool', None))
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = L3PolicyMapping(id=uuidutils.generate_uuid(),
                                      tenant_id=tenant_id,
                                      name=l3p['name'],
@@ -633,7 +633,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         if 'address_scope_v4_id' in l3p or 'address_scope_v6_id' in l3p:
             raise AddressScopeUpdateForL3PNotSupported()
 
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = self._get_l3_policy(context, l3_policy_id)
 
             self._update_subnetpools_for_l3_policy(context, l3_policy_id,
@@ -679,7 +679,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def create_external_segment(self, context, external_segment):
         es = external_segment['external_segment']
         tenant_id = self._get_tenant_id_for_create(context, es)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             es_db = ExternalSegmentMapping(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=es['name'], description=es['description'],
@@ -713,7 +713,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def create_nat_pool(self, context, nat_pool):
         np = nat_pool['nat_pool']
         tenant_id = self._get_tenant_id_for_create(context, np)
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             np_db = NATPoolMapping(
                 id=uuidutils.generate_uuid(), tenant_id=tenant_id,
                 name=np['name'], description=np['description'],

@@ -24,17 +24,18 @@ from networking_sfc.extensions import flowclassifier as flowc_ext
 from networking_sfc.extensions import sfc as sfc_ext
 from networking_sfc.services.sfc.common import context as sfc_ctx
 from networking_sfc.services.sfc.drivers import base
-from neutron.db import api as db_api
 from neutron.db import models_v2
 from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib import constants as n_constants
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
 import sqlalchemy as sa
 from sqlalchemy.ext import baked
 from sqlalchemy import or_
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import constants
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
@@ -85,6 +86,7 @@ class SfcAIMDriverBase(base.SfcDriverBase):
         pass
 
 
+@registry.has_registry_receivers
 class SfcAIMDriver(SfcAIMDriverBase):
     """SFC Driver mapping for AIM."""
 
@@ -98,19 +100,6 @@ class SfcAIMDriver(SfcAIMDriverBase):
         self._aim_flowc_driver = None
         self.name_mapper = apic_mapper.APICNameMapper()
         self.aim = aim_manager.AimManager()
-        # We don't care about deletion, that is managed by the database layer
-        # (can't delete a flowclassifier if in use).
-        for event in [events.PRECOMMIT_UPDATE, events.PRECOMMIT_CREATE]:
-            registry.subscribe(self._handle_flow_classifier,
-                               constants.GBP_FLOW_CLASSIFIER, event)
-        registry.subscribe(self._handle_port_bound, constants.GBP_PORT,
-                           events.PRECOMMIT_UPDATE)
-        registry.subscribe(self._handle_net_gbp_change,
-                           constants.GBP_NETWORK_EPG, events.PRECOMMIT_UPDATE)
-        registry.subscribe(self._handle_net_gbp_change,
-                           constants.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE)
-        registry.subscribe(self._handle_net_link_change,
-                           constants.GBP_NETWORK_LINK, events.PRECOMMIT_UPDATE)
 
     @property
     def plugin(self):
@@ -134,7 +123,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
     @property
     def l3_plugin(self):
         if not self._l3_plugin:
-            self._l3_plugin = directory.get_plugin(n_constants.L3)
+            self._l3_plugin = directory.get_plugin(pconst.L3)
             if not self._l3_plugin:
                 LOG.error("No L3 service plugin found.")
                 raise exc.GroupPolicyDeploymentError()
@@ -675,7 +664,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
 
     def _get_chains_by_classifier_id(self, plugin_context, flowc_id):
         context = plugin_context
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             query = BAKERY(lambda s: s.query(
                 sfc_db.ChainClassifierAssoc))
             query += lambda q: q.filter_by(
@@ -690,7 +679,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
         if not ppg_ids:
             return []
         context = plugin_context
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             # Baked queries using in_ require sqlalchemy >=1.2.
             chain_ids = [x.portchain_id for x in context.session.query(
                 sfc_db.ChainGroupAssoc).filter(
@@ -702,7 +691,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
     def _get_groups_by_pair_id(self, plugin_context, pp_id):
         # NOTE(ivar): today, port pair can be associated only to one PPG
         context = plugin_context
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             pp_db = self.sfc_plugin._get_port_pair(plugin_context, pp_id)
             if pp_db and pp_db.portpairgroup_id:
                 return self.sfc_plugin.get_port_pair_groups(
@@ -859,6 +848,10 @@ class SfcAIMDriver(SfcAIMDriverBase):
         # Every port pair will return the same result
         return ingress_vrf, egress_vrf
 
+    # We don't care about deletion, that is managed by the database
+    # layer (can't delete a flowclassifier if in use).
+    @registry.receives(constants.GBP_FLOW_CLASSIFIER,
+                       [events.PRECOMMIT_CREATE, events.PRECOMMIT_UPDATE])
     def _handle_flow_classifier(self, rtype, event, trigger, driver_context,
                                 **kwargs):
         if event == events.PRECOMMIT_UPDATE:
@@ -871,6 +864,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
                         chain, chain)
                     self.update_port_chain_precommit(c_ctx, remap=True)
 
+    @registry.receives(constants.GBP_PORT, [events.PRECOMMIT_UPDATE])
     def _handle_port_bound(self, rtype, event, trigger, driver_context,
                            **kwargs):
         if event == events.PRECOMMIT_UPDATE:
@@ -906,6 +900,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
                                                         pp, pp)
                         self.update_port_pair_precommit(d_ctx, remap=True)
 
+    @registry.receives(constants.GBP_NETWORK_EPG, [events.PRECOMMIT_UPDATE])
+    @registry.receives(constants.GBP_NETWORK_VRF, [events.PRECOMMIT_UPDATE])
     def _handle_net_gbp_change(self, rtype, event, trigger, context,
                                network_id, **kwargs):
         chains = {}
@@ -925,6 +921,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
             flowcs, ppgs = self._get_pc_flowcs_and_ppgs(context, chain)
             self._validate_port_chain(context, chain, flowcs, ppgs)
 
+    @registry.receives(constants.GBP_NETWORK_LINK, [events.PRECOMMIT_UPDATE])
     def _handle_net_link_change(self, rtype, event, trigger, context,
                                 networks_map, host_links, host, **kwargs):
         aim_ctx = aim_context.AimContext(db_session=context.session)

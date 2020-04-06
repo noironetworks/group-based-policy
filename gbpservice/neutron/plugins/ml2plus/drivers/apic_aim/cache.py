@@ -40,15 +40,8 @@ class ProjectDetailsCache(object):
         self.project_details = {}
         self.keystone = None
         self.gbp = None
-        # This is needed for the legacy GBP plugin, which also
-        # uses the cache. This can be reverted once newton support
-        # is dropped
-        if hasattr(cfg.CONF, 'ml2_apic_aim'):
-            ml2_cfg = cfg.CONF.ml2_apic_aim
-            self.enable_neutronclient_internal_ep_interface = (
-                ml2_cfg.enable_neutronclient_internal_ep_interface)
-        else:
-            self.enable_neutronclient_internal_ep_interface = False
+        self.enable_neutronclient_internal_ep_interface = (
+            cfg.CONF.ml2_apic_aim.enable_neutronclient_internal_ep_interface)
 
     def _get_keystone_client(self):
         # REVISIT: It seems load_from_conf_options() and

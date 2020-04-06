@@ -18,7 +18,6 @@ from neutron.common import utils as n_utils
 from neutron.db import _model_query as model_query
 from neutron.db import _resource_extend as resource_extend
 from neutron.db import _utils as db_utils
-from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import dns_db
 from neutron.db import extraroute_db
@@ -27,7 +26,6 @@ from neutron.db.models import l3 as l3_db
 from neutron.quota import resource_registry
 from neutron_lib.api.definitions import l3 as l3_def
 from neutron_lib.api.definitions import portbindings
-from neutron_lib import constants
 from neutron_lib import exceptions
 from neutron_lib.plugins import constants
 from neutron_lib.plugins import directory
@@ -36,6 +34,7 @@ from oslo_utils import excutils
 from sqlalchemy import inspect
 
 from gbpservice._i18n import _
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
@@ -240,11 +239,13 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         # needed, it could me moved to the FLOATING_IP.BEFORE_CREATE
         # callback in rocky and newer.
         self._md.ensure_tenant(context, fip['tenant_id'])
-        with db_api.context_manager.reader.using(context):
-            # Verify that subnet is not a SNAT host-pool.
-            #
-            # REVISIT: Replace with FLOATING_IP.PRECOMMIT_CREATE
-            # callback in queens and newer?
+        with db_api.CONTEXT_READER.using(context):
+            # Verify that subnet is not a SNAT host-pool. This could
+            # be done from a FLOATING_IP.PRECOMMIT_CREATE callback,
+            # but that callback is made after a FIP port has been
+            # allocated from the subnet. An exception would cause that
+            # port to be deleted, but we are better off not trying to
+            # allocate from the SNAT subnet in the first place.
             self._md.check_floatingip_external_address(context, fip)
         if fip.get('subnet_id') or fip.get('floating_ip_address'):
             result = super(ApicL3Plugin, self).create_floatingip(
@@ -252,7 +253,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         else:
             # Iterate over non SNAT host-pool subnets and try to
             # allocate an address.
-            with db_api.context_manager.reader.using(context):
+            with db_api.CONTEXT_READER.using(context):
                 other_subs = self._md.get_subnets_for_fip(context, fip)
             result = None
             for ext_sn in other_subs:
@@ -275,7 +276,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         # callback, which is called after creation as well, in queens
         # and newer, or maybe just calling update_floatingip_status
         # from the MD's create_floatingip method.
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             self.update_floatingip_status(
                 context, result['id'], result['status'])
         return result
@@ -293,7 +294,7 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
         # update_floatingip_status from the MD's update_floatingip
         # method.
         if old_fip['status'] != result['status']:
-            with db_api.context_manager.writer.using(context):
+            with db_api.CONTEXT_WRITER.using(context):
                 self.update_floatingip_status(
                     context, result['id'], result['status'])
         return result

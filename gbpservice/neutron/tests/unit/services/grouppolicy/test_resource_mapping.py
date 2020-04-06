@@ -108,7 +108,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self._plugin.is_agent_down = mock.Mock(return_value=False)
         self._context = nctx.get_admin_context()
         self._gbp_plugin = directory.get_plugin(pconst.GROUP_POLICY)
-        self._l3_plugin = directory.get_plugin(cst.L3)
+        self._l3_plugin = directory.get_plugin(pconst.L3)
         self.saved_keystone_client = resource_mapping.k_client.Client
         resource_mapping.k_client.Client = mock.Mock()
         pdm.PolicyDriverManager.get_policy_target_group_status = (
@@ -1966,7 +1966,7 @@ class TestL3Policy(ResourceMappingTestCase,
                 self._extend_subnet_prefixes(prefixes_list, l3p, version)
             self.assertItemsEqual(subnetpool_prefixes, prefixes_list)
 
-        params = {'ids': ascp_ids}
+        params = '&'.join('id=' + id for id in ascp_ids)
         req = self.new_list_request('address-scopes',
                                     params=params, fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
@@ -2019,7 +2019,7 @@ class TestL3Policy(ResourceMappingTestCase,
                 self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
             else:
                 self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
-        params = {'ids': ascp_ids}
+        params = '&'.join('id=' + id for id in ascp_ids)
         req = self.new_list_request('address-scopes',
                                     params=params, fmt=self.fmt)
         res = req.get_response(self.ext_api)

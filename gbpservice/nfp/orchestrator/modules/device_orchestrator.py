@@ -14,6 +14,7 @@
 import oslo_messaging as messaging
 
 from gbpservice._i18n import _
+from gbpservice.neutron.db import api as db_api
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import topics as nsf_topics
 from gbpservice.nfp.common import utils as nfp_utils
@@ -27,7 +28,6 @@ from gbpservice.nfp.orchestrator.db import nfp_db as nfp_db
 from gbpservice.nfp.orchestrator.drivers import orchestration_driver
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
 from neutron.common import rpc as n_rpc
-from neutron.db import api as db_api
 from neutron_lib import context as n_context
 
 import copy

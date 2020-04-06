@@ -14,24 +14,21 @@ import copy
 
 from neutron.api import extensions
 from neutron.api.v2 import resource as neutron_resource
-from neutron.db import address_scope_db
-from neutron.db import api as db_api
 from neutron.db import common_db_mixin
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
-from neutron.objects import subnetpool as subnetpool_obj
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.quota import resource as quota_resource
 from neutron_lib.api import attributes
 from neutron_lib.api import validators
 from neutron_lib import exceptions
-from neutron_lib.exceptions import address_scope as as_exc
 from neutron_lib.plugins import directory
 from oslo_log import log
 from oslo_utils import excutils
 
 from gbpservice.common import utils as gbp_utils
+from gbpservice.neutron.db import api as db_api
 
 
 LOG = log.getLogger(__name__)
@@ -147,25 +144,6 @@ def _get_tenant_id_for_create(self, context, resource):
 
 common_db_mixin.CommonDbMixin._get_tenant_id_for_create = (
     _get_tenant_id_for_create)
-
-
-# REVISIT: In ocata, the switch to new engine facade in neutron is partial.
-# This can result in different facades being mixed up within same transaction,
-# and inconsistent behavior. Specifically, when L3 policy is deleted,
-# subnetpool is deleted (old facade), and address scope (new facade) fails to
-# be deleted since the dependent subnetpool deletion is in different session
-# that is not yet commited. The workaround is to switch address scope to old
-# engine facade. This workaround should be removed in Pike.
-def _delete_address_scope(self, context, id):
-    with context.session.begin(subtransactions=True):
-        if subnetpool_obj.SubnetPool.get_objects(context,
-                                                 address_scope_id=id):
-            raise as_exc.AddressScopeInUse(address_scope_id=id)
-        address_scope = self._get_address_scope(context, id)
-        address_scope.delete()
-
-address_scope_db.AddressScopeDbMixin.delete_address_scope = (
-    _delete_address_scope)
 
 
 def extend_resources(self, version, attr_map):
@@ -362,7 +340,7 @@ try:
         self._check_ip_prefix_valid(destination_ip_prefix, ethertype)
         logical_source_port = fc['logical_source_port']
         logical_destination_port = fc['logical_destination_port']
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             if logical_source_port is not None:
                 self._get_port(context, logical_source_port)
             if logical_destination_port is not None:

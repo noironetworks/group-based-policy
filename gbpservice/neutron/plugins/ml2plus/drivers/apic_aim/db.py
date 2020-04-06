@@ -14,7 +14,6 @@
 #    under the License.
 
 from aim.api import resource as aim_resource
-from neutron.db import api as db_api
 from neutron.db.models import address_scope as as_db
 from neutron.db import models_v2
 from neutron_lib import context as n_context
@@ -24,6 +23,8 @@ from oslo_log import log
 import sqlalchemy as sa
 from sqlalchemy.ext import baked
 from sqlalchemy import orm
+
+from gbpservice.neutron.db import api as db_api
 
 VM_UPDATE_PURPOSE = 'VmUpdate'
 

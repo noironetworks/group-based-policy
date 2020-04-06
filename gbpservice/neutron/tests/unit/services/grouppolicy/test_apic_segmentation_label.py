@@ -10,8 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.db import api as db_api
-
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db.grouppolicy.extensions import (
     apic_segmentation_label_db as db)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (

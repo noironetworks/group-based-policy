@@ -23,10 +23,8 @@ from neutron.common import constants as n_const
 from neutron.common import utils as n_utils
 from neutron.db import _resource_extend as resource_extend
 from neutron.db import _utils as db_utils
-from neutron.db import api as db_api
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
-from neutron.db import provisioning_blocks
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
 from neutron.plugins.ml2 import plugin as ml2_plugin
@@ -44,6 +42,7 @@ from neutron_lib.plugins import directory
 from oslo_log import log
 from oslo_utils import excutils
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db import implicitsubnetpool_db
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
 from gbpservice.neutron.plugins.ml2plus import driver_context
@@ -52,6 +51,7 @@ from gbpservice.neutron.plugins.ml2plus import managers
 LOG = log.getLogger(__name__)
 
 
+@registry.has_registry_receivers
 @resource_extend.has_resource_extenders
 class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                     implicitsubnetpool_db.ImplicitSubnetpoolMixin):
@@ -93,42 +93,6 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.type_manager.initialize()
         self.extension_manager.initialize()
         self.mechanism_manager.initialize()
-        registry.subscribe(self._port_provisioned, resources.PORT,
-                           provisioning_blocks.PROVISIONING_COMPLETE)
-        registry.subscribe(self._handle_segment_change, resources.SEGMENT,
-                           events.PRECOMMIT_CREATE)
-        registry.subscribe(self._handle_segment_change, resources.SEGMENT,
-                           events.PRECOMMIT_DELETE)
-        registry.subscribe(self._handle_segment_change, resources.SEGMENT,
-                           events.AFTER_CREATE)
-        registry.subscribe(self._handle_segment_change, resources.SEGMENT,
-                           events.AFTER_DELETE)
-
-        # REVISIT(kent): All the postcommit calls for SG and SG rules are not
-        # currently implemented as they are not needed at this moment.
-        registry.subscribe(self._handle_security_group_change,
-                           resources.SECURITY_GROUP, events.PRECOMMIT_CREATE)
-        registry.subscribe(self._handle_security_group_change,
-                           resources.SECURITY_GROUP, events.PRECOMMIT_DELETE)
-        registry.subscribe(self._handle_security_group_change,
-                           resources.SECURITY_GROUP, events.PRECOMMIT_UPDATE)
-
-        # There is no update event to the security_group_rule
-        registry.subscribe(self._handle_security_group_rule_change,
-                           resources.SECURITY_GROUP_RULE,
-                           events.PRECOMMIT_CREATE)
-        registry.subscribe(self._handle_security_group_rule_change,
-                           resources.SECURITY_GROUP_RULE,
-                           events.PRECOMMIT_DELETE)
-        try:
-            registry.subscribe(self._subnet_delete_precommit_handler,
-                    resources.SUBNET, events.PRECOMMIT_DELETE)
-            registry.subscribe(self._subnet_delete_after_delete_handler,
-                    resources.SUBNET, events.AFTER_DELETE)
-        except AttributeError:
-            LOG.info("Detected older version of Neutron, ML2Plus plugin "
-                     "is not subscribed to subnet_precommit_delete and "
-                     "subnet_after_delete events")
         self._setup_dhcp()
         self._start_rpc_notifiers()
         self.add_agent_status_check_worker(self.agent_health_check)
@@ -140,6 +104,10 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         servers.extend(self.mechanism_manager.start_rpc_listeners())
         return servers
 
+    # REVISIT: Handle directly in mechanism driver?
+    @registry.receives(resources.SECURITY_GROUP,
+                       [events.PRECOMMIT_CREATE, events.PRECOMMIT_UPDATE,
+                        events.PRECOMMIT_DELETE])
     def _handle_security_group_change(self, resource, event, trigger,
                                       **kwargs):
         if 'payload' in kwargs:
@@ -170,6 +138,9 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self.mechanism_manager.update_security_group_precommit(
                 mech_context)
 
+    # REVISIT: Handle directly in mechanism driver?
+    @registry.receives(resources.SECURITY_GROUP_RULE,
+                       [events.PRECOMMIT_CREATE, events.PRECOMMIT_DELETE])
     def _handle_security_group_rule_change(self, resource, event, trigger,
                                            **kwargs):
         context = kwargs.get('context')
@@ -183,7 +154,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         if event == events.PRECOMMIT_DELETE:
             sg_rule = {'id': kwargs.get('security_group_rule_id'),
                        'security_group_id': kwargs.get('security_group_id'),
-                       'tenant_id': context.tenant}
+                       'tenant_id': context.project_id}
             mech_context = driver_context.SecurityGroupRuleContext(
                 self, context, sg_rule)
             self.mechanism_manager.delete_security_group_rule_precommit(
@@ -322,7 +293,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     # pre_commit. We need to extend_dict function to pick up the changes
     # from the pre_commit operations as well.
     def _create_network_db(self, context, network):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             result, mech_context = super(
                     Ml2PlusPlugin, self)._create_network_db(
                             context, network)
@@ -371,7 +342,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @db_api.retry_if_session_inactive()
     def create_subnetpool(self, context, subnetpool):
         self._ensure_tenant(context, subnetpool[subnetpool_def.RESOURCE_NAME])
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             result = super(Ml2PlusPlugin, self).create_subnetpool(context,
                                                                   subnetpool)
             self._update_implicit_subnetpool(context, subnetpool, result)
@@ -395,7 +366,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def update_subnetpool(self, context, id, subnetpool):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             original_subnetpool = super(Ml2PlusPlugin, self).get_subnetpool(
                 context, id)
             updated_subnetpool = super(Ml2PlusPlugin, self).update_subnetpool(
@@ -414,7 +385,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     @n_utils.transaction_guard
     def delete_subnetpool(self, context, id):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             subnetpool = super(Ml2PlusPlugin, self).get_subnetpool(context, id)
             mech_context = driver_context.SubnetPoolContext(
                 self, context, subnetpool)
@@ -431,7 +402,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @n_utils.transaction_guard
     def create_address_scope(self, context, address_scope):
         self._ensure_tenant(context, address_scope[as_def.ADDRESS_SCOPE])
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             result = super(Ml2PlusPlugin, self).create_address_scope(
                 context, address_scope)
             self.extension_manager.process_create_address_scope(
@@ -456,7 +427,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     @n_utils.transaction_guard
     def update_address_scope(self, context, id, address_scope):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             original_address_scope = super(Ml2PlusPlugin,
                                            self).get_address_scope(context, id)
             updated_address_scope = super(Ml2PlusPlugin,
@@ -474,7 +445,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     @n_utils.transaction_guard
     def delete_address_scope(self, context, id):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             address_scope = super(Ml2PlusPlugin, self).get_address_scope(
                 context, id)
             mech_context = driver_context.AddressScopeContext(
@@ -540,7 +511,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @db_api.retry_if_session_inactive()
     def get_networks(self, context, filters=None, fields=None,
                      sorts=None, limit=None, marker=None, page_reverse=False):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             nets_db = super(Ml2PlusPlugin, self)._get_networks(
                 context, filters, None, sorts, limit, marker, page_reverse)
 
@@ -602,7 +573,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                     sorts=None, limit=None, marker=None,
                     page_reverse=False):
 
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             marker_obj = self._get_marker_obj(context, 'subnet', limit, marker)
 
             # REVIST(sridar): We need to rethink if we want to support

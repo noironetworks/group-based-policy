@@ -16,12 +16,12 @@
 from aim.api import resource as aim_res
 from aim import exceptions as aim_exc
 from neutron.api import extensions
-from neutron.db import api as db_api
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import directory
 from oslo_log import log
 from oslo_utils import excutils
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus

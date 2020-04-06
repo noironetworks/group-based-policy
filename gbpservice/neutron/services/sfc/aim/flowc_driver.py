@@ -47,12 +47,11 @@ class FlowclassifierAIMDriverBase(base.FlowClassifierDriverBase):
         pass
 
 
+@registry.has_registry_receivers
 class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
     """SFC Driver mapping for AIM."""
 
     def initialize(self):
-        registry.subscribe(self._handle_network_delete, resources.NETWORK,
-                           events.PRECOMMIT_DELETE)
         self._core_plugin = None
 
     @property
@@ -134,6 +133,7 @@ class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
 
             return classifier_ids
 
+    @registry.receives(resources.NETWORK, [events.PRECOMMIT_DELETE])
     def _handle_network_delete(self, rtype, event, trigger, context,
                                network_id, **kwargs):
         flc_ids = self._get_classifiers_by_network_id(context, network_id)
