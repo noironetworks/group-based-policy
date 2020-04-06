@@ -20,7 +20,6 @@ from aim import aim_manager
 from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
-from neutron.db import api as db_api
 from neutron import policy
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
@@ -33,6 +32,7 @@ from oslo_utils import excutils
 
 from gbpservice._i18n import _
 from gbpservice.common import utils as gbp_utils
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import cisco_apic
@@ -508,7 +508,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         self._handle_create_network_service_policy(context)
 
-        with db_api.context_manager.writer.using(context) as session:
+        with db_api.CONTEXT_WRITER.using(context) as session:
             l2p_db = context._plugin._get_l2_policy(
                 context._plugin_context, context.current['l2_policy_id'])
             net = self._get_network(
@@ -2226,7 +2226,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         if not context:
             context = gbp_utils.get_current_context()
         # get_network can do a DB write, hence we use a writer
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             query = BAKERY(lambda s: s.query(
                 gpmdb.PolicyTargetGroupMapping))
             query += lambda q: q.filter_by(

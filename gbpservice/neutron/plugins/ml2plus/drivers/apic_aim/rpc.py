@@ -20,7 +20,6 @@ import sqlalchemy as sa
 from sqlalchemy.ext import baked
 
 from neutron.common import rpc as n_rpc
-from neutron.db import api as db_api
 from neutron.db.extra_dhcp_opt import models as dhcp_models
 from neutron.db.models import allowed_address_pair as aap_models
 from neutron.db.models import dns as dns_models
@@ -40,6 +39,7 @@ from oslo_log import log
 import oslo_messaging
 from oslo_serialization import jsonutils
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import constants
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
@@ -178,7 +178,7 @@ class TopologyRpcEndpoint(object):
 class ApicRpcHandlerMixin(object):
 
     def _start_rpc_listeners(self):
-        conn = n_rpc.create_connection()
+        conn = n_rpc.Connection()
 
         # Opflex RPC handler.
         self._opflex_endpoint = o_rpc.GBPServerRpcCallback(
@@ -282,7 +282,7 @@ class ApicRpcHandlerMixin(object):
     @db_api.retry_if_session_inactive()
     def _get_vrf_details(self, context, vrf_id):
         vrf_tenant_name, vrf_name = vrf_id.split(' ')
-        with db_api.context_manager.reader.using(context) as session:
+        with db_api.CONTEXT_READER.using(context) as session:
             vrf_subnets = self._query_vrf_subnets(
                 session, vrf_tenant_name, vrf_name)
             return {
@@ -309,7 +309,7 @@ class ApicRpcHandlerMixin(object):
             # Start a read-only transaction. Separate read-write
             # transactions will be used if needed to bind the port or
             # assign SNAT IPs.
-            with db_api.context_manager.reader.using(context) as session:
+            with db_api.CONTEXT_READER.using(context) as session:
                 # Extract possibly truncated port ID from device.
                 #
                 # REVISIT: If device identifies the port by its MAC

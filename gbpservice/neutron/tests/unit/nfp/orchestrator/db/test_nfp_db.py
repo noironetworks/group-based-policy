@@ -14,10 +14,10 @@
 import copy
 import fixtures
 import mock
-from neutron.db import api as db_api
 from neutron.tests import base
 from neutron_lib import context
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.orchestrator.db import nfp_db
@@ -33,7 +33,7 @@ class SqlFixture(fixtures.Fixture):
 
     def _setUp(self):
         # Register all data models
-        engine = db_api.context_manager.writer.get_engine()
+        engine = db_api.CONTEXT_WRITER.get_engine()
         if not SqlFixture._TABLES_ESTABLISHED:
             nfp_db_model.BASE.metadata.create_all(engine)
             SqlFixture._TABLES_ESTABLISHED = True

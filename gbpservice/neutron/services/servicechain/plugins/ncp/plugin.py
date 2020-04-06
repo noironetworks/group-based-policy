@@ -10,7 +10,6 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.db import api as db_api
 from neutron.quota import resource_registry
 from neutron_lib.plugins import constants as pconst
 from oslo_config import cfg
@@ -19,6 +18,7 @@ from oslo_log import log as logging
 from oslo_utils import excutils
 
 from gbpservice.common import utils
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db import servicechain_db
 from gbpservice.neutron.services.grouppolicy.common import constants as gp_cts
 from gbpservice.neutron.services.grouppolicy.common import utils as gutils
@@ -78,7 +78,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
 
         deployers = {}
         # REVISIT: Consider adding ensure_tenant() call here
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             instance = super(NodeCompositionPlugin,
                              self).create_servicechain_instance(
                                  context, servicechain_instance)
@@ -154,7 +154,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         deployers = {}
         updaters = {}
         destroyers = {}
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             original_instance = self.get_servicechain_instance(
                 context, servicechain_instance_id)
             updated_instance = super(
@@ -191,21 +191,21 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         When a Servicechain Instance is deleted, all its nodes need to be
         destroyed.
         """
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             instance = self.get_servicechain_instance(context,
                                                       servicechain_instance_id)
             destroyers = self._get_scheduled_drivers(context, instance,
                                                      'destroy')
         self._destroy_servicechain_nodes(context, destroyers)
 
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             super(NodeCompositionPlugin, self).delete_servicechain_instance(
                 context, servicechain_instance_id)
 
     @log.log_method_call
     def create_servicechain_node(self, context, servicechain_node):
         # REVISIT: Consider adding ensure_tenant() call here
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             result = super(NodeCompositionPlugin,
                            self).create_servicechain_node(context,
                                                           servicechain_node)
@@ -222,7 +222,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         reconfiguration.
         """
         updaters = {}
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             original_sc_node = self.get_servicechain_node(
                 context, servicechain_node_id)
             updated_sc_node = super(NodeCompositionPlugin,
@@ -265,7 +265,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
     @log.log_method_call
     def create_servicechain_spec(self, context, servicechain_spec):
         # REVISIT: Consider adding ensure_tenant() call here
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             result = super(
                 NodeCompositionPlugin, self).create_servicechain_spec(
                     context, servicechain_spec, set_params=False)
@@ -275,7 +275,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
     @log.log_method_call
     def update_servicechain_spec(self, context, servicechain_spec_id,
                                  servicechain_spec):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             original_sc_spec = self.get_servicechain_spec(
                                          context, servicechain_spec_id)
             updated_sc_spec = super(NodeCompositionPlugin,
@@ -301,7 +301,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
     @log.log_method_call
     def create_service_profile(self, context, service_profile):
         # REVISIT: Consider adding ensure_tenant() call here
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             result = super(
                 NodeCompositionPlugin, self).create_service_profile(
                     context, service_profile)
@@ -311,7 +311,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
     @log.log_method_call
     def update_service_profile(self, context, service_profile_id,
                                service_profile):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             original_profile = self.get_service_profile(
                 context, service_profile_id)
             updated_profile = super(NodeCompositionPlugin,
@@ -481,7 +481,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
 
     def _get_resource(self, context, resource_name, resource_id, fields=None):
         deployers = {}
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             resource = getattr(super(NodeCompositionPlugin,
                 self), 'get_' + resource_name)(context, resource_id)
             if resource_name == 'servicechain_instance':

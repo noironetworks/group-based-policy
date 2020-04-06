@@ -766,7 +766,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     config_param_values[key] = servicepolicy_fip_ids
         name = 'gbp_%s_%s' % (policy_rule_set['name'], provider_ptg['name'])
 
-        attrs = {'tenant_id': p_ctx.tenant,
+        attrs = {'tenant_id': p_ctx.project_id,
                  'name': name,
                  'description': "",
                  'servicechain_specs': sc_spec,
@@ -783,7 +783,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         context._plugin_context.servicechain_instance = sc_instance
         self._set_ptg_servicechain_instance_mapping(
             session, provider_ptg_id, SCI_CONSUMER_NOT_AVAILABLE,
-            sc_instance['id'], p_ctx.tenant)
+            sc_instance['id'], p_ctx.project_id)
         return sc_instance
 
     def _set_ptg_servicechain_instance_mapping(self, session, provider_ptg_id,

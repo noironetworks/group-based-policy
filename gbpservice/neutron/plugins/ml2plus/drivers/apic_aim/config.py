@@ -56,7 +56,7 @@ apic_opts = [
                help=("The pool of IPs where we allocate the APIC "
                      "router ID from while creating the SVI interface.")),
     cfg.DictOpt('migrate_ext_net_dns', default={},
-                help="DNs for external networks being migrated from legacy "
+                help="DNs for external networks being migrated from other "
                 "plugin, formatted as a dictionary mapping Neutron external "
                 "network IDs (UUIDs) to ACI external network distinguished "
                 "names."),

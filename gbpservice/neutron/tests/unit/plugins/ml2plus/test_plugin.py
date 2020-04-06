@@ -18,12 +18,12 @@ import testtools
 
 from neutron.api import extensions
 from neutron.common import rpc as n_rpc
-from neutron.common import topics
 from neutron.conf.plugins.ml2 import config  # noqa
 from neutron.conf.plugins.ml2.drivers import driver_type
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
+from neutron_lib.agent import topics
 from neutron_lib.plugins import directory
 from oslo_config import cfg
 
@@ -75,7 +75,7 @@ class TestRpcListeners(Ml2PlusPluginV2TestCase):
 
     @staticmethod
     def _start_rpc_listeners(self):
-        conn = n_rpc.create_connection()
+        conn = n_rpc.Connection()
         conn.create_consumer('q-test-topic', [])
         return conn.consume_in_threads()
 

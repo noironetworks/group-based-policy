@@ -14,7 +14,6 @@
 from neutron.extensions import securitygroup as ext_sg
 from neutron.notifiers import nova
 from neutron import quota
-from neutron_lib import constants as nl_const
 from neutron_lib import exceptions as n_exc
 from neutron_lib.exceptions import address_scope as as_exc
 from neutron_lib.exceptions import l3
@@ -47,7 +46,7 @@ class LocalAPI(object):
     def _l3_plugin(self):
         # REVISIT(rkukura): Need initialization method after all
         # plugins are loaded to grab and store plugin.
-        l3_plugin = directory.get_plugin(nl_const.L3)
+        l3_plugin = directory.get_plugin(pconst.L3)
         if not l3_plugin:
             LOG.error("No L3 router service plugin found.")
             raise exc.GroupPolicyDeploymentError()

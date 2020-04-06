@@ -11,12 +11,12 @@
 #    under the License.
 
 from neutron.common import rpc as n_rpc
-from neutron.db import api as db_api
 from neutron_lib import context as n_context
 from oslo_log import helpers as log_helpers
 import oslo_messaging
 
 from gbpservice._i18n import _
+from gbpservice.neutron.db import api as db_api
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.common import topics as nfp_rpc_topics

@@ -35,9 +35,7 @@ from aim import exceptions as aim_exceptions
 from aim import utils as aim_utils
 from neutron.agent import securitygroups_rpc
 from neutron.common import rpc as n_rpc
-from neutron.common import topics as n_topics
 from neutron.common import utils as n_utils
-from neutron.db import api as db_api
 from neutron.db.models import address_scope as as_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
 from neutron.db.models import l3 as l3_db
@@ -54,6 +52,7 @@ from neutron.plugins.ml2.drivers.openvswitch.agent.common import (
 from neutron.plugins.ml2 import models
 from neutron.services.trunk import constants as trunk_consts
 from neutron.services.trunk import exceptions as trunk_exc
+from neutron_lib.agent import topics as n_topics
 from neutron_lib.api.definitions import external_net
 from neutron_lib.api.definitions import portbindings
 from neutron_lib.api.definitions import trunk
@@ -64,6 +63,7 @@ from neutron_lib.callbacks import resources
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
 from neutron_lib import exceptions as n_exceptions
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from neutron_lib.plugins.ml2 import api
 from neutron_lib.utils import net
@@ -77,6 +77,7 @@ from oslo_service import loopingcall
 from oslo_utils import importutils
 
 from gbpservice.common import utils as gbp_utils
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.extensions import cisco_apic_l3 as a_l3
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
@@ -130,10 +131,6 @@ NO_ADDR_SCOPE = object()
 DVS_AGENT_KLASS = 'networking_vsphere.common.dvs_agent_rpc_api.DVSClientAPI'
 DEFAULT_HOST_DOMAIN = '*'
 
-LEGACY_SNAT_NET_NAME_PREFIX = 'host-snat-network-for-internal-use-'
-LEGACY_SNAT_SUBNET_NAME = 'host-snat-pool-for-internal-use'
-LEGACY_SNAT_PORT_NAME = 'host-snat-pool-port-for-internal-use'
-LEGACY_SNAT_PORT_DEVICE_OWNER = 'host-snat-pool-port-device-owner-internal-use'
 LL_INFO = 'local_link_information'
 
 # TODO(kentwu): Move this to AIM utils maybe to avoid adding too much
@@ -294,7 +291,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _update_nova_vm_name_cache(self):
         current_time = datetime.now()
         context = nctx.get_admin_context()
-        with db_api.context_manager.reader.using(context) as session:
+        with db_api.CONTEXT_READER.using(context) as session:
             vm_name_update = self._get_vm_name_update(session)
         is_full_update = True
         if vm_name_update:
@@ -319,7 +316,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return
 
         try:
-            with db_api.context_manager.writer.using(context) as session:
+            with db_api.CONTEXT_WRITER.using(context) as session:
                 self._set_vm_name_update(
                     session, vm_name_update, self.host_id, current_time,
                     current_time if is_full_update else None)
@@ -334,7 +331,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             vm_list.append((vm.id, vm.name))
         nova_vms = set(vm_list)
 
-        with db_api.context_manager.writer.using(context) as session:
+        with db_api.CONTEXT_WRITER.using(context) as session:
             cached_vms = self._get_vm_names(session)
             cached_vms = set(cached_vms)
 
@@ -611,8 +608,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # TODO(rkukura): Move the following to calls made from
         # precommit methods so AIM Tenants, ApplicationProfiles, and
         # Filters are [re]created whenever needed.
-        with db_api.context_manager.writer.using(plugin_context):
-            session = plugin_context.session
+        with db_api.CONTEXT_WRITER.using(plugin_context) as session:
             tenant_aname = self.name_mapper.project(session, project_id)
             project_details = (self.project_details_cache.
                 get_project_details(project_id))
@@ -2524,7 +2520,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             removed = list(set(orig_ips) - set(curr_ips))
             for aap in removed:
                 cidr = netaddr.IPNetwork(aap)
-                with db_api.context_manager.writer.using(p_context) as session:
+                with db_api.CONTEXT_WRITER.using(p_context) as session:
                     # Get all the owned IP addresses for the port, and if
                     # they match a removed AAP entry, delete that entry
                     # from the DB
@@ -2573,7 +2569,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return
 
         # Get the static ports for the new binding.
-        with db_api.context_manager.reader.using(context):
+        with db_api.CONTEXT_READER.using(context):
             static_ports = self._get_static_ports(
                 context, bind_context.host, bind_context.bottom_bound_segment,
                 port_context=bind_context)
@@ -2916,7 +2912,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                               pod_id, port_description)]))
         if not switch:
             return
-        with db_api.context_manager.writer.using(context) as session:
+        with db_api.CONTEXT_WRITER.using(context) as session:
             aim_ctx = aim_context.AimContext(db_session=session)
             hlink = self.aim.get(aim_ctx,
                                  aim_infra.HostLink(host_name=host,
@@ -2942,7 +2938,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         LOG.debug('Topology RPC: delete_link: %s',
                   ', '.join([str(p) for p in
                              (host, interface, mac, switch, module, port)]))
-        with db_api.context_manager.writer.using(context) as session:
+        with db_api.CONTEXT_WRITER.using(context) as session:
             aim_ctx = aim_context.AimContext(db_session=session)
             hlink = self.aim.get(aim_ctx,
                                  aim_infra.HostLink(host_name=host,
@@ -2963,7 +2959,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # this is all good in theory, it would require some extra design
         # due to the fact that VPC interfaces have the same path but
         # two different ifaces assigned to them.
-        with db_api.context_manager.writer.using(context) as session:
+        with db_api.CONTEXT_WRITER.using(context) as session:
             aim_ctx = aim_context.AimContext(db_session=session)
             hlinks = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
             nets_segs = self._get_non_opflex_segments_on_host(context, host)
@@ -2977,7 +2973,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _agent_bind_port(self, context, agent_type, bind_strategy):
         current = context.current
-        for agent in context.host_agents(agent_type):
+        for agent in context.host_agents(agent_type) or []:
             LOG.debug("Checking agent: %s", agent)
             if agent['alive']:
                 for segment in context.segments_to_bind:
@@ -3204,7 +3200,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     @property
     def l3_plugin(self):
         if not self._l3_plugin:
-            self._l3_plugin = directory.get_plugin(n_constants.L3)
+            self._l3_plugin = directory.get_plugin(pconst.L3)
         return self._l3_plugin
 
     @property
@@ -4209,7 +4205,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
              'gateway_ip': <gateway_ip of subnet>,
              'prefixlen': <prefix_length_of_subnet>}
         """
-        with db_api.context_manager.reader.using(plugin_context) as session:
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
             # Query for existing SNAT port.
             query = BAKERY(lambda s: s.query(
                 models_v2.IPAllocation.ip_address,
@@ -4318,7 +4314,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _delete_unneeded_snat_ip_ports(self, plugin_context, ext_network_id):
         snat_port_ids = []
-        with db_api.context_manager.reader.using(plugin_context) as session:
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
             # Query for any interfaces of routers with gateway ports
             # on this external network.
             query = BAKERY(lambda s: s.query(
@@ -4459,7 +4455,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _rebuild_host_path_for_network(self, plugin_context, network, segment,
                                        host, host_links):
         # Look up the static ports for this host and segment.
-        with db_api.context_manager.reader.using(plugin_context):
+        with db_api.CONTEXT_READER.using(plugin_context):
             static_ports = self._get_static_ports(
                 plugin_context, host, segment)
 
@@ -4470,7 +4466,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 plugin_context, static_ports, network)
 
         # Rebuild the static paths.
-        with db_api.context_manager.writer.using(plugin_context) as session:
+        with db_api.CONTEXT_WRITER.using(plugin_context) as session:
             aim_ctx = aim_context.AimContext(db_session=session)
             if self._is_svi(network):
                 l3out, _, _ = self._get_aim_external_objects(network)
@@ -5586,7 +5582,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     # REVISIT: Callers often only need the bottom bound segment and
     # maybe the host, so consider a simpler alternative.
     def make_port_context(self, plugin_context, port_id):
-        with db_api.context_manager.reader.using(plugin_context):
+        # REVISIT: Use CONTEXT_READER once upstream ML2 get_network no
+        # longer uses a write transaction. Or call get_network outside
+        # of a transaction.
+        with db_api.CONTEXT_WRITER.using(plugin_context):
             port_db = self.plugin._get_port(plugin_context, port_id)
             port = self.plugin._make_port_dict(port_db)
             network = self.plugin.get_network(
@@ -5600,31 +5599,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _add_network_mapping_and_notify(self, context, network_id, bd, epg,
                                         vrf):
-        with db_api.context_manager.writer.using(context):
-            self._add_network_mapping(context.session, network_id, bd, epg,
-                                      vrf)
+        with db_api.CONTEXT_WRITER.using(context) as session:
+            self._add_network_mapping(session, network_id, bd, epg, vrf)
             registry.notify(aim_cst.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
                             self, context=context, network_id=network_id)
 
     def _set_network_epg_and_notify(self, context, mapping, epg):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             self._set_network_epg(mapping, epg)
             registry.notify(aim_cst.GBP_NETWORK_EPG, events.PRECOMMIT_UPDATE,
                             self, context=context,
                             network_id=mapping.network_id)
 
     def _set_network_vrf_and_notify(self, context, mapping, vrf):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             self._set_network_vrf(mapping, vrf)
             registry.notify(aim_cst.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
                             self, context=context,
                             network_id=mapping.network_id)
 
     def validate_aim_mapping(self, mgr):
-        # First do any cleanup and/or migration of Neutron resources
-        # used internally by the legacy plugins.
-        self._validate_legacy_resources(mgr)
-
         # Register all AIM resource types used by mapping.
         mgr.register_aim_resource_class(aim_infra.HostDomainMappingV2)
         mgr.register_aim_resource_class(aim_resource.ApplicationProfile)
@@ -5696,112 +5690,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     # Note: The queries below are executed only once per run of the
     # validation CLI tool, but are baked in order to speed up unit
     # test execution, where they are called repeatedly.
-
-    def _validate_legacy_resources(self, mgr):
-        # Delete legacy SNAT ports.
-        query = BAKERY(lambda s: s.query(
-            models_v2.Port.id))
-        query += lambda q: q.filter_by(
-            name=LEGACY_SNAT_PORT_NAME,
-            device_owner=LEGACY_SNAT_PORT_DEVICE_OWNER)
-        for port_id, in query(mgr.actual_session):
-            if mgr.should_repair(
-                    "legacy APIC driver SNAT port %s" % port_id, "Deleting"):
-                try:
-                    # REVISIT: Move outside of transaction.
-                    with gbp_utils.transaction_guard_disabled(
-                            mgr.actual_context):
-                        self.plugin.delete_port(mgr.actual_context, port_id)
-                except n_exceptions.NeutronException as exc:
-                    mgr.validation_failed(
-                        "deleting legacy APIC driver SNAT port %s failed "
-                        "with %s" % (port_id, exc))
-
-        # Delete legacy SNAT subnets.
-        query = BAKERY(lambda s: s.query(
-            models_v2.Subnet.id))
-        query += lambda q: q.filter_by(
-            name=LEGACY_SNAT_SUBNET_NAME)
-        for subnet_id, in query(mgr.actual_session):
-            subnet = self.plugin.get_subnet(mgr.actual_context, subnet_id)
-            net = self.plugin.get_network(
-                mgr.actual_context, subnet['network_id'])
-            net_name = net['name']
-            if net_name and net_name.startswith(LEGACY_SNAT_NET_NAME_PREFIX):
-                ext_net_id = net_name[len(LEGACY_SNAT_NET_NAME_PREFIX):]
-
-                query = BAKERY(lambda s: s.query(
-                    models_v2.Network))
-                query += lambda q: q.filter_by(
-                    id=sa.bindparam('ext_net_id'))
-                ext_net = query(mgr.actual_session).params(
-                    ext_net_id=ext_net_id).one_or_none()
-
-                if ext_net and ext_net.external:
-                    if mgr.should_repair(
-                            "legacy APIC driver SNAT subnet %s" %
-                            subnet['cidr'],
-                            "Migrating"):
-                        try:
-                            del subnet['id']
-                            del subnet['project_id']
-                            subnet['tenant_id'] = ext_net.project_id
-                            subnet['network_id'] = ext_net.id
-                            subnet['name'] = 'SNAT host pool'
-                            subnet[cisco_apic.SNAT_HOST_POOL] = True
-                            # REVISIT: Move outside of transaction.
-                            with gbp_utils.transaction_guard_disabled(
-                                    mgr.actual_context):
-                                subnet = self.plugin.create_subnet(
-                                    mgr.actual_context, {'subnet': subnet})
-                        except n_exceptions.NeutronException as exc:
-                            mgr.validation_failed(
-                                "Migrating legacy APIC driver SNAT subnet %s "
-                                "failed with %s" % (subnet['cidr'], exc))
-            if mgr.should_repair(
-                    "legacy APIC driver SNAT subnet %s" % subnet_id,
-                    "Deleting"):
-                try:
-                    # REVISIT: Move outside of transaction.
-                    with gbp_utils.transaction_guard_disabled(
-                            mgr.actual_context):
-                        self.plugin.delete_subnet(
-                            mgr.actual_context, subnet_id)
-                except n_exceptions.NeutronException as exc:
-                    mgr.validation_failed(
-                        "deleting legacy APIC driver SNAT subnet %s failed "
-                        "with %s" % (subnet_id, exc))
-
-        # Delete legacy SNAT networks.
-        query = BAKERY(lambda s: s.query(
-            models_v2.Network.id))
-        query += lambda q: q.filter(
-            models_v2.Network.name.startswith(LEGACY_SNAT_NET_NAME_PREFIX))
-        for net_id, in query(mgr.actual_session):
-            if mgr.should_repair(
-                    "legacy APIC driver SNAT network %s" % net_id,
-                    "Deleting"):
-                try:
-                    # REVISIT: Move outside of transaction.
-                    with gbp_utils.transaction_guard_disabled(
-                            mgr.actual_context):
-                        self.plugin.delete_network(mgr.actual_context, net_id)
-                except n_exceptions.NeutronException as exc:
-                    mgr.validation_failed(
-                        "deleting legacy APIC driver SNAT network %s failed "
-                        "with %s" % (net_id, exc))
-
-        # REVISIT: Without this expunge_all call, the
-        # test_legacy_cleanup UT intermittently fails with the
-        # subsequent validation steps attempting to repair missing
-        # subnet extension data, changing the apic:snat_host_pool
-        # value of the migrated SNAT subnet from True to False. The
-        # way the extension_db module creates the SubnetExtensionDb
-        # instance during create_subnet is apparently not updating the
-        # relationship from a cached Subnet instance. Until this issue
-        # is understood and resolved, we expunge all instances from
-        # the session before proceeding.
-        mgr.actual_session.expunge_all()
 
     def _validate_static_resources(self, mgr):
         self._ensure_common_tenant(mgr.expected_aim_ctx)

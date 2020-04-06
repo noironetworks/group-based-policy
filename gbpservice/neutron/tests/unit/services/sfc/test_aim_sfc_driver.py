@@ -22,7 +22,6 @@ from networking_sfc.services.flowclassifier.common import config as flc_cfg
 from networking_sfc.services.flowclassifier import driver_manager as fc_driverm
 from networking_sfc.services.sfc.common import config as sfc_cfg
 from networking_sfc.services.sfc import driver_manager as sfc_driverm
-from neutron.db import api as db_api
 from neutron.db.models import l3 as l3_db
 from neutron_lib.callbacks import exceptions as c_exc
 from neutron_lib import context
@@ -30,6 +29,7 @@ from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 from oslo_log import log as logging
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -1104,7 +1104,7 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
             self._aim_context, aim_res.EndpointGroup(
                 tenant_name='new', app_profile_name='new', name='new'))
         try:
-            with db_api.context_manager.writer.using(self._ctx):
+            with db_api.CONTEXT_WRITER.using(self._ctx):
                 net_db = self._plugin._get_network(
                     self._ctx, fc['l7_parameters']['logical_source_network'])
                 self.assertRaises(c_exc.CallbackFailure,
@@ -1117,7 +1117,7 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
         except Rollback:
             pass
         try:
-            with db_api.context_manager.writer.using(self._ctx):
+            with db_api.CONTEXT_WRITER.using(self._ctx):
                 net_db = self._plugin._get_network(
                     self._ctx,
                     fc['l7_parameters']['logical_destination_network'])
@@ -1132,7 +1132,7 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
             pass
         # Also changing EPG affects PC if tenant changes
         try:
-            with db_api.context_manager.writer.using(self._ctx):
+            with db_api.CONTEXT_WRITER.using(self._ctx):
                 net_db = self._plugin._get_network(
                     self._ctx,
                     fc['l7_parameters']['logical_destination_network'])
@@ -1163,7 +1163,7 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
 
         pp = self.show_port_pair(ppg['port_pairs'][0])['port_pair']
         net = self._get_port_network(pp['ingress'])
-        with db_api.context_manager.writer.using(self._ctx):
+        with db_api.CONTEXT_WRITER.using(self._ctx):
             # Modifying EPG in service nets has no effect
             net_db = self._plugin._get_network(self._ctx, net['id'])
             self.aim_mech._set_network_epg_and_notify(
@@ -1172,7 +1172,7 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
                                       app_profile_name='new',
                                       name='new'))
 
-        with db_api.context_manager.writer.using(self._ctx):
+        with db_api.CONTEXT_WRITER.using(self._ctx):
             # But it fails when VRF is changed
             net_db = self._plugin._get_network(self._ctx, net['id'])
             self.assertRaises(c_exc.CallbackFailure,

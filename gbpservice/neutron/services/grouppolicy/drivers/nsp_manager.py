@@ -10,9 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from neutron.db import api as db_api
 from neutron_lib.db import model_base
 import sqlalchemy as sa
+
+from gbpservice.neutron.db import api as db_api
 
 
 class ServicePolicyPTGIpAddressMapping(model_base.BASEV2):
@@ -83,7 +84,7 @@ class NetworkServicePolicyMappingMixin(object):
 
     def _set_policy_ipaddress_mapping(self, context, service_policy_id,
                                       policy_target_group, ipaddress):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             session = context.session
             mapping = ServicePolicyPTGIpAddressMapping(
                 service_policy_id=service_policy_id,
@@ -91,13 +92,13 @@ class NetworkServicePolicyMappingMixin(object):
             session.add(mapping)
 
     def _get_ptg_policy_ipaddress_mapping(self, context, policy_target_group):
-        with db_api.context_manager.reader.using(context):
+        with db_api.CONTEXT_READER.using(context):
             session = context.session
             return (session.query(ServicePolicyPTGIpAddressMapping).
                     filter_by(policy_target_group=policy_target_group).first())
 
     def _delete_policy_ipaddress_mapping(self, context, policy_target_group):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             session = context.session
             ip_mapping = session.query(
                 ServicePolicyPTGIpAddressMapping).filter_by(
@@ -107,7 +108,7 @@ class NetworkServicePolicyMappingMixin(object):
 
     def _set_ptg_policy_fip_mapping(self, context, service_policy_id,
                                 policy_target_group_id, fip_id):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             session = context.session
             mapping = ServicePolicyPTGFipMapping(
                 service_policy_id=service_policy_id,
@@ -116,14 +117,14 @@ class NetworkServicePolicyMappingMixin(object):
             session.add(mapping)
 
     def _get_ptg_policy_fip_mapping(self, context, policy_target_group_id):
-        with db_api.context_manager.reader.using(context):
+        with db_api.CONTEXT_READER.using(context):
             session = context.session
             return (session.query(ServicePolicyPTGFipMapping).
                     filter_by(policy_target_group_id=policy_target_group_id).
                     all())
 
     def _delete_ptg_policy_fip_mapping(self, context, policy_target_group_id):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             session = context.session
             mappings = session.query(
                 ServicePolicyPTGFipMapping).filter_by(
@@ -132,7 +133,7 @@ class NetworkServicePolicyMappingMixin(object):
                 session.delete(mapping)
 
     def _set_pt_floating_ips_mapping(self, context, policy_target_id, fip_ids):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             session = context.session
             for fip_id in fip_ids:
                 mapping = PolicyTargetFloatingIPMapping(
@@ -140,20 +141,20 @@ class NetworkServicePolicyMappingMixin(object):
                 session.add(mapping)
 
     def _set_pts_floating_ips_mapping(self, context, pt_fip_map):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             for policy_target_id in pt_fip_map:
                 self._set_pt_floating_ips_mapping(
                     context, policy_target_id,
                     pt_fip_map[policy_target_id])
 
     def _get_pt_floating_ip_mapping(self, context, policy_target_id):
-        with db_api.context_manager.reader.using(context):
+        with db_api.CONTEXT_READER.using(context):
             session = context.session
             return (session.query(PolicyTargetFloatingIPMapping).
                     filter_by(policy_target_id=policy_target_id).all())
 
     def _delete_pt_floating_ip_mapping(self, context, policy_target_id):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             session = context.session
             fip_mappings = session.query(
                 PolicyTargetFloatingIPMapping).filter_by(
@@ -162,13 +163,13 @@ class NetworkServicePolicyMappingMixin(object):
                 session.delete(fip_mapping)
 
     def _get_nsp_qos_mapping(self, context, service_policy_id):
-        with db_api.context_manager.reader.using(context):
+        with db_api.CONTEXT_READER.using(context):
             session = context.session
             return (session.query(ServicePolicyQosPolicyMapping).
                     filter_by(service_policy_id=service_policy_id).first())
 
     def _set_nsp_qos_mapping(self, context, service_policy_id, qos_policy_id):
-        with db_api.context_manager.writer.using(context):
+        with db_api.CONTEXT_WRITER.using(context):
             session = context.session
             mapping = ServicePolicyQosPolicyMapping(
                 service_policy_id=service_policy_id,
@@ -177,6 +178,6 @@ class NetworkServicePolicyMappingMixin(object):
 
     def _delete_nsp_qos_mapping(self, context, mapping):
         if mapping:
-            with db_api.context_manager.writer.using(context):
+            with db_api.CONTEXT_WRITER.using(context):
                 session = context.session
                 session.delete(mapping)

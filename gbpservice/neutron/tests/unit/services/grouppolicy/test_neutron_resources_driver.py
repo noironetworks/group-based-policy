@@ -12,7 +12,6 @@
 # limitations under the License.
 
 import mock
-from neutron_lib import constants
 from neutron_lib import context as nctx
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
@@ -60,7 +59,7 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
         self._plugin.is_agent_down = mock.Mock(return_value=False)
         self._context = nctx.get_admin_context()
         self._gbp_plugin = directory.get_plugin(pconst.GROUP_POLICY)
-        self._l3_plugin = directory.get_plugin(constants.L3)
+        self._l3_plugin = directory.get_plugin(pconst.L3)
         config.cfg.CONF.set_override('debug', True)
 
     def get_plugin_context(self):

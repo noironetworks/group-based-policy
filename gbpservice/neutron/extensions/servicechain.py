@@ -13,11 +13,11 @@
 import abc
 
 from neutron.api import extensions as neutron_extensions
-from neutron.api.v2 import attributes as attr
 from neutron.api.v2 import resource_helper
 from neutron_lib.api import converters as conv
 from neutron_lib.api import extensions
 from neutron_lib.api import validators as valid
+from neutron_lib import constants as nlib_const
 from neutron_lib import exceptions as nexc
 from neutron_lib.plugins import constants
 from neutron_lib.services import base as service_base
@@ -134,10 +134,11 @@ RESOURCE_ATTRIBUTE_MAP = {
         'config': {'allow_post': True, 'allow_put': True,
                    'validate': {'type:string': None},
                    'required': True, 'is_visible': True},
-        attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': conv.convert_to_boolean,
-                      'is_visible': True, 'required_by_policy': True,
-                      'enforce_policy': True},
+        nlib_const.SHARED: {'allow_post': True, 'allow_put': True,
+                            'default': False,
+                            'convert_to': conv.convert_to_boolean,
+                            'is_visible': True, 'required_by_policy': True,
+                            'enforce_policy': True},
     },
     SERVICECHAIN_SPECS: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -164,10 +165,11 @@ RESOURCE_ATTRIBUTE_MAP = {
         'config_param_names': {'allow_post': False, 'allow_put': False,
                                'validate': {'type:string_list': None},
                                'default': [], 'is_visible': True},
-        attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': conv.convert_to_boolean,
-                      'is_visible': True, 'required_by_policy': True,
-                      'enforce_policy': True},
+        nlib_const.SHARED: {'allow_post': True, 'allow_put': True,
+                            'default': False,
+                            'convert_to': conv.convert_to_boolean,
+                            'is_visible': True, 'required_by_policy': True,
+                            'enforce_policy': True},
     },
     SERVICECHAIN_INSTANCES: {
         'id': {'allow_post': False, 'allow_put': False,
@@ -228,10 +230,11 @@ RESOURCE_ATTRIBUTE_MAP = {
                    'is_visible': True},
         'status_details': {'allow_post': False, 'allow_put': False,
                            'is_visible': True},
-        attr.SHARED: {'allow_post': True, 'allow_put': True,
-                      'default': False, 'convert_to': conv.convert_to_boolean,
-                      'is_visible': True, 'required_by_policy': True,
-                      'enforce_policy': True},
+        nlib_const.SHARED: {'allow_post': True, 'allow_put': True,
+                            'default': False,
+                            'convert_to': conv.convert_to_boolean,
+                            'is_visible': True, 'required_by_policy': True,
+                            'enforce_policy': True},
         'vendor': {'allow_post': True, 'allow_put': True,
                    'validate': {'type:string': None},
                    'is_visible': True, 'default': ''},

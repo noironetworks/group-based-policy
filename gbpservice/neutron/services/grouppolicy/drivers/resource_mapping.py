@@ -16,7 +16,6 @@ import operator
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 from neutron.common import exceptions as neutron_exc
-from neutron.db import api as db_api
 from neutron.db import models_v2
 from neutron.extensions import securitygroup as ext_sg
 from neutron_lib.api.definitions import port as port_def
@@ -37,6 +36,7 @@ from sqlalchemy.orm import exc as sa_exc
 from gbpservice._i18n import _
 from gbpservice.common import utils
 from gbpservice.network.neutronv2 import local_api
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db as gpmdb
 from gbpservice.neutron.extensions import driver_proxy_group as proxy_ext
@@ -1496,7 +1496,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                 l3p_req[self.L3P_SUBNETPOOLS_KEYS[family]] = [
                     default_pool['id']]
 
-            with db_api.context_manager.writer.using(context._plugin_context):
+            with db_api.CONTEXT_WRITER.using(context._plugin_context):
                 l3p_db = context._plugin._get_l3_policy(
                     context._plugin_context, l3p_req['id'])
 
@@ -3358,7 +3358,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     def _delete_ptg_qos_policy(self, context, qos_policy_id):
         qos_rules = self._get_qos_rules(context._plugin_context, qos_policy_id)
-        with db_api.context_manager.writer.using(context._plugin_context):
+        with db_api.CONTEXT_WRITER.using(context._plugin_context):
             for qos_rule in qos_rules:
                 self._delete_qos_rule(context._plugin_context,
                                       qos_rule['id'], qos_policy_id)

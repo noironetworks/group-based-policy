@@ -19,11 +19,11 @@ import copy
 from aim import aim_store
 from aim.api import resource as aim_resource
 from aim import context as aim_context
-from neutron.db import api as db_api
 from neutron_lib import context
 from neutron_lib.plugins import directory
 from oslo_log import log
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 
@@ -70,7 +70,7 @@ class ValidationManager(object):
         # REVISIT: Set session's isolation level to serializable?
         self.actual_context = context.get_admin_context()
         try:
-            with db_api.context_manager.writer.using(
+            with db_api.CONTEXT_WRITER.using(
                     self.actual_context) as session:
                 self.actual_session = session
                 self.aim_mgr = self.md.aim

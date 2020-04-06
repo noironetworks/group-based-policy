@@ -23,21 +23,22 @@ from aim import context as aim_context
 from keystoneclient.v3 import client as ksc_client
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
-from neutron.common import utils as n_utils
-from neutron.db import api as db_api
 from neutron.db.models import securitygroup as sg_models
 from neutron.db.port_security import models as psec_models
 from neutron.extensions import dns
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_securitygroup
+from neutron_lib.api import extensions
 from neutron_lib import constants as n_constants
 from neutron_lib import context as nctx
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from opflexagent import constants as ocst
 from oslo_config import cfg
 import webob.exc
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import cisco_apic
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
@@ -159,7 +160,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             trunk_plugin=trunk_plugin)
         self.db_session = db_api.get_writer_session()
         self.initialize_db_config(self.db_session)
-        self.l3_plugin = directory.get_plugin(n_constants.L3)
+        self.l3_plugin = directory.get_plugin(pconst.L3)
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
                                      group='ml2_type_vlan')
@@ -301,11 +302,11 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
 
     def _switch_to_tenant1(self):
         self._tenant_id = self.first_tenant_id
-        self._neutron_context.tenant = self._tenant_id
+        self._neutron_context.project_id = self._tenant_id
 
     def _switch_to_tenant2(self):
         self._tenant_id = 'test_tenant-2'
-        self._neutron_context.tenant = self._tenant_id
+        self._neutron_context.project_id = self._tenant_id
 
     def _show_subnet(self, id):
         req = self.new_show_request('subnets', id, fmt=self.fmt)
@@ -563,7 +564,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 self._extend_subnet_prefixes(prefixes_list, l3p, version)
             self.assertItemsEqual(subnetpool_prefixes, prefixes_list)
 
-        params = {'ids': ascp_ids}
+        params = '&'.join('id=' + id for id in ascp_ids)
         req = self.new_list_request('address-scopes',
                                     params=params, fmt=self.fmt)
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
@@ -626,7 +627,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
             else:
                 self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
-        params = {'ids': ascp_ids}
+        params = '&'.join('id=' + id for id in ascp_ids)
         req = self.new_list_request('address-scopes',
                                     params=params, fmt=self.fmt)
         res = req.get_response(self.ext_api)
@@ -3477,8 +3478,8 @@ class TestPolicyTarget(AIMBaseTestCase,
         self._update('subnets', ext_net2_sub2['id'],
                      {'subnet': {SNAT_HOST_POOL: True}})
         self.assertTrue(
-            n_utils.is_extension_supported(self._l3_plugin,
-                                           dns.Dns.get_alias()))
+            extensions.is_extension_supported(self._l3_plugin,
+                                              dns.Dns.get_alias()))
         network = self._make_network(self.fmt, 'net1', True,
                                      arg_list=('dns_domain',),
                                      dns_domain='mydomain.')

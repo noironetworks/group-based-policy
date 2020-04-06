@@ -37,7 +37,6 @@ from aim import utils as aim_utils
 
 from keystoneclient.v3 import client as ksc_client
 from neutron.api import extensions
-from neutron.db import api as db_api
 from neutron.db import provisioning_blocks
 from neutron.db import segments_db
 from neutron.plugins.ml2 import driver_context
@@ -52,12 +51,14 @@ from neutron.tests.unit import testlib_api
 from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
+from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 from oslo_config import cfg
 import webob.exc
 
 from gbpservice.neutron.db import all_models  # noqa
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (  # noqa
     config as aimcfg)
@@ -208,7 +209,7 @@ class AimSqlFixture(fixtures.Fixture):
         self.useFixture(testlib_api.StaticSqlFixture())
 
         # Register all data models.
-        engine = db_api.context_manager.writer.get_engine()
+        engine = db_api.CONTEXT_WRITER.get_engine()
         if not AimSqlFixture._AIM_TABLES_ESTABLISHED:
             aim_model_base.Base.metadata.create_all(engine)
             AimSqlFixture._AIM_TABLES_ESTABLISHED = True
@@ -338,7 +339,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.plugin = directory.get_plugin()
         self.driver = self.plugin.mechanism_manager.mech_drivers[
             'apic_aim'].obj
-        self.l3_plugin = directory.get_plugin(n_constants.L3)
+        self.l3_plugin = directory.get_plugin(pconst.L3)
         self.aim_mgr = aim_manager.AimManager()
         self._app_profile_name = self.driver.ap_name
         self.extension_attributes = ('router:external', DN,
@@ -568,9 +569,12 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def _check_binding(self, port_id, expected_binding_info=None,
                        top_bound_physnet=None, bottom_bound_physnet=None):
-        port_context = self.plugin.get_bound_port_context(
+        port_context = self.driver.make_port_context(
             n_context.get_admin_context(), port_id)
         self.assertIsNotNone(port_context)
+        self.assertNotIn(port_context.vif_type,
+                         [portbindings.VIF_TYPE_UNBOUND,
+                          portbindings.VIF_TYPE_BINDING_FAILED])
         binding_info = [(bl['bound_driver'],
                          bl['bound_segment']['network_type'])
                         for bl in port_context.binding_levels]
@@ -622,16 +626,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         return self.deserialize(self.fmt, req.get_response(self.api))
 
     def _net_2_epg(self, network):
-        if network['router:external']:
-            epg = aim_resource.EndpointGroup.from_dn(
-                network['apic:distinguished_names']['EndpointGroup'])
-        else:
-            epg = aim_resource.EndpointGroup(
-                tenant_name=self.name_mapper.project(
-                    None, network['tenant_id']),
-                app_profile_name=self._app_profile_name,
-                name=self.name_mapper.network(None, network['id']))
-        return epg
+        return aim_resource.EndpointGroup.from_dn(
+            network['apic:distinguished_names']['EndpointGroup'])
 
 
 class TestRpcListeners(ApicAimTestCase):
@@ -4903,7 +4899,7 @@ class TestPortBinding(ApicAimTestCase):
         # Bind to non-opflex host
         p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
         self.assertNotEqual('binding_failed', p1['binding:vif_type'])
-        p1_ctx = self.plugin.get_bound_port_context(
+        p1_ctx = self.driver.make_port_context(
             n_context.get_admin_context(), p1['id'])
         self.assertEqual('opflex', p1_ctx.top_bound_segment['network_type'])
         self.assertEqual('vlan', p1_ctx.bottom_bound_segment['network_type'])
@@ -4912,7 +4908,7 @@ class TestPortBinding(ApicAimTestCase):
         self._register_agent('host2', AGENT_CONF_OPFLEX)
         p2 = self._bind_port_to_host(p2['id'], 'host2')['port']
         self.assertNotEqual('binding_failed', p2['binding:vif_type'])
-        p2_ctx = self.plugin.get_bound_port_context(
+        p2_ctx = self.driver.make_port_context(
             n_context.get_admin_context(), p2['id'])
         self.assertEqual('opflex', p2_ctx.top_bound_segment['network_type'])
         self.assertEqual('vlan', p2_ctx.bottom_bound_segment['network_type'])
