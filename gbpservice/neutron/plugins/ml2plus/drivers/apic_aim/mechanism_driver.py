@@ -288,7 +288,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         vm_update = loopingcall.FixedIntervalLoopingCall(
             self._update_nova_vm_name_cache)
         vm_update.start(
-            interval=self.apic_nova_vm_name_cache_update_interval)
+            interval=self.apic_nova_vm_name_cache_update_interval,
+            stop_on_exception=False)
 
     def _update_nova_vm_name_cache(self):
         current_time = datetime.now()
