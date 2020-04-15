@@ -22,6 +22,7 @@ import re
 import six
 from sqlalchemy.orm import exc as sql_exc
 import testtools
+import time
 
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
@@ -2235,6 +2236,19 @@ class TestAimMapping(ApicAimTestCase):
         exp_calls = [
             mock.call(mock.ANY, tenant, cascade=True)]
         self._check_call_list(exp_calls, self.driver.aim.delete.call_args_list)
+
+    def test_setup_nova_vm_update(self):
+        self.driver.apic_nova_vm_name_cache_update_interval = 0.5
+        self.driver._update_nova_vm_name_cache = mock.Mock(
+            side_effect=Exception())
+        self.assertEqual(
+            self.driver._update_nova_vm_name_cache.call_count, 0)
+        self.driver._setup_nova_vm_update()
+        # This proves that the looping thread continued to run even
+        # after seeing an exception.
+        time.sleep(1)
+        self.assertTrue(
+            self.driver._update_nova_vm_name_cache.call_count > 1)
 
     def test_update_nova_vm_name_cache(self):
         # VM cache is empty to being with
