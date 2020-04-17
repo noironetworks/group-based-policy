@@ -20,14 +20,13 @@
 # corresponding to the newest neutron branch supported by this
 # repository.
 
-from neutron.db import api as old_api
 from neutron_lib.db import api
 
 get_context_manager = api.get_context_manager
 get_reader_session = api.get_reader_session
 get_writer_session = api.get_writer_session
-is_retriable = old_api.is_retriable
-retry_db_errors = old_api.retry_db_errors
-retry_if_session_inactive = old_api.retry_if_session_inactive
-CONTEXT_READER = get_context_manager().reader
-CONTEXT_WRITER = get_context_manager().writer
+is_retriable = api.is_retriable
+retry_db_errors = api.retry_db_errors
+retry_if_session_inactive = api.retry_if_session_inactive
+CONTEXT_READER = api.CONTEXT_READER
+CONTEXT_WRITER = api.CONTEXT_WRITER

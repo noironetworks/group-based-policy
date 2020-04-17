@@ -14,15 +14,15 @@
         - openstack-tox-pep8:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/queens
+                override-checkout: stable/rocky
         - openstack-tox-py27:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/queens
+                override-checkout: stable/rocky
         - openstack-tox-py35:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/queens
+                override-checkout: stable/rocky
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -34,12 +34,12 @@
         - openstack-tox-pep8:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/queens
+                override-checkout: stable/rocky
         - openstack-tox-py27:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/queens
+                override-checkout: stable/rocky
         - openstack-tox-py35:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/queens
+                override-checkout: stable/rocky

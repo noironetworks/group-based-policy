@@ -22,7 +22,6 @@ from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 from neutron.common import constants as n_const
 from neutron.common import utils as n_utils
 from neutron.db import _resource_extend as resource_extend
-from neutron.db import _utils as db_utils
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
 from neutron.plugins.ml2.common import exceptions as ml2_exc
@@ -38,6 +37,7 @@ from neutron_lib.api import validators
 from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib.callbacks import resources
+from neutron_lib.db import utils as db_utils
 from neutron_lib.plugins import directory
 from oslo_log import log
 from oslo_utils import excutils

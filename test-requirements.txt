@@ -1,22 +1,19 @@
 # The order of packages is significant, because pip processes them in the order
 # of appearance. Changing the order has an impact on the overall integration
 # process, which may cause wedges in the gate later.
-hacking!=0.13.0,<0.14,>=0.12.0 # Apache-2.0
+hacking>=1.1.0,<1.2.0 # Apache-2.0
 
--e git+https://opendev.org/openstack/neutron.git@stable/queens#egg=neutron
--e git+https://opendev.org/openstack/neutron-vpnaas.git@stable/queens#egg=neutron-vpnaas
--e git+https://opendev.org/openstack/neutron-lbaas.git@stable/queens#egg=neutron-lbaas
--e git+https://opendev.org/openstack/neutron-fwaas.git@stable/queens#egg=neutron-fwaas
--e git+https://opendev.org/openstack/networking-sfc.git@stable/queens#egg=networking-sfc
+-e git+https://opendev.org/openstack/neutron.git@stable/rocky#egg=neutron
+-e git+https://opendev.org/openstack/neutron-vpnaas.git@stable/rocky#egg=neutron-vpnaas
+-e git+https://opendev.org/openstack/neutron-lbaas.git@stable/rocky#egg=neutron-lbaas
+-e git+https://opendev.org/openstack/neutron-fwaas.git@stable/rocky#egg=neutron-fwaas
+-e git+https://opendev.org/openstack/networking-sfc.git@stable/rocky#egg=networking-sfc
 
 -e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
--e git+https://github.com/noironetworks/python-opflex-agent.git@stable/queens#egg=python-opflexagent-agent
+-e git+https://github.com/noironetworks/python-opflex-agent.git@stable/rocky#egg=python-opflexagent-agent
 
--e git+https://github.com/openstack/vmware-nsx.git@stable/queens#egg=vmware_nsx
--e git+https://github.com/openstack/vmware-nsxlib.git@stable/queens#egg=vmware_nsxlib
-
--e git+https://opendev.org/x/python-group-based-policy-client.git@stable/queens#egg=gbpclient
+-e git+https://opendev.org/x/python-group-based-policy-client.git@stable/rocky#egg=gbpclient
 
 coverage!=4.4,>=4.0 # Apache-2.0
 flake8-import-order==0.12 # LGPLv3
@@ -30,7 +27,7 @@ oslotest>=3.2.0 # Apache-2.0
 stestr>=1.0.0 # Apache-2.0
 
 # Since version numbers for these are specified in
-# https://releases.openstack.org/constraints/upper/queens, they cannot be
+# https://releases.openstack.org/constraints/upper/rocky, they cannot be
 # referenced as GIT URLs.
 python-heatclient
 python-keystoneclient

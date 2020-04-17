@@ -4912,7 +4912,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # This is only needed for baremetal VNIC types, as they don't
         # have agents to perform port binding.
         subport_db = self.plugin._get_port(context, first_subport_id)
-        if subport_db.port_binding.vnic_type != portbindings.VNIC_BAREMETAL:
+        if (not subport_db.port_bindings or
+            subport_db.port_bindings[0].vnic_type !=
+            portbindings.VNIC_BAREMETAL):
             return
         if event == events.AFTER_DELETE:
             parent_port = None
@@ -5674,12 +5676,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             port = self.plugin._make_port_dict(port_db)
             network = self.plugin.get_network(
                 plugin_context, port_db.network_id)
-            host = port_db.port_binding.host if port_db.port_binding else None
+            host = (port_db.port_bindings[0].host if port_db.port_bindings
+                    else None)
             levels = (n_db.get_binding_levels(plugin_context, port_id, host)
                       if host else None)
             return ml2_context.PortContext(
                 self.plugin, plugin_context, port, network,
-                port_db.port_binding, levels)
+                port_db.port_bindings[0] if port_db.port_bindings else None,
+                levels)
 
     def _add_network_mapping_and_notify(self, context, network_id, bd, epg,
                                         vrf):
@@ -6454,7 +6458,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         query += lambda q: q.options(
             orm.joinedload('binding_levels'))
         for port in query(mgr.actual_session):
-            binding = port.port_binding
+            binding = port.port_bindings[0] if port.port_bindings else None
             levels = port.binding_levels
             unbind = False
             # REVISIT: Validate that vif_type and vif_details are
