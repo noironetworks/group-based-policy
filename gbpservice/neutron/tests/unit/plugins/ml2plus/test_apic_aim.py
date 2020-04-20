@@ -291,10 +291,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def setUp(self, mechanism_drivers=None, tenant_network_types=None,
             plugin=None, ext_mgr=None):
-        self.nova_client = mock.patch(
-            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
-            'nova_client.NovaClient.get_servers').start()
-        self.nova_client.return_value = []
         # Enable the test mechanism driver to ensure that
         # we can successfully call through to all mechanism
         # driver apis.
@@ -317,6 +313,12 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             'TRUNK': 'neutron.services.trunk.plugin.TrunkPlugin',
             'L3_ROUTER_NAT':
             'gbpservice.neutron.services.apic_aim.l3_plugin.ApicL3Plugin'}
+
+        # Prevent FixedIntervalLoopingCall that invokes Nova RPCs from
+        # being launched during plugin initialization.
+        self.saved_setup_nova_vm_update = (
+            md.ApicMechanismDriver._setup_nova_vm_update)
+        md.ApicMechanismDriver._setup_nova_vm_update = mock.Mock()
 
         self.useFixture(AimSqlFixture())
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
@@ -368,6 +370,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
         super(ApicAimTestCase, self).tearDown()
+        md.ApicMechanismDriver._setup_nova_vm_update = (
+            self.saved_setup_nova_vm_update)
 
     def _validate(self):
         # Validate should pass.
@@ -2238,96 +2242,106 @@ class TestAimMapping(ApicAimTestCase):
         self._check_call_list(exp_calls, self.driver.aim.delete.call_args_list)
 
     def test_setup_nova_vm_update(self):
-        self.driver.apic_nova_vm_name_cache_update_interval = 0.5
-        self.driver._update_nova_vm_name_cache = mock.Mock(
-            side_effect=Exception())
-        self.assertEqual(
-            self.driver._update_nova_vm_name_cache.call_count, 0)
-        self.driver._setup_nova_vm_update()
-        # This proves that the looping thread continued to run even
-        # after seeing an exception.
-        time.sleep(1)
-        self.assertTrue(
-            self.driver._update_nova_vm_name_cache.call_count > 1)
+        with mock.patch('gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+                        'mechanism_driver.ApicMechanismDriver.'
+                        '_update_nova_vm_name_cache',
+                        mock.Mock(side_effect=Exception())):
+            self.driver.apic_nova_vm_name_cache_update_interval = 0.5
+            self.assertEqual(
+                self.driver._update_nova_vm_name_cache.call_count, 0)
+            self.saved_setup_nova_vm_update(self.driver)
+            # This proves that the looping thread continued to run even
+            # after seeing an exception.
+            time.sleep(1)
+            self.assertTrue(
+                self.driver._update_nova_vm_name_cache.call_count > 1)
+            self.driver.vm_update.stop()
 
     def test_update_nova_vm_name_cache(self):
-        # VM cache is empty to being with
-        self.assertEqual(self.driver._get_vm_names(self.db_session),
-                         [])
-        # Add one vm
-        vm = mock.Mock()
-        vm.id = 'some_id'
-        vm.name = 'some_name'
-        self.nova_client.return_value = [vm]
-        self.driver._update_nova_vm_name_cache()
-        self.assertEqual(self.driver._get_vm_names(self.db_session),
-                         [('some_id', 'some_name')])
-        # Update vm name
-        vm.name = 'new_name'
-        self.nova_client.return_value = [vm]
-        self.driver._update_nova_vm_name_cache()
-        self.assertEqual(self.driver._get_vm_names(self.db_session),
-                         [('some_id', 'new_name')])
-        # Simulate the polling thread from the other controller
-        # will just stand by
-        old_id = self.driver.host_id
-        self.driver.host_id = 'new_id'
-        vm.name = 'old_name'
-        self.nova_client.return_value = [vm]
-        self.driver._update_nova_vm_name_cache()
-        self.assertEqual(self.driver._get_vm_names(self.db_session),
-                         [('some_id', 'new_name')])
-        # VM removal won't be triggered thru incremental update
-        self.driver.host_id = old_id
-        self.nova_client.return_value = []
-        self.driver._update_nova_vm_name_cache()
-        self.assertEqual(self.driver._get_vm_names(self.db_session),
-                         [('some_id', 'new_name')])
-        # Force a full update which will take care of the VM removal
-        vm_update_obj = self.driver._get_vm_name_update(self.db_session)
-        new_full_update_time = (vm_update_obj.last_full_update_time -
-                            datetime.timedelta(minutes=11))
-        self.driver._set_vm_name_update(self.db_session, vm_update_obj,
-            old_id, new_full_update_time, new_full_update_time)
-        self.nova_client.return_value = []
-        self.driver._update_nova_vm_name_cache()
-        self.assertEqual(self.driver._get_vm_names(self.db_session),
-                         [])
+        with mock.patch(
+                'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+                'nova_client.NovaClient.get_servers') as nova_client:
+            nova_client.return_value = []
 
-        # This should throw an exception as there will be only one
-        # entry in this DB table at any given time.
-        current_time = datetime.datetime.now()
-        self.assertRaises(sql_exc.FlushError,
-                          self.driver._set_vm_name_update,
-                          self.db_session, None, 'host_id1', current_time)
+            # VM cache is empty to begin with
+            self.assertEqual(self.driver._get_vm_names(self.db_session),
+                             [])
+            # Add one vm
+            vm = mock.Mock()
+            vm.id = 'some_id'
+            vm.name = 'some_name'
+            nova_client.return_value = [vm]
+            self.driver._update_nova_vm_name_cache()
+            self.assertEqual(self.driver._get_vm_names(self.db_session),
+                             [('some_id', 'some_name')])
+            # Update vm name
+            vm.name = 'new_name'
+            nova_client.return_value = [vm]
+            self.driver._update_nova_vm_name_cache()
+            self.assertEqual(self.driver._get_vm_names(self.db_session),
+                             [('some_id', 'new_name')])
+            # Simulate the polling thread from the other controller
+            # will just stand by
+            old_id = self.driver.host_id
+            self.driver.host_id = 'new_id'
+            vm.name = 'old_name'
+            nova_client.return_value = [vm]
+            self.driver._update_nova_vm_name_cache()
+            self.assertEqual(self.driver._get_vm_names(self.db_session),
+                             [('some_id', 'new_name')])
+            # VM removal won't be triggered thru incremental update
+            self.driver.host_id = old_id
+            nova_client.return_value = []
+            self.driver._update_nova_vm_name_cache()
+            self.assertEqual(self.driver._get_vm_names(self.db_session),
+                             [('some_id', 'new_name')])
+            # Force a full update which will take care of the VM removal
+            vm_update_obj = self.driver._get_vm_name_update(self.db_session)
+            new_full_update_time = (vm_update_obj.last_full_update_time -
+                                    datetime.timedelta(minutes=11))
+            self.driver._set_vm_name_update(
+                self.db_session, vm_update_obj, old_id, new_full_update_time,
+                new_full_update_time)
+            nova_client.return_value = []
+            self.driver._update_nova_vm_name_cache()
+            self.assertEqual(self.driver._get_vm_names(self.db_session),
+                             [])
 
-        # This is just to test the port notification part for a VM
-        # being associated with 2 ports
-        self._register_agent('h1', AGENT_CONF_OPFLEX)
+            # This should throw an exception as there will be only one
+            # entry in this DB table at any given time.
+            current_time = datetime.datetime.now()
+            self.assertRaises(sql_exc.FlushError,
+                              self.driver._set_vm_name_update,
+                              self.db_session, None, 'host_id1', current_time)
 
-        net1 = self._make_network(self.fmt, 'net1', True)
-        net_id = net1['network']['id']
-        self._make_subnet(self.fmt, net1, '10.0.1.1', '10.0.1.0/24')
-        port1_id = self._make_port(self.fmt, net_id)['port']['id']
+            # This is just to test the port notification part for a VM
+            # being associated with 2 ports
+            self._register_agent('h1', AGENT_CONF_OPFLEX)
 
-        net2 = self._make_network(self.fmt, 'net2', True)
-        net_id = net2['network']['id']
-        self._make_subnet(self.fmt, net2, '20.0.1.1', '20.0.1.0/24')
-        port2_id = self._make_port(self.fmt, net_id)['port']['id']
+            net1 = self._make_network(self.fmt, 'net1', True)
+            net_id = net1['network']['id']
+            self._make_subnet(self.fmt, net1, '10.0.1.1', '10.0.1.0/24')
+            port1_id = self._make_port(self.fmt, net_id)['port']['id']
 
-        self._bind_port_to_host(port1_id, 'h1')
-        self._bind_port_to_host(port2_id, 'h1')
-        self.driver._notify_port_update = mock.Mock()
+            net2 = self._make_network(self.fmt, 'net2', True)
+            net_id = net2['network']['id']
+            self._make_subnet(self.fmt, net2, '20.0.1.1', '20.0.1.0/24')
+            port2_id = self._make_port(self.fmt, net_id)['port']['id']
 
-        vm.id = 'someid'
-        vm.name = 'somename'
-        self.nova_client.return_value = [vm]
-        self.driver._update_nova_vm_name_cache()
-        exp_calls = [
-            mock.call(mock.ANY, port1_id),
-            mock.call(mock.ANY, port2_id)]
-        self._check_call_list(exp_calls,
-            self.driver._notify_port_update.call_args_list)
+            self._bind_port_to_host(port1_id, 'h1')
+            self._bind_port_to_host(port2_id, 'h1')
+            self.driver._notify_port_update = mock.Mock()
+
+            vm.id = 'someid'
+            vm.name = 'somename'
+            nova_client.return_value = [vm]
+            self.driver._update_nova_vm_name_cache()
+            exp_calls = [
+                mock.call(mock.ANY, port1_id),
+                mock.call(mock.ANY, port2_id)]
+            self._check_call_list(
+                exp_calls,
+                self.driver._notify_port_update.call_args_list)
 
     def test_multi_scope_routing_with_unscoped_pools(self):
         self._test_multi_scope_routing(True)

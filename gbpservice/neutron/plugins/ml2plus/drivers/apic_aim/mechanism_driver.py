@@ -271,6 +271,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         "faults and loss of connectivity, so please eliminate "
                         "any existing overlap and set this option to False "
                         "(the default) as soon as possible.")
+        self.host_id = 'id-%s' % net.get_hostname()
         self._setup_nova_vm_update()
         self._ensure_static_resources()
         trunk_driver.register()
@@ -284,18 +285,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return self._start_rpc_listeners()
 
     def _setup_nova_vm_update(self):
-        self.admin_context = nctx.get_admin_context()
-        self.host_id = 'id-%s' % net.get_hostname()
-        vm_update = loopingcall.FixedIntervalLoopingCall(
+        self.vm_update = loopingcall.FixedIntervalLoopingCall(
             self._update_nova_vm_name_cache)
-        vm_update.start(
+        self.vm_update.start(
             interval=self.apic_nova_vm_name_cache_update_interval,
             stop_on_exception=False)
 
     def _update_nova_vm_name_cache(self):
         current_time = datetime.now()
-        session = self.admin_context.session
-        vm_name_update = self._get_vm_name_update(session)
+        context = nctx.get_admin_context()
+        with db_api.context_manager.reader.using(context) as session:
+            vm_name_update = self._get_vm_name_update(session)
         is_full_update = True
         if vm_name_update:
             # The other controller is still doing the update actively
@@ -319,9 +319,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return
 
         try:
-            self._set_vm_name_update(session, vm_name_update, self.host_id,
-                                     current_time,
-                                     current_time if is_full_update else None)
+            with db_api.context_manager.writer.using(context) as session:
+                self._set_vm_name_update(
+                    session, vm_name_update, self.host_id, current_time,
+                    current_time if is_full_update else None)
         # This means another controller is also adding an entry at the same
         # time and he has beat us. This is fine so we will just return.
         except Exception as e:
@@ -333,7 +334,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             vm_list.append((vm.id, vm.name))
         nova_vms = set(vm_list)
 
-        with db_api.context_manager.writer.using(self.admin_context):
+        with db_api.context_manager.writer.using(context) as session:
             cached_vms = self._get_vm_names(session)
             cached_vms = set(cached_vms)
 
@@ -362,7 +363,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     update_ports.extend(port_ids)
 
         if update_ports:
-            self._notify_port_update_bulk(self.admin_context, update_ports)
+            self._notify_port_update_bulk(context, update_ports)
 
     def _allocate_apic_router_ids(self, aim_ctx, l3_out, node_path):
         aim_l3out_nodes = self._get_nodes_for_l3out_vrf(aim_ctx, l3_out)
