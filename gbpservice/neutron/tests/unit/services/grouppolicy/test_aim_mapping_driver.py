@@ -120,10 +120,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     def setUp(self, policy_drivers=None, core_plugin=None, ml2_options=None,
               l3_plugin=None, sc_plugin=None, trunk_plugin=None,
               qos_plugin=None, **kwargs):
-        self.nova_client1 = mock.patch(
-            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
-            'nova_client.NovaClient.get_servers').start()
-        self.nova_client1.return_value = []
         core_plugin = core_plugin or ML2PLUS_PLUGIN
         if not l3_plugin:
             l3_plugin = "apic_aim_l3"
@@ -148,6 +144,13 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                    'type_drivers': ['opflex', 'local', 'vlan'],
                                    'tenant_network_types': ['opflex']}
         self._default_es_name = 'default'
+
+        # Prevent FixedIntervalLoopingCall that invokes Nova RPCs from
+        # being launched during plugin initialization.
+        self.saved_setup_nova_vm_update = (
+            md.ApicMechanismDriver._setup_nova_vm_update)
+        md.ApicMechanismDriver._setup_nova_vm_update = mock.Mock()
+
         self.useFixture(test_aim_md.AimSqlFixture())
         super(AIMBaseTestCase, self).setUp(
             policy_drivers=policy_drivers, core_plugin=core_plugin,
@@ -182,12 +185,6 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._name_mapper = None
         self._driver = None
         self._mech_driver = None
-        nova_client = mock.patch(
-            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
-            'nova_client.NovaClient.get_server').start()
-        vm = mock.Mock()
-        vm.name = 'someid'
-        nova_client.return_value = vm
 
         self.extension_attributes = ('router:external', DN, 'apic:svi',
                                      'apic:nat_type', 'apic:snat_host_pool',
@@ -208,6 +205,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
         super(AIMBaseTestCase, self).tearDown()
+        md.ApicMechanismDriver._setup_nova_vm_update = (
+            self.saved_setup_nova_vm_update)
 
     def _setup_external_network(self, name, dn=None, router_tenant=None):
         DN = 'apic:distinguished_names'
@@ -3727,26 +3726,27 @@ class TestPolicyTarget(AIMBaseTestCase,
         pt = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
 
-        nova_client = mock.patch(
-            'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
-            'nova_client.NovaClient.get_server').start()
-        vm = mock.Mock()
-        vm.name = 'secure_vm1'
-        nova_client.return_value = vm
-        newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
-        self.assertEqual(newp1['port']['binding:vif_type'], 'ovs')
+        with mock.patch(
+                'gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+                'nova_client.NovaClient.get_server') as nova_client:
+            vm = mock.Mock()
+            vm.name = 'secure_vm1'
+            nova_client.return_value = vm
+            newp1 = self._bind_port_to_host(pt['port_id'], 'h1')
+            self.assertEqual(newp1['port']['binding:vif_type'], 'ovs')
 
-        # bind again
-        vm.name = 'bad_vm1'
-        newp1 = self._bind_port_to_host(pt['port_id'], 'h2')
-        self.assertEqual(newp1['port']['binding:vif_type'], 'binding_failed')
+            # bind again
+            vm.name = 'bad_vm1'
+            newp1 = self._bind_port_to_host(pt['port_id'], 'h2')
+            self.assertEqual(newp1['port']['binding:vif_type'],
+                             'binding_failed')
 
-        # update l3p with empty allowed_vm_names
-        l3p = self.update_l3_policy(l3p['id'], tenant_id=l3p['tenant_id'],
-                                    allowed_vm_names=[],
-                                    expected_res_status=200)['l3_policy']
-        newp1 = self._bind_port_to_host(pt['port_id'], 'h3')
-        self.assertEqual(newp1['port']['binding:vif_type'], 'ovs')
+            # update l3p with empty allowed_vm_names
+            l3p = self.update_l3_policy(l3p['id'], tenant_id=l3p['tenant_id'],
+                                        allowed_vm_names=[],
+                                        expected_res_status=200)['l3_policy']
+            newp1 = self._bind_port_to_host(pt['port_id'], 'h3')
+            self.assertEqual(newp1['port']['binding:vif_type'], 'ovs')
 
 
 class TestPolicyTargetDvs(AIMBaseTestCase):
