@@ -285,6 +285,258 @@ class ApicAimTestMixin(object):
             raise webob.exc.HTTPClientError(code=subnet_res.status_int)
         return self.deserialize(fmt, subnet_res)
 
+    def _get_tenant(self, tenant_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        tenant = aim_resource.Tenant(name=tenant_name)
+        tenant = self.aim_mgr.get(aim_ctx, tenant)
+        self.assertIsNotNone(tenant)
+        return tenant
+
+    def _get_sg(self, sg_name, tenant_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg = aim_resource.SecurityGroup(tenant_name=tenant_name,
+                                        name=sg_name)
+        sg = self.aim_mgr.get(aim_ctx, sg)
+        self.assertIsNotNone(sg)
+        return sg
+
+    def _get_sg_subject(self, sg_subject_name, sg_name, tenant_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg_subject = aim_resource.SecurityGroupSubject(
+            tenant_name=tenant_name, security_group_name=sg_name,
+            name=sg_subject_name)
+        sg_subject = self.aim_mgr.get(aim_ctx, sg_subject)
+        self.assertIsNotNone(sg_subject)
+        return sg_subject
+
+    def _get_sg_rule(self, sg_rule_name, sg_subject_name, sg_name,
+                     tenant_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg_rule = aim_resource.SecurityGroupRule(
+            tenant_name=tenant_name, security_group_name=sg_name,
+            security_group_subject_name=sg_subject_name, name=sg_rule_name)
+        sg_rule = self.aim_mgr.get(aim_ctx, sg_rule)
+        self.assertIsNotNone(sg_rule)
+        return sg_rule
+
+    def _check_sg(self, sg):
+        tenant_aname = self.name_mapper.project(None, sg['tenant_id'])
+        self._get_tenant(tenant_aname)
+
+        aim_sg = self._get_sg(sg['id'], tenant_aname)
+        self.assertEqual(tenant_aname, aim_sg.tenant_name)
+        self.assertEqual(sg['id'], aim_sg.name)
+        self.assertEqual(sg['name'], aim_sg.display_name)
+
+        # check those SG rules including the default ones
+        for sg_rule in sg.get('security_group_rules', []):
+            self._check_sg_rule(sg['id'], sg_rule)
+
+    def _check_sg_rule(self, sg_id, sg_rule):
+        tenant_aname = self.name_mapper.project(None, sg_rule['tenant_id'])
+        self._get_tenant(tenant_aname)
+
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', sg_id, tenant_aname)
+
+        self.assertEqual(tenant_aname, aim_sg_rule.tenant_name)
+        self.assertEqual(sg_id, aim_sg_rule.security_group_name)
+        self.assertEqual('default',
+                         aim_sg_rule.security_group_subject_name)
+        self.assertEqual(sg_rule['id'], aim_sg_rule.name)
+        self.assertEqual(sg_rule['direction'], aim_sg_rule.direction)
+        self.assertEqual(sg_rule['ethertype'].lower(),
+                         aim_sg_rule.ethertype)
+        self.assertEqual('reflexive', aim_sg_rule.conn_track)
+        if sg_rule['remote_ip_prefix']:
+            remote_ips = [sg_rule['remote_ip_prefix']]
+        else:
+            if sg_rule['ethertype'] == n_constants.IPv4:
+                remote_ips = [n_constants.IPv4_ANY]
+            elif sg_rule['ethertype'] == n_constants.IPv6:
+                remote_ips = [n_constants.IPv6_ANY]
+            else:
+                remote_ips = []
+        self.assertEqual(remote_ips, aim_sg_rule.remote_ips)
+        self.assertEqual(str(self.driver.get_aim_protocol(
+                         sg_rule['protocol'])), str(aim_sg_rule.ip_protocol))
+        self.assertEqual((str(sg_rule['port_range_min']) if
+                          sg_rule['port_range_min'] else 'unspecified'),
+                         aim_sg_rule.from_port)
+        self.assertEqual((str(sg_rule['port_range_max']) if
+                          sg_rule['port_range_max'] else 'unspecified'),
+                         aim_sg_rule.to_port)
+        if (sg_rule['protocol'] and sg_rule['protocol'].lower() == 'icmp'):
+            if (sg_rule['port_range_min']):
+                self.assertEqual(str(sg_rule['port_range_min']),
+                    aim_sg_rule.icmp_code)
+            else:
+                self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
+            if (sg_rule['port_range_max']):
+                self.assertEqual(str(sg_rule['port_range_max']),
+                    aim_sg_rule.icmp_type)
+            else:
+                self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
+
+    def _check_default_sg_details(self):
+        sg_aname = self.driver.apic_system_id + '_DefaultSecurityGroup'
+        sg = self._get_sg(sg_aname, 'common')
+        self.assertEqual('common', sg.tenant_name)
+        self.assertEqual(sg_aname, sg.name)
+        self.assertEqual('DefaultSecurityGroup', sg.display_name)
+
+        # Check default SecurityGroupSubject.
+        sg_subject = self._get_sg_subject('default', sg_aname, 'common')
+        self.assertEqual('common', sg_subject.tenant_name)
+        self.assertEqual(sg_aname, sg_subject.security_group_name)
+        self.assertEqual('default', sg_subject.name)
+        self.assertEqual(
+            'DefaultSecurityGroupSubject', sg_subject.display_name)
+
+        # Check ARP egress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'arp_egress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('arp_egress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupArpEgressRule', sg_rule.display_name)
+        self.assertEqual('egress', sg_rule.direction)
+        self.assertEqual('arp', sg_rule.ethertype)
+        self.assertEqual([n_constants.IPv4_ANY], sg_rule.remote_ips)
+        self.assertEqual('unspecified', sg_rule.from_port)
+        self.assertEqual('unspecified', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check ARP inress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'arp_ingress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('arp_ingress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupArpIngressRule', sg_rule.display_name)
+        self.assertEqual('ingress', sg_rule.direction)
+        self.assertEqual('arp', sg_rule.ethertype)
+        self.assertEqual([n_constants.IPv4_ANY], sg_rule.remote_ips)
+        self.assertEqual('unspecified', sg_rule.from_port)
+        self.assertEqual('unspecified', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check DHCP egress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'dhcp_egress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('dhcp_egress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupDhcpEgressRule', sg_rule.display_name)
+        self.assertEqual('egress', sg_rule.direction)
+        self.assertEqual('ipv4', sg_rule.ethertype)
+        self.assertEqual(str(self.driver.get_aim_protocol('udp')),
+                         str(sg_rule.ip_protocol))
+        self.assertEqual([n_constants.IPv4_ANY], sg_rule.remote_ips)
+        self.assertEqual('67', sg_rule.from_port)
+        self.assertEqual('67', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check DHCP ingress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'dhcp_ingress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('dhcp_ingress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupDhcpIngressRule', sg_rule.display_name)
+        self.assertEqual('ingress', sg_rule.direction)
+        self.assertEqual('ipv4', sg_rule.ethertype)
+        self.assertEqual(str(self.driver.get_aim_protocol('udp')),
+                         str(sg_rule.ip_protocol))
+        self.assertEqual([n_constants.IPv4_ANY], sg_rule.remote_ips)
+        self.assertEqual('68', sg_rule.from_port)
+        self.assertEqual('68', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check DHCP6 egress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'dhcp6_egress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('dhcp6_egress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupDhcp6EgressRule', sg_rule.display_name)
+        self.assertEqual('egress', sg_rule.direction)
+        self.assertEqual('ipv6', sg_rule.ethertype)
+        self.assertEqual(str(self.driver.get_aim_protocol('udp')),
+                         str(sg_rule.ip_protocol))
+        self.assertEqual([n_constants.IPv6_ANY], sg_rule.remote_ips)
+        self.assertEqual('547', sg_rule.from_port)
+        self.assertEqual('547', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check DHCP6 ingress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'dhcp6_ingress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('dhcp6_ingress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupDhcp6IngressRule', sg_rule.display_name)
+        self.assertEqual('ingress', sg_rule.direction)
+        self.assertEqual('ipv6', sg_rule.ethertype)
+        self.assertEqual(str(self.driver.get_aim_protocol('udp')),
+                         str(sg_rule.ip_protocol))
+        self.assertEqual([n_constants.IPv6_ANY], sg_rule.remote_ips)
+        self.assertEqual('546', sg_rule.from_port)
+        self.assertEqual('546', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check ICMP6 ingress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'icmp6_ingress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('icmp6_ingress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupIcmp6IngressRule', sg_rule.display_name)
+        self.assertEqual('ingress', sg_rule.direction)
+        self.assertEqual('ipv6', sg_rule.ethertype)
+        self.assertEqual(str(self.driver.get_aim_protocol('icmpv6')),
+                         str(sg_rule.ip_protocol))
+        self.assertEqual([n_constants.IPv6_ANY], sg_rule.remote_ips)
+        self.assertEqual('unspecified', sg_rule.from_port)
+        self.assertEqual('unspecified', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
+        # Check ICMP6 egress SecurityGroupRule.
+        sg_rule = self._get_sg_rule(
+            'icmp6_egress', 'default', sg_aname, 'common')
+        self.assertEqual('common', sg_rule.tenant_name)
+        self.assertEqual(sg_aname, sg_rule.security_group_name)
+        self.assertEqual('default', sg_rule.security_group_subject_name)
+        self.assertEqual('icmp6_egress', sg_rule.name)
+        self.assertEqual(
+            'DefaultSecurityGroupIcmp6EgressRule', sg_rule.display_name)
+        self.assertEqual('egress', sg_rule.direction)
+        self.assertEqual('ipv6', sg_rule.ethertype)
+        self.assertEqual(str(self.driver.get_aim_protocol('icmpv6')),
+                         str(sg_rule.ip_protocol))
+        self.assertEqual([n_constants.IPv6_ANY], sg_rule.remote_ips)
+        self.assertEqual('unspecified', sg_rule.from_port)
+        self.assertEqual('unspecified', sg_rule.to_port)
+        self.assertEqual('normal', sg_rule.conn_track)
+
 
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_l3.L3NatTestCaseMixin, ApicAimTestMixin,
@@ -474,42 +726,12 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             raise webob.exc.HTTPClientError(code=res.status_int)
         return self.deserialize(self.fmt, res)
 
-    def _get_sg(self, sg_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        sg = aim_resource.SecurityGroup(tenant_name=tenant_name,
-                                        name=sg_name)
-        sg = self.aim_mgr.get(aim_ctx, sg)
-        self.assertIsNotNone(sg)
-        return sg
-
     def _sg_should_not_exist(self, sg_name):
         session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
         sgs = self.aim_mgr.find(
             aim_ctx, aim_resource.SecurityGroup, name=sg_name)
         self.assertEqual([], sgs)
-
-    def _get_sg_subject(self, sg_subject_name, sg_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        sg_subject = aim_resource.SecurityGroupSubject(
-            tenant_name=tenant_name, security_group_name=sg_name,
-            name=sg_subject_name)
-        sg_subject = self.aim_mgr.get(aim_ctx, sg_subject)
-        self.assertIsNotNone(sg_subject)
-        return sg_subject
-
-    def _get_sg_rule(self, sg_rule_name, sg_subject_name, sg_name,
-                     tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        sg_rule = aim_resource.SecurityGroupRule(
-            tenant_name=tenant_name, security_group_name=sg_name,
-            security_group_subject_name=sg_subject_name, name=sg_rule_name)
-        sg_rule = self.aim_mgr.get(aim_ctx, sg_rule)
-        self.assertIsNotNone(sg_rule)
-        return sg_rule
 
     def _get_contract(self, contract_name, tenant_name):
         session = db_api.get_reader_session()
@@ -803,14 +1025,6 @@ class TestAimMapping(ApicAimTestCase):
     def tearDown(self):
         self.call_wrapper.tearDown()
         super(TestAimMapping, self).tearDown()
-
-    def _get_tenant(self, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        tenant = aim_resource.Tenant(name=tenant_name)
-        tenant = self.aim_mgr.get(aim_ctx, tenant)
-        self.assertIsNotNone(tenant)
-        return tenant
 
     def _get_vrf(self, vrf_name, tenant_name, should_exist=True):
         session = db_api.get_reader_session()
@@ -1120,58 +1334,6 @@ class TestAimMapping(ApicAimTestCase):
         aname = self.name_mapper.address_scope(None, scope['id'])
         self._vrf_should_not_exist(aname)
 
-    def _check_sg(self, sg):
-        tenant_aname = self.name_mapper.project(None, sg['tenant_id'])
-        self._get_tenant(tenant_aname)
-
-        aim_sg = self._get_sg(sg['id'], tenant_aname)
-        self.assertEqual(tenant_aname, aim_sg.tenant_name)
-        self.assertEqual(sg['id'], aim_sg.name)
-        self.assertEqual(sg['name'], aim_sg.display_name)
-
-        # check those SG rules including the default ones
-        for sg_rule in sg.get('security_group_rules', []):
-            self._check_sg_rule(sg['id'], sg_rule)
-
-    def _check_sg_rule(self, sg_id, sg_rule):
-        tenant_aname = self.name_mapper.project(None, sg_rule['tenant_id'])
-        self._get_tenant(tenant_aname)
-
-        aim_sg_rule = self._get_sg_rule(
-            sg_rule['id'], 'default', sg_id, tenant_aname)
-
-        self.assertEqual(tenant_aname, aim_sg_rule.tenant_name)
-        self.assertEqual(sg_id, aim_sg_rule.security_group_name)
-        self.assertEqual('default',
-                         aim_sg_rule.security_group_subject_name)
-        self.assertEqual(sg_rule['id'], aim_sg_rule.name)
-        self.assertEqual(sg_rule['direction'], aim_sg_rule.direction)
-        self.assertEqual(sg_rule['ethertype'].lower(),
-                         aim_sg_rule.ethertype)
-        self.assertEqual('reflexive', aim_sg_rule.conn_track)
-        self.assertEqual(([sg_rule['remote_ip_prefix']] if
-                          sg_rule['remote_ip_prefix'] else []),
-                         aim_sg_rule.remote_ips)
-        self.assertEqual(str(self.driver.get_aim_protocol(
-                         sg_rule['protocol'])), str(aim_sg_rule.ip_protocol))
-        self.assertEqual((str(sg_rule['port_range_min']) if
-                          sg_rule['port_range_min'] else 'unspecified'),
-                         aim_sg_rule.from_port)
-        self.assertEqual((str(sg_rule['port_range_max']) if
-                          sg_rule['port_range_max'] else 'unspecified'),
-                         aim_sg_rule.to_port)
-        if (sg_rule['protocol'] and sg_rule['protocol'].lower() == 'icmp'):
-            if (sg_rule['port_range_min']):
-                self.assertEqual(str(sg_rule['port_range_min']),
-                    aim_sg_rule.icmp_code)
-            else:
-                self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
-            if (sg_rule['port_range_max']):
-                self.assertEqual(str(sg_rule['port_range_max']),
-                    aim_sg_rule.icmp_type)
-            else:
-                self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
-
     def _check_router_deleted(self, router):
         aname = self.name_mapper.router(None, router['id'])
         self._subject_should_not_exist('route', aname)
@@ -1221,160 +1383,8 @@ class TestAimMapping(ApicAimTestCase):
         # Check any Filter.
         self._check_any_filter()
 
-        # Check default SecurityGroup.
-        sg_aname = self.driver.apic_system_id + '_DefaultSecurityGroup'
-        sg = self._get_sg(sg_aname, 'common')
-        self.assertEqual('common', sg.tenant_name)
-        self.assertEqual(sg_aname, sg.name)
-        self.assertEqual('DefaultSecurityGroup', sg.display_name)
-
-        # Check default SecurityGroupSubject.
-        sg_subject = self._get_sg_subject('default', sg_aname, 'common')
-        self.assertEqual('common', sg_subject.tenant_name)
-        self.assertEqual(sg_aname, sg_subject.security_group_name)
-        self.assertEqual('default', sg_subject.name)
-        self.assertEqual(
-            'DefaultSecurityGroupSubject', sg_subject.display_name)
-
-        # Check ARP egress SecurityGroupRule.
-        sg_rule = self._get_sg_rule(
-            'arp_egress', 'default', sg_aname, 'common')
-        self.assertEqual('common', sg_rule.tenant_name)
-        self.assertEqual(sg_aname, sg_rule.security_group_name)
-        self.assertEqual('default', sg_rule.security_group_subject_name)
-        self.assertEqual('arp_egress', sg_rule.name)
-        self.assertEqual(
-            'DefaultSecurityGroupArpEgressRule', sg_rule.display_name)
-        self.assertEqual('egress', sg_rule.direction)
-        self.assertEqual('arp', sg_rule.ethertype)
-        self.assertEqual([], sg_rule.remote_ips)
-        self.assertEqual('unspecified', sg_rule.from_port)
-        self.assertEqual('unspecified', sg_rule.to_port)
-        self.assertEqual('normal', sg_rule.conn_track)
-
-        # Check ARP inress SecurityGroupRule.
-        sg_rule = self._get_sg_rule(
-            'arp_ingress', 'default', sg_aname, 'common')
-        self.assertEqual('common', sg_rule.tenant_name)
-        self.assertEqual(sg_aname, sg_rule.security_group_name)
-        self.assertEqual('default', sg_rule.security_group_subject_name)
-        self.assertEqual('arp_ingress', sg_rule.name)
-        self.assertEqual(
-            'DefaultSecurityGroupArpIngressRule', sg_rule.display_name)
-        self.assertEqual('ingress', sg_rule.direction)
-        self.assertEqual('arp', sg_rule.ethertype)
-        self.assertEqual([], sg_rule.remote_ips)
-        self.assertEqual('unspecified', sg_rule.from_port)
-        self.assertEqual('unspecified', sg_rule.to_port)
-        self.assertEqual('normal', sg_rule.conn_track)
-
-        # Check DHCP egress SecurityGroupRule.
-        sg_rule = self._get_sg_rule(
-            'dhcp_egress', 'default', sg_aname, 'common')
-        self.assertEqual('common', sg_rule.tenant_name)
-        self.assertEqual(sg_aname, sg_rule.security_group_name)
-        self.assertEqual('default', sg_rule.security_group_subject_name)
-        self.assertEqual('dhcp_egress', sg_rule.name)
-        self.assertEqual(
-            'DefaultSecurityGroupDhcpEgressRule', sg_rule.display_name)
-        self.assertEqual('egress', sg_rule.direction)
-        self.assertEqual('ipv4', sg_rule.ethertype)
-        self.assertEqual(str(self.driver.get_aim_protocol('udp')),
-                         str(sg_rule.ip_protocol))
-        self.assertEqual([], sg_rule.remote_ips)
-        self.assertEqual('67', sg_rule.from_port)
-        self.assertEqual('67', sg_rule.to_port)
-        self.assertEqual('normal', sg_rule.conn_track)
-
-        # Check DHCP ingress SecurityGroupRule.
-        sg_rule = self._get_sg_rule(
-            'dhcp_ingress', 'default', sg_aname, 'common')
-        self.assertEqual('common', sg_rule.tenant_name)
-        self.assertEqual(sg_aname, sg_rule.security_group_name)
-        self.assertEqual('default', sg_rule.security_group_subject_name)
-        self.assertEqual('dhcp_ingress', sg_rule.name)
-        self.assertEqual(
-            'DefaultSecurityGroupDhcpIngressRule', sg_rule.display_name)
-        self.assertEqual('ingress', sg_rule.direction)
-        self.assertEqual('ipv4', sg_rule.ethertype)
-        self.assertEqual(str(self.driver.get_aim_protocol('udp')),
-                         str(sg_rule.ip_protocol))
-        self.assertEqual([], sg_rule.remote_ips)
-        self.assertEqual('68', sg_rule.from_port)
-        self.assertEqual('68', sg_rule.to_port)
-        self.assertEqual('normal', sg_rule.conn_track)
-
-        # Check DHCP6 egress SecurityGroupRule.
-        sg_rule = self._get_sg_rule(
-            'dhcp6_egress', 'default', sg_aname, 'common')
-        self.assertEqual('common', sg_rule.tenant_name)
-        self.assertEqual(sg_aname, sg_rule.security_group_name)
-        self.assertEqual('default', sg_rule.security_group_subject_name)
-        self.assertEqual('dhcp6_egress', sg_rule.name)
-        self.assertEqual(
-            'DefaultSecurityGroupDhcp6EgressRule', sg_rule.display_name)
-        self.assertEqual('egress', sg_rule.direction)
-        self.assertEqual('ipv6', sg_rule.ethertype)
-        self.assertEqual(str(self.driver.get_aim_protocol('udp')),
-                         str(sg_rule.ip_protocol))
-        self.assertEqual([], sg_rule.remote_ips)
-        self.assertEqual('547', sg_rule.from_port)
-        self.assertEqual('547', sg_rule.to_port)
-        self.assertEqual('normal', sg_rule.conn_track)
-
-        # Check DHCP6 ingress SecurityGroupRule.
-        sg_rule = self._get_sg_rule(
-            'dhcp6_ingress', 'default', sg_aname, 'common')
-        self.assertEqual('common', sg_rule.tenant_name)
-        self.assertEqual(sg_aname, sg_rule.security_group_name)
-        self.assertEqual('default', sg_rule.security_group_subject_name)
-        self.assertEqual('dhcp6_ingress', sg_rule.name)
-        self.assertEqual(
-            'DefaultSecurityGroupDhcp6IngressRule', sg_rule.display_name)
-        self.assertEqual('ingress', sg_rule.direction)
-        self.assertEqual('ipv6', sg_rule.ethertype)
-        self.assertEqual(str(self.driver.get_aim_protocol('udp')),
-                         str(sg_rule.ip_protocol))
-        self.assertEqual([], sg_rule.remote_ips)
-        self.assertEqual('546', sg_rule.from_port)
-        self.assertEqual('546', sg_rule.to_port)
-        self.assertEqual('normal', sg_rule.conn_track)
-
-        # Check ICMP6 ingress SecurityGroupRule.
-        sg_rule = self._get_sg_rule(
-            'icmp6_ingress', 'default', sg_aname, 'common')
-        self.assertEqual('common', sg_rule.tenant_name)
-        self.assertEqual(sg_aname, sg_rule.security_group_name)
-        self.assertEqual('default', sg_rule.security_group_subject_name)
-        self.assertEqual('icmp6_ingress', sg_rule.name)
-        self.assertEqual(
-            'DefaultSecurityGroupIcmp6IngressRule', sg_rule.display_name)
-        self.assertEqual('ingress', sg_rule.direction)
-        self.assertEqual('ipv6', sg_rule.ethertype)
-        self.assertEqual(str(self.driver.get_aim_protocol('icmpv6')),
-                         str(sg_rule.ip_protocol))
-        self.assertEqual(['::/0'], sg_rule.remote_ips)
-        self.assertEqual('unspecified', sg_rule.from_port)
-        self.assertEqual('unspecified', sg_rule.to_port)
-        self.assertEqual('normal', sg_rule.conn_track)
-
-        # Check ICMP6 egress SecurityGroupRule.
-        sg_rule = self._get_sg_rule(
-            'icmp6_egress', 'default', sg_aname, 'common')
-        self.assertEqual('common', sg_rule.tenant_name)
-        self.assertEqual(sg_aname, sg_rule.security_group_name)
-        self.assertEqual('default', sg_rule.security_group_subject_name)
-        self.assertEqual('icmp6_egress', sg_rule.name)
-        self.assertEqual(
-            'DefaultSecurityGroupIcmp6EgressRule', sg_rule.display_name)
-        self.assertEqual('egress', sg_rule.direction)
-        self.assertEqual('ipv6', sg_rule.ethertype)
-        self.assertEqual(str(self.driver.get_aim_protocol('icmpv6')),
-                         str(sg_rule.ip_protocol))
-        self.assertEqual(['::/0'], sg_rule.remote_ips)
-        self.assertEqual('unspecified', sg_rule.from_port)
-        self.assertEqual('unspecified', sg_rule.to_port)
-        self.assertEqual('normal', sg_rule.conn_track)
+        # Check default SecurityGroup and its details.
+        self._check_default_sg_details()
 
     def test_network_lifecycle(self):
         # Test create.
@@ -4826,6 +4836,46 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         self.assertIsNotNone(sgsubs)
         sgrules = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupRule)
         self.assertIsNotNone(sgrules)
+
+    def test_security_group_rule_remote_ips_conversion(self):
+        sg = self._make_security_group(self.fmt,
+                                       'sg1', 'test')['security_group']
+        # Add 2 more rules.
+        rule1 = self._build_security_group_rule(
+            sg['id'], 'ingress', n_constants.PROTO_NAME_TCP, '22', '23',
+            remote_ip_prefix="1.1.1.0/24", remote_group_id=None,
+            ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule1['security_group_rule']]}
+        sg_rule1 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+
+        rule2 = self._build_security_group_rule(
+            sg['id'], 'egress', n_constants.PROTO_NAME_TCP, '44', '45',
+            remote_ip_prefix=None, remote_group_id=None,
+            ethertype=n_constants.IPv6)
+        rules = {'security_group_rules': [rule2['security_group_rule']]}
+        sg_rule2 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+
+        # It will check all the sg_rules inside _check_sg().
+        self._check_sg(sg)
+        for sg_rule in [sg_rule1, sg_rule2]:
+            self._check_sg_rule(sg['id'], sg_rule)
+        self._check_default_sg_details()
+
+        # Wipe out the remote_ips list of all the sg_rules.
+        aim_ctx = aim_context.AimContext(self.db_session)
+        sg_rules = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupRule)
+        for sg_rule in sg_rules:
+            self.aim_mgr.update(aim_ctx, sg_rule, remote_ips=[])
+
+        data_migrations.do_sg_rule_remote_ips_conversion(
+            self.db_session, cfg.CONF)
+
+        self._check_sg(sg)
+        for sg_rule in [sg_rule1, sg_rule2]:
+            self._check_sg_rule(sg['id'], sg_rule)
+        self._check_default_sg_details()
 
 
 class TestPortBinding(ApicAimTestCase):

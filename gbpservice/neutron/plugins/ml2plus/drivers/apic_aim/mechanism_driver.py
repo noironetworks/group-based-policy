@@ -151,6 +151,24 @@ StaticPort = namedtuple(
     ['link', 'encap', 'mode'])
 
 
+def convert_sg_rule_remote_ips(id, remote_ip_prefix, ethertype):
+    if remote_ip_prefix:
+        remote_ips = [remote_ip_prefix]
+    else:
+        if ethertype == 'ipv4' or ethertype == 'arp':
+            remote_ips = [n_constants.IPv4_ANY]
+        elif ethertype == 'ipv6':
+            remote_ips = [n_constants.IPv6_ANY]
+        else:
+            # This shouldn't happen.
+            LOG.error("Unknown ethertype %(ethertype)s for "
+                      "sg_rule: %(id)s.",
+                      {'ethertype': ethertype,
+                       'id': id})
+            remote_ips = []
+    return remote_ips
+
+
 class KeystoneNotificationEndpoint(object):
     filter_rule = oslo_messaging.NotificationFilter(
         event_type='^identity.project.[updated|deleted]')
@@ -467,7 +485,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=dname,
             direction='egress',
             ethertype='arp',
-            conn_track='normal')
+            conn_track='normal',
+            remote_ips=[n_constants.IPv4_ANY])
         self.aim.create(aim_ctx, arp_egress_rule, overwrite=True)
 
         dname = aim_utils.sanitize_display_name(
@@ -480,7 +499,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             display_name=dname,
             direction='ingress',
             ethertype='arp',
-            conn_track='normal')
+            conn_track='normal',
+            remote_ips=[n_constants.IPv4_ANY])
         self.aim.create(aim_ctx, arp_ingress_rule, overwrite=True)
 
         dname = aim_utils.sanitize_display_name(
@@ -496,7 +516,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ip_protocol=self.get_aim_protocol('udp'),
             from_port='67',
             to_port='67',
-            conn_track='normal')
+            conn_track='normal',
+            remote_ips=[n_constants.IPv4_ANY])
         self.aim.create(aim_ctx, dhcp_egress_rule, overwrite=True)
 
         dname = aim_utils.sanitize_display_name(
@@ -512,7 +533,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ip_protocol=self.get_aim_protocol('udp'),
             from_port='68',
             to_port='68',
-            conn_track='normal')
+            conn_track='normal',
+            remote_ips=[n_constants.IPv4_ANY])
         self.aim.create(aim_ctx, dhcp_ingress_rule, overwrite=True)
 
         dname = aim_utils.sanitize_display_name(
@@ -528,7 +550,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ip_protocol=self.get_aim_protocol('udp'),
             from_port='547',
             to_port='547',
-            conn_track='normal')
+            conn_track='normal',
+            remote_ips=[n_constants.IPv6_ANY])
         self.aim.create(aim_ctx, dhcp6_egress_rule, overwrite=True)
 
         dname = aim_utils.sanitize_display_name(
@@ -544,7 +567,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ip_protocol=self.get_aim_protocol('udp'),
             from_port='546',
             to_port='546',
-            conn_track='normal')
+            conn_track='normal',
+            remote_ips=[n_constants.IPv6_ANY])
         self.aim.create(aim_ctx, dhcp6_ingress_rule, overwrite=True)
 
         # Need ICMPv6 rules for the SLAAC traffic to go through
@@ -560,7 +584,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ethertype='ipv6',
             ip_protocol=self.get_aim_protocol('icmpv6'),
             conn_track='normal',
-            remote_ips=['::/0'])
+            remote_ips=[n_constants.IPv6_ANY])
         self.aim.create(aim_ctx, icmp6_ingress_rule, overwrite=True)
 
         dname = aim_utils.sanitize_display_name(
@@ -575,7 +599,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ethertype='ipv6',
             ip_protocol=self.get_aim_protocol('icmpv6'),
             conn_track='normal',
-            remote_ips=['::/0'])
+            remote_ips=[n_constants.IPv6_ANY])
         self.aim.create(aim_ctx, icmp6_egress_rule, overwrite=True)
 
     def _setup_keystone_notification_listeners(self):
@@ -2757,6 +2781,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # Create those implicit rules
         for sg_rule in sg.get('security_group_rules', []):
+            remote_ips = []
+            if not sg_rule.get('remote_group_id'):
+                remote_ips = convert_sg_rule_remote_ips(
+                    sg_rule['id'], sg_rule['remote_ip_prefix'],
+                    sg_rule['ethertype'].lower())
             sg_rule_aim = aim_resource.SecurityGroupRule(
                 tenant_name=tenant_aname,
                 security_group_name=sg['id'],
@@ -2766,8 +2795,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 ethertype=sg_rule['ethertype'].lower(),
                 ip_protocol=(sg_rule['protocol'] if sg_rule['protocol']
                              else 'unspecified'),
-                remote_ips=(sg_rule['remote_ip_prefix']
-                            if sg_rule['remote_ip_prefix'] else ''),
+                remote_ips=remote_ips,
                 from_port=(sg_rule['port_range_min']
                            if sg_rule['port_range_min'] else 'unspecified'),
                 to_port=(sg_rule['port_range_max']
@@ -2836,8 +2864,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 for fixed_ip in sg_port['fixed_ips']:
                     remote_ips.append(fixed_ip['ip_address'])
         else:
-            remote_ips = ([sg_rule['remote_ip_prefix']]
-                          if sg_rule['remote_ip_prefix'] else '')
+            remote_ips = convert_sg_rule_remote_ips(
+                sg_rule['id'], sg_rule['remote_ip_prefix'],
+                sg_rule['ethertype'].lower())
 
         sg_rule_aim = aim_resource.SecurityGroupRule(
             tenant_name=tenant_aname,
@@ -6252,7 +6281,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     name='default')
                 mgr.expect_aim_resource(sg_subject)
                 for rule_db in sg_db.rules:
-                    remote_ips = []
                     if rule_db.remote_group_id:
                         ip_version = (4 if rule_db.ethertype == 'IPv4' else
                                       6 if rule_db.ethertype == 'IPv6' else
@@ -6260,8 +6288,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         remote_ips = [
                             ip for ip in sg_ips[rule_db.remote_group_id]
                             if netaddr.IPAddress(ip).version == ip_version]
-                    elif rule_db.remote_ip_prefix:
-                        remote_ips = [rule_db.remote_ip_prefix]
+                    else:
+                        remote_ips = convert_sg_rule_remote_ips(
+                            rule_db.id, rule_db.remote_ip_prefix,
+                            rule_db.ethertype.lower())
                     sg_rule = aim_resource.SecurityGroupRule(
                         tenant_name=tenant_name,
                         security_group_name=rule_db.security_group_id,
