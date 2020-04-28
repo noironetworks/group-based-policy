@@ -621,6 +621,18 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                       subresource=action)
         return self.deserialize(self.fmt, req.get_response(self.api))
 
+    def _net_2_epg(self, network):
+        if network['router:external']:
+            epg = aim_resource.EndpointGroup.from_dn(
+                network['apic:distinguished_names']['EndpointGroup'])
+        else:
+            epg = aim_resource.EndpointGroup(
+                tenant_name=self.name_mapper.project(
+                    None, network['tenant_id']),
+                app_profile_name=self._app_profile_name,
+                name=self.name_mapper.network(None, network['id']))
+        return epg
+
 
 class TestRpcListeners(ApicAimTestCase):
     @staticmethod
@@ -5071,6 +5083,37 @@ class TestPortBinding(ApicAimTestCase):
             self.assertEqual(port[portbindings.VIF_TYPE],
                              portbindings.VIF_TYPE_BINDING_FAILED)
 
+    def test_trunk_add_nonbaremetal_subport(self):
+        # Make sure subport callbacks don't invoke
+        # port binding for non-baremetal VNIC types.
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        kwargs = {'provider:network_type': 'vlan'}
+        arg_list = self.extension_attributes
+        net1 = self._make_network(self.fmt, 'parent_net', True,
+                                  arg_list=arg_list, **kwargs)
+        self._make_subnet(self.fmt, net1, '10.0.1.1', '10.0.1.0/24')
+        parent = self._make_port(self.fmt, net1['network']['id'])['port']
+        parent_id = parent['id']
+        net2 = self._make_network(self.fmt, 'child_net', True,
+                                  arg_list=arg_list, **kwargs)
+        self._make_subnet(self.fmt, net2, '10.0.2.1', '10.0.2.0/24')
+        subport = self._make_port(self.fmt, net2['network']['id'])['port']
+        trunk = self._make_trunk(net1['network']['tenant_id'],
+                         parent_id, "t1")['trunk']
+        subports = [{'port_id': subport['id'],
+                     'segmentation_type': 'inherit'}]
+        bound_parent = self._bind_port_to_host(parent_id, 'host1')['port']
+        self.assertEqual(bound_parent['binding:vif_type'], 'ovs')
+        with mock.patch.object(
+                self.driver, '_update_trunk_status_and_subports',
+                autospec=True) as callback:
+            trunk = self._update_trunk(net1['network']['tenant_id'],
+                                       trunk['id'], subports)
+            self.assertFalse(callback.called)
+            trunk = self._update_trunk(net1['network']['tenant_id'],
+                                       trunk['id'], subports, remove=True)
+            self.assertFalse(callback.called)
+
     def test_baremetal_trunk_opflex(self):
         self._test_baremetal_trunk()
 
@@ -5094,6 +5137,7 @@ class TestPortBinding(ApicAimTestCase):
 
     def _test_baremetal_trunk(self, with_subports=False,
             network_type='opflex', physical_network='physnet1', inherit=False):
+        aim_ctx = aim_context.AimContext(self.db_session)
         arg_list = self.extension_attributes + ('provider:physical_network',)
         kwargs = {'provider:network_type': network_type,
                   'provider:physical_network': physical_network}
@@ -5114,6 +5158,9 @@ class TestPortBinding(ApicAimTestCase):
             # the binding:profile, assuming its a physnet that's configured
             # in neutron.
             physnet = 'physnet3'
+        epg = self._net_2_epg(net1['network'])
+        epg = self.aim_mgr.get(aim_ctx, epg)
+        self.assertEqual([], epg.static_paths)
         if with_subports:
             kwargs = {'provider:network_type': 'vlan',
                       'provider:physical_network': physnet}
@@ -5128,6 +5175,9 @@ class TestPortBinding(ApicAimTestCase):
                          sb_net1['network']['provider:network_type']}]
             if not inherit:
                 subports[0]['segmentation_id'] = 134
+            epg = self._net_2_epg(sb_net1['network'])
+            epg = self.aim_mgr.get(aim_ctx, epg)
+            self.assertEqual([], epg.static_paths)
 
             sb_net2 = self._make_network(self.fmt, 'subport_net2', True,
                                          arg_list=arg_list, **kwargs)
@@ -5135,6 +5185,9 @@ class TestPortBinding(ApicAimTestCase):
             subport_net2_port = self._make_baremetal_port(
                 sb_net2['network']['tenant_id'],
                 sb_net2['network']['id'])['port']
+            epg = self._net_2_epg(sb_net2['network'])
+            epg = self.aim_mgr.get(aim_ctx, epg)
+            self.assertEqual([], epg.static_paths)
 
         trunk = self._make_trunk(net1['network']['tenant_id'],
                          parent_port_id, "t1", subports=subports)['trunk']
@@ -5162,6 +5215,19 @@ class TestPortBinding(ApicAimTestCase):
                 expected_binding_info=[(u'apic_aim', u'vlan')])
             self.assertEqual(access_vlan,
                              net1['network']['provider:segmentation_id'])
+        epg = self._net_2_epg(net1['network'])
+        epg = self.aim_mgr.get(aim_ctx, epg)
+        vlan_name = 'vlan-%s' % access_vlan
+        self.assertEqual([{'path': 'topology/pod-1/paths-501/pathep-[eth1/1]',
+                          'mode': 'untagged', 'encap': vlan_name}],
+                         epg.static_paths)
+        if with_subports:
+            epg = self._net_2_epg(sb_net1['network'])
+            epg = self.aim_mgr.get(aim_ctx, epg)
+            vlan = 'vlan-%s' % sb_net1['network']['provider:segmentation_id']
+            self.assertEqual(
+                [{'path': 'topology/pod-1/paths-501/pathep-[eth1/1]',
+                 'encap': vlan}], epg.static_paths)
         trunk = self._show_trunk(net1['network']['tenant_id'],
                                  trunk['id'])['trunk']
         self.assertEqual('ACTIVE', trunk['status'])
@@ -5177,7 +5243,8 @@ class TestPortBinding(ApicAimTestCase):
                 expected_binding_info=expected_binding_info)
             # Check the subport binding
             subport = self._show('ports', subport_net1_port['id'])['port']
-            self.assertEqual({}, subport['binding:profile'])
+            self.assertEqual(kwargs['binding:profile'],
+                             subport['binding:profile'])
             self.assertEqual({}, subport['binding:vif_details'])
             self.assertEqual('other', subport['binding:vif_type'])
             self.assertEqual('host1', subport['binding:host_id'])
@@ -5196,19 +5263,30 @@ class TestPortBinding(ApicAimTestCase):
                                trunk['id'], add_subports)
             # Check the subport binding
             subport = self._show('ports', subport_net2_port['id'])['port']
-            self.assertEqual({}, subport['binding:profile'])
+            self.assertEqual(kwargs['binding:profile'],
+                             subport['binding:profile'])
             self.assertEqual({}, subport['binding:vif_details'])
             self.assertEqual('other', subport['binding:vif_type'])
             self.assertEqual('host1', subport['binding:host_id'])
+            epg = self._net_2_epg(sb_net2['network'])
+            epg = self.aim_mgr.get(aim_ctx, epg)
+            vlan = 'vlan-%s' % sb_net2['network']['provider:segmentation_id']
+            self.assertEqual(
+                [{'path': 'topology/pod-1/paths-501/pathep-[eth1/1]',
+                 'encap': vlan}], epg.static_paths)
             subports.extend(add_subports)
             self._update_trunk(net1['network']['tenant_id'],
                                trunk['id'], subports, remove=True)
-            for subport in (subport_net1_port, subport_net2_port):
+            for subport, net in ((subport_net1_port, sb_net1),
+                                 (subport_net2_port, sb_net2)):
                 subport = self._show('ports', subport['id'])['port']
                 self.assertEqual({}, subport['binding:profile'])
                 self.assertEqual({}, subport['binding:vif_details'])
                 self.assertEqual('unbound', subport['binding:vif_type'])
                 self.assertEqual('', subport['binding:host_id'])
+                epg = self._net_2_epg(net['network'])
+                epg = self.aim_mgr.get(aim_ctx, epg)
+                self.assertEqual([], epg.static_paths)
             trunk = self._show_trunk(net1['network']['tenant_id'],
                                      trunk['id'])['trunk']
             self.assertEqual('DOWN', trunk['status'])
@@ -7468,18 +7546,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
             path='topology/pod-1/paths-102/pathep-[eth1/7]')
         self._register_agent('h1', AGENT_CONF_OVS)
         self.aim_mgr.create(aim_ctx, self.hlink1)
-
-    def _net_2_epg(self, network):
-        if network['router:external']:
-            epg = aim_resource.EndpointGroup.from_dn(
-                network['apic:distinguished_names']['EndpointGroup'])
-        else:
-            epg = aim_resource.EndpointGroup(
-                tenant_name=self.name_mapper.project(
-                    None, network['tenant_id']),
-                app_profile_name=self._app_profile_name,
-                name=self.name_mapper.network(None, network['id']))
-        return epg
 
     def _do_test_port_lifecycle(self, external_net=False):
         mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
