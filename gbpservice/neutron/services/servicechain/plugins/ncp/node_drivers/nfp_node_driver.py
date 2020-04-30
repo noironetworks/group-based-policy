@@ -18,10 +18,10 @@ import eventlet
 from eventlet import greenpool
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
-from neutron.common import rpc as n_rpc
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import constants as pconst
+from neutron_lib import rpc as n_rpc
 from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging

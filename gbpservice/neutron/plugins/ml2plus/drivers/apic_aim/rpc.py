@@ -17,7 +17,6 @@ from collections import defaultdict
 from collections import namedtuple
 
 import netaddr
-from neutron.common import rpc as n_rpc
 from neutron.db.extra_dhcp_opt import models as dhcp_models
 from neutron.db.models import allowed_address_pair as aap_models
 from neutron.db.models import dns as dns_models
@@ -31,6 +30,7 @@ from neutron.services.trunk import models as trunk_models
 from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
+from neutron_lib import rpc as n_rpc
 from opflexagent import host_agent_rpc as oa_rpc
 from opflexagent import rpc as o_rpc
 from oslo_log import log

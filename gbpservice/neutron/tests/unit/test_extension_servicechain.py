@@ -41,9 +41,9 @@ class ServiceChainExtensionTestCase(test_extensions_base.ExtensionTestCase):
     def setUp(self):
         super(ServiceChainExtensionTestCase, self).setUp()
         plural_mappings = {}
-        self._setUpExtension(
+        self.setup_extension(
             SERVICE_CHAIN_PLUGIN_BASE_NAME, constants.SERVICECHAIN,
-            servicechain.RESOURCE_ATTRIBUTE_MAP, servicechain.Servicechain,
+            servicechain.Servicechain,
             SERVICECHAIN_URI, plural_mappings=plural_mappings)
         self.instance = self.plugin.return_value
 

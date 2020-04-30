@@ -244,7 +244,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         return super(AIMBaseTestCase, self)._bind_port_to_host(
             port_id, host, data=data)
 
-    def _make_address_scope_for_vrf(self, vrf_dn, ip_version=4,
+    def _make_address_scope_for_vrf(self, vrf_dn, ip_version=4, admin=False,
                                     expected_status=None, **kwargs):
         attrs = {'ip_version': ip_version}
         if vrf_dn:
@@ -253,9 +253,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
 
         req = self.new_create_request('address-scopes',
                                       {'address_scope': attrs}, self.fmt)
-        neutron_context = nctx.Context('', kwargs.get('tenant_id',
-                                                      self._tenant_id))
-        req.environ['neutron.context'] = neutron_context
+        if not admin:
+            neutron_context = nctx.Context('', kwargs.get('tenant_id',
+                                                          self._tenant_id))
+            req.environ['neutron.context'] = neutron_context
 
         res = req.get_response(self.ext_api)
         if expected_status:
@@ -1044,9 +1045,10 @@ class TestL3Policy(AIMBaseTestCase):
         if not tenant_id:
             tenant_id = self._tenant_id
 
+        admin = True if shared else False
         sp2 = self._make_subnetpool(
             self.fmt, prefixes, name='sp2', address_scope_id=ascp_id,
-            tenant_id=tenant_id, shared=shared)['subnetpool']
+            admin=admin, tenant_id=tenant_id, shared=shared)['subnetpool']
         self.assertEqual(ascp_id, sp2['address_scope_id'])
         self.assertEqual(prefixes, sp2['prefixes'])
         implicit_ip_pool = l3p['ip_pool']
@@ -1095,10 +1097,12 @@ class TestL3Policy(AIMBaseTestCase):
                  'subnet_prefix_length': subnet_prefix_length}
 
         address_scope_v4 = address_scope_v6 = None
+        admin = True if shared else False
         if explicit_address_scope or v4_default or v6_default:
             if ip_version == 4 or ip_version == 46:
                 address_scope_v4 = self._make_address_scope(
-                    self.fmt, 4, name='as1v4',
+                    self.fmt, 4, name='as1v4', admin=admin,
+                    project_id=tenant_id,
                     shared=shared)['address_scope']
                 if not v4_default:
                     attrs['address_scope_v4_id'] = address_scope_v4['id']
@@ -1106,13 +1110,15 @@ class TestL3Policy(AIMBaseTestCase):
                 if ((isomorphic and address_scope_v4) or
                         (v4_default and v6_default)):
                     address_scope_v6 = self._make_address_scope_for_vrf(
-                        address_scope_v4[DN][VRF],
-                        6, name='as1v6', shared=shared)['address_scope']
+                        address_scope_v4[DN][VRF], 6, admin=admin,
+                        project_id=tenant_id,
+                        name='as1v6', shared=shared)['address_scope']
                     self.assertEqual(address_scope_v6[DN],
                         address_scope_v4[DN])
                 else:
                     address_scope_v6 = self._make_address_scope(
-                        self.fmt, 6, name='as1v6',
+                        self.fmt, 6, name='as1v6', admin=admin,
+                        project_id=tenant_id,
                         shared=shared)['address_scope']
                 if not v6_default:
                     attrs['address_scope_v6_id'] = address_scope_v6['id']
@@ -1122,9 +1128,11 @@ class TestL3Policy(AIMBaseTestCase):
             if not ip_pool:
                 ip_pool_v4 = '192.168.0.0/16'
                 if explicit_subnetpool or v4_default:
+                    admin = True if v4_default else admin
                     sp = self._make_subnetpool(
                         self.fmt, [ip_pool_v4], name='sp1v4',
-                        is_default=v4_default,
+                        is_default=v4_default, admin=admin,
+                        project_id=tenant_id,
                         address_scope_id=address_scope_v4['id'],
                         tenant_id=tenant_id, shared=shared)['subnetpool']
                     if explicit_subnetpool:
@@ -1133,9 +1141,11 @@ class TestL3Policy(AIMBaseTestCase):
             if not ip_pool:
                 ip_pool_v6 = 'fd6d:8d64:af0c::/64'
                 if explicit_subnetpool or v6_default:
+                    admin = True if v6_default else admin
                     sp = self._make_subnetpool(
                         self.fmt, [ip_pool_v6], name='sp1v6',
-                        is_default=v6_default,
+                        is_default=v6_default, admin=admin,
+                        project_id=tenant_id,
                         address_scope_id=address_scope_v6['id'],
                         tenant_id=tenant_id, shared=shared)['subnetpool']
                     if explicit_subnetpool:
@@ -1296,9 +1306,11 @@ class TestL3Policy(AIMBaseTestCase):
                           no_address_scopes=True)
 
     def test_unshared_l3_policy_lifecycle_no_address_scope(self):
-        with self.address_scope(ip_version=4, shared=True) as ascpv4:
+        with self.address_scope(ip_version=4, shared=True, admin=True,
+                                project_id=self._tenant_id) as ascpv4:
             ascpv4 = ascpv4['address_scope']
-            with self.address_scope(ip_version=6, shared=True) as ascpv6:
+            with self.address_scope(ip_version=6, shared=True, admin=True,
+                                    project_id=self._tenant_id) as ascpv6:
                 ascpv6 = ascpv6['address_scope']
                 self.assertRaises(webob.exc.HTTPClientError,
                                   self.create_l3_policy,
@@ -1307,7 +1319,9 @@ class TestL3Policy(AIMBaseTestCase):
                                   address_scope_v6_id=ascpv6['id'])
 
     def test_create_l3p_shared_addr_scp_explicit_unshared_subnetpools(self):
-        with self.address_scope(ip_version=4, shared=True) as ascpv4:
+        with self.address_scope(ip_version=4, admin=True,
+                                project_id=self._tenant_id,
+                                shared=True) as ascpv4:
             ascpv4 = ascpv4['address_scope']
             with self.subnetpool(
                 name='sp1v4', prefixes=['192.168.0.0/16'],
@@ -6040,7 +6054,7 @@ class TestL2PolicyRouteInjection(AIMBaseTestCase):
                  'nexthop': subnet_details['gateway_ip']})
             if metadata:
                 expected_host_routes.append(
-                    {'destination': '169.254.169.254/16',
+                    {'destination': '169.254.0.0/16',
                      'nexthop': subnet_details['dns_nameservers'][0]})
         else:
             self.assertNotIn('gateway_ip', subnet_details)

@@ -26,7 +26,7 @@ client = None
 def _get_client():
     global client
     if client is None:
-        client = n_nova.Notifier().nclient
+        client = n_nova.Notifier.get_instance()._get_nova_client()
     return client
 
 

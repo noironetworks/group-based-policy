@@ -22,6 +22,7 @@ from neutron.plugins.ml2 import db as ml2_db
 from neutron.quota import resource as quota_resource
 from neutron_lib.api import attributes
 from neutron_lib.api import validators
+from neutron_lib.db import model_query
 from neutron_lib import exceptions
 from neutron_lib.plugins import directory
 from oslo_log import log
@@ -351,7 +352,7 @@ try:
                 self._get_port(context, logical_source_port)
             if logical_destination_port is not None:
                 self._get_port(context, logical_destination_port)
-            query = self._model_query(
+            query = model_query.query_with_hooks(
                 context, flowclassifier_db.FlowClassifier)
             for flow_classifier_db in query.all():
                 if self.flowclassifier_conflict(

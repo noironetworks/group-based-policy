@@ -31,7 +31,6 @@ from aim import exceptions as aim_exceptions
 from aim import utils as aim_utils
 import netaddr
 from neutron.agent import securitygroups_rpc
-from neutron.common import rpc as n_rpc
 from neutron.common import utils as n_utils
 from neutron.db.models import address_scope as as_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
@@ -63,6 +62,7 @@ from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from neutron_lib.plugins.ml2 import api
+from neutron_lib import rpc as n_rpc
 from neutron_lib.services.qos import constants as qos_consts
 from neutron_lib.utils import net
 from opflexagent import constants as ofcst

@@ -17,7 +17,6 @@ import mock
 import testtools
 
 from neutron.api import extensions
-from neutron.common import rpc as n_rpc
 from neutron.conf.plugins.ml2 import config  # noqa
 from neutron.conf.plugins.ml2.drivers import driver_type
 from neutron.tests.unit.api import test_extensions
@@ -25,6 +24,7 @@ from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron_lib.agent import topics
 from neutron_lib.plugins import directory
+from neutron_lib import rpc as n_rpc
 from oslo_config import cfg
 
 from gbpservice.neutron.db import all_models  # noqa
@@ -80,11 +80,12 @@ class TestRpcListeners(Ml2PlusPluginV2TestCase):
         return conn.consume_in_threads()
 
     def test_start_rpc_listeners(self):
-        # Override mock from
-        # neutron.tests.base.BaseTestCase.setup_rpc_mocks(), so that
-        # it returns servers, but still avoids starting them.
-        with mock.patch('neutron.common.rpc.Connection.consume_in_threads',
-                        TestRpcListeners._consume_in_threads):
+        # Override mock from neutron_lib.fixture.RPCFixture installed
+        # by neutron.tests.base.BaseTestCase.setUp(), so that it
+        # returns servers, but still avoids starting them.
+        with mock.patch.object(
+                n_rpc.Connection, 'consume_in_threads',
+                TestRpcListeners._consume_in_threads):
             # Mock logger MD to start an RPC listener.
             with mock.patch(
                     'gbpservice.neutron.tests.unit.plugins.ml2plus.drivers.'

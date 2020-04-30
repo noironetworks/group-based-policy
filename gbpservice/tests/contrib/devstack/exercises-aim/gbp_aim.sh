@@ -20,15 +20,15 @@ EXERCISE_DIR=$(cd $(dirname "$0") && pwd)
 TOP_DIR=$(cd $EXERCISE_DIR/..; pwd)
 
 # Import common functions
-source $TOP_DIR/functions
+source $TOP_DIR/devstack/functions
 
 # Import configuration
-source $TOP_DIR/openrc
+source $TOP_DIR/devstack/openrc
 
 # Import exercise configuration
-source $TOP_DIR/exerciserc
+#source $TOP_DIR/exerciserc
 
-source $TOP_DIR/openrc demo demo
+source $TOP_DIR/devstack/openrc demo demo
 
 # Print the commands being run so that we can see the command that triggers
 # an error.  It is also useful for following allowing as the install occurs.

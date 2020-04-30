@@ -60,9 +60,9 @@ class GroupPolicyExtensionTestCase(test_extensions_base.ExtensionTestCase):
             'l2_policy': 'l2_policies', 'l3_policy': 'l3_policies',
             'network_service_policy': 'network_service_policies',
             'external_policy': 'external_policies'}
-        self._setUpExtension(
+        self.setup_extension(
             GP_PLUGIN_BASE_NAME, constants.GROUP_POLICY,
-            gp.RESOURCE_ATTRIBUTE_MAP, gp.Group_policy, GROUPPOLICY_URI,
+            gp.Group_policy, GROUPPOLICY_URI,
             plural_mappings=plural_mappings)
         self.instance = self.plugin.return_value
 

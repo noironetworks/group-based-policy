@@ -10,13 +10,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from gbpservice.nfp.proxy_agent.notifications import pull
 import mock
 from neutron_lib import context as ctx
+from neutron_lib import rpc as n_rpc
+from oslo_config import cfg
 import unittest2
 
-from neutron.common import rpc as n_rpc
-from oslo_config import cfg
+from gbpservice.nfp.proxy_agent.notifications import pull
 
 pull_notification = pull.PullNotification
 

@@ -14,8 +14,8 @@ import copy
 import sys
 import traceback
 
-from neutron.common import rpc as n_rpc
 from neutron_lib import context as n_context
+from neutron_lib import rpc as n_rpc
 import oslo_messaging as messaging
 
 from gbpservice._i18n import _
