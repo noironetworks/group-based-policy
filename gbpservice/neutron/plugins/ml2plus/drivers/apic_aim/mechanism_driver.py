@@ -116,6 +116,7 @@ L3OUT_EXT_EPG = 'ExtEpg'
 SYNC_STATE_TMP = 'synchronization_state_tmp'
 AIM_RESOURCES_CNT = 'aim_resources_cnt'
 
+SUPPORTED_HPB_SEGMENT_TYPES = (ofcst.TYPE_OPFLEX, n_constants.TYPE_VLAN)
 SUPPORTED_VNIC_TYPES = [portbindings.VNIC_NORMAL,
                         portbindings.VNIC_BAREMETAL,
                         portbindings.VNIC_DIRECT]
@@ -3064,49 +3065,99 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         :param context : Port context instance
 
         Support binding baremetal VNIC types to networks that have
-        an opflex type static segment, or networks with vlan segments.
+        an opflex type static segment, or networks with vlan type segments.
         For vlan type segments, these can be static segments or dynamically
-        created segments from HPB. Trunk parent ports are handled like
-        normal baremetal VNICs, but subports need to get their topology
-        information from the trunk parent port. The topology information
+        created segments from HPB.  Topology information is contained in the
+        binding:profile property of the port. The topology information
         for the port should contain the physical_network that the baremetal
         VNIC is connected to. This is used to match the segment when binding
-        the port to vlan type segments, and as the physical_network
-        when creating dynamic vlan type segments for HPB.
+        the port to vlan type segments, and as the physical_network when
+        allocating vlan type segments for HPB. Trunk parent ports are handled
+        like normal baremetal VNICs, using any available VLAN segmentation_id,
+        while trunk subports must use the VLAN segmentation_id determined by
+        the trunk service.
         """
-        if not self._is_baremetal_port_bindable(context):
+        _, _, baremetal_physnet, _ = self._get_baremetal_topology(
+            context._plugin_context, context.current)
+        if not baremetal_physnet:
             return False
-        _, _, physnet, _ = self._get_baremetal_topology(
-             context._plugin_context, context.current)
-        # First attempt binding vlan type segments, in order to avoid
-        # dynamically allocating vlan segments if they're not needed.
+        # The requested_vlan_id will be None if this isn't a trunk subport.
+        requested_vlan_id = self._get_subport_segmentation_id(context)
+
+        # First attempt binding to any existing vlan type segments on the
+        # baremetal physical_network. These could be static segments, or
+        # segments dynamically allocated by the loop below.
         for seg in context.segments_to_bind:
             net_type = seg[api.NETWORK_TYPE]
-            physical_network = seg[api.PHYSICAL_NETWORK]
-            if (physical_network == physnet and
-                    self._is_supported_non_opflex_type(net_type)):
-                # VLAN segments already have a segmentation ID, so we can
-                # complete the binding.
+            if (seg[api.PHYSICAL_NETWORK] == baremetal_physnet and
+                    net_type == n_constants.TYPE_VLAN):
+                # If the port is a trunk subport and the segmentation_id
+                # doesn't match, skip this segment, but don't fail the
+                # binding - we will still try to bind it using HPB in
+                # the second pass below.
+                if (requested_vlan_id and
+                        requested_vlan_id != seg[api.SEGMENTATION_ID]):
+                    continue
                 context.set_binding(seg[api.ID],
                     portbindings.VIF_TYPE_OTHER, {},
                     status=n_constants.PORT_STATUS_ACTIVE)
                 return True
-        # Baremetal vnics can only be connected to opflex networks
-        # using VLANs. We use Hierarchical Port Binding (HPB) for
-        # networks that have an opflex type static segment in order
-        # to allocate a VLAN for use with the static path that enables
-        # connectivity for the baremetal vnic.
+        # Attempt dynamically allocating a VLAN type segment on the baermetal
+        # physical_network, if there is a supported segment type (TYPE_VLAN or
+        # TYPE_OPFLEX). If the port is a subport of a trunk, we have the
+        # segmentation_id, so we add it to the request when dynamically
+        # allocating the segment. If it is not a subport, then any available
+        # segmentation_id will do.
         for seg in context.segments_to_bind:
             net_type = seg[api.NETWORK_TYPE]
-            physical_network = seg[api.PHYSICAL_NETWORK]
-            if self._is_opflex_type(net_type):
+            if net_type in SUPPORTED_HPB_SEGMENT_TYPES:
                 seg_args = {api.NETWORK_TYPE: n_constants.TYPE_VLAN,
-                            api.PHYSICAL_NETWORK: physnet}
-                dyn_seg = context.allocate_dynamic_segment(seg_args)
-                LOG.info('Allocated dynamic-segment %(s)s for port %(p)s',
-                         {'s': dyn_seg, 'p': context.current['id']})
-                context.continue_binding(seg[api.ID], [dyn_seg])
-                return True
+                            api.PHYSICAL_NETWORK: baremetal_physnet}
+                # If the port is a trunk subport, then we need to use
+                # the segmentation_id from the subport.
+                if requested_vlan_id:
+                    seg_args.update({api.SEGMENTATION_ID: requested_vlan_id})
+                try:
+                    dyn_seg = context.allocate_dynamic_segment(seg_args)
+                    LOG.info('Allocated dynamic-segment %(s)s for port %(p)s',
+                             {'s': dyn_seg, 'p': context.current['id']})
+                    context.continue_binding(seg[api.ID], [dyn_seg])
+                    return True
+                except n_exceptions.VlanIdInUse:
+                    query = BAKERY(lambda s: s.query(
+                        segments_model.NetworkSegment))
+                    query += lambda q: q.filter(
+                        segments_model.NetworkSegment.physical_network ==
+                        sa.bindparam('physical_network'))
+                    query += lambda q: q.filter(
+                        segments_model.NetworkSegment.segmentation_id ==
+                        sa.bindparam('vlan_id'))
+                    result = query(context._plugin_context.session).params(
+                        physical_network=baremetal_physnet,
+                        vlan_id=requested_vlan_id).one()
+                    net_id = result['network_id']
+                    LOG.info('Cannot bind trunk subport port %(port_id)s '
+                             'on network %(net_id)s to baremetal '
+                             'physical_network %(phys)s because requested '
+                             'type %(type)s segmentation_id %(id)s is already'
+                             ' allocated to network %(other_net)s',
+                             {'port_id': context.current['id'],
+                              'net_id': seg[api.NETWORK_ID],
+                              'phys': baremetal_physnet,
+                              'type': seg[api.NETWORK_TYPE],
+                              'id': seg[api.SEGMENTATION_ID],
+                              'other_net': net_id})
+                    return False
+                except n_exceptions.NoNetworkAvailable:
+                    LOG.info('Cannot bind port %(port_id)s on network '
+                             '%(net_id)s to baremetal physical_network '
+                             '%(phys)s because it has no available %(type)s '
+                             'segmentaton_ids',
+                             {'port_id': context.current['id'],
+                              'net_id': seg[api.NETWORK_ID],
+                              'phys': baremetal_physnet,
+                              'type': net_type})
+                    return False
         return False
 
     def _bind_physical_node(self, context):
@@ -4781,11 +4832,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                        segment, host_links)]
 
     def _get_parent_port_for_subport(self, plugin_context, subport_id):
-        subport_db = self.plugin._get_port(plugin_context, subport_id)
-        if hasattr(subport_db.sub_port, 'trunk_id'):
-            trunk = self.trunk_plugin.get_trunk(plugin_context,
-                                                subport_db.sub_port.trunk_id)
-            return self.plugin.get_port(plugin_context, trunk['port_id'])
+        trunk = self._get_trunk_for_subport(plugin_context, subport_id)
+        return self.plugin.get_port(plugin_context, trunk['port_id'])
 
     @db_api.retry_if_session_inactive()
     def _safe_update_trunk_status(self, context, trunk_id, status):
@@ -4848,6 +4896,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._safe_update_trunk_status(
             context, trunk_id, trunk_consts.BUILD_STATUS)
         updated_ports = []
+        op = 'bind' if trunk_host else 'unbind'
         for subport_id in subport_ids:
             try:
                 updated_port = self._handle_subport_binding(
@@ -4855,50 +4904,78 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     binding_profile=binding_profile)
                 updated_ports.append(updated_port)
             except trunk_exc.SubPortBindingError as e:
-                LOG.error("Failed to bind subport: %s", e)
-
-                # NOTE(status_police) The subport binding has failed in a
-                # manner in which we cannot proceed and the user must take
-                # action to bring the trunk back to a sane state.
-                self._safe_update_trunk_status(
-                    context, trunk_id, trunk_consts.ERROR_STATUS)
-                return []
+                LOG.error("Failed to %(op)s subport: %(err)s",
+                          {'op': op, 'err': e})
             except Exception as e:
-                msg = ("Failed to bind subport port %(port)s on trunk "
+                msg = ("Failed to %(op)s subport port %(port)s on trunk "
                        "%(trunk)s: %(exc)s")
-                LOG.error(msg, {'port': subport_id,
+                LOG.error(msg, {'op': op, 'port': subport_id,
                                 'trunk': trunk_id, 'exc': e})
 
-        if len(subport_ids) != len(updated_ports):
-            status = trunk_consts.DEGRADED_STATUS
-        elif not trunk_host:
-            status = trunk_consts.DOWN_STATUS
-        else:
-            status = trunk_consts.ACTIVE_STATUS
-        self._safe_update_trunk_status(context, trunk_id, status)
+        self._update_trunk_status(context, trunk_id, trunk_host,
+                                  subport_ids, updated_ports)
 
-    def _is_baremetal_port_bindable(self, port_context):
-        """Verify that a port is a valid baremetal port.
+    def _update_trunk_status(self, plugin_context, trunk_id,
+                             trunk_host, subport_ids, updated_ports):
+        """Update the trunk port status after updating subports.
 
-        :param port_context : Port context instance
-        :returns: True if bindable baremetal vnic, False otherwise
+           The trunk's status depends on the state of the parent port,
+           whether subports are present, the status of the subports,
+           and what the operation was (bind or unbind).
 
-        There are several valid bindings:
-        1) regular baremetal port, which should have valid topology information
-           in the local_link_information list contained inside the
-           binding:profile.
-        2) trunk baremetal parent port, which should have valid topology
-           information in the local_link_information list contained inside
-           the binding:profile.
-        3) trunk baremetal subport, which doesn't have local_link_information,
-           but whose parent port does have local_link_information, and contains
-           valid topology information.
+           :param plugin_context: The plugin's DB context
+           :param trunk_id: The trunk ID that the given port belongs to
+           :param trunk_host: The value provided for bind/unbind
+           :param subport_ids: The list of subport IDs being bound/unbound
+           :param updated_ports: The result of the port bind/unbind
         """
-        if self._is_baremetal_vnic_type(port_context.current):
-            if any(self._get_baremetal_topology(port_context._plugin_context,
-                                                port_context.current)):
-                return True
-        return False
+        trunk = self.trunk_plugin.get_trunk(plugin_context, trunk_id)
+        parent_port = self.plugin.get_port(plugin_context, trunk['port_id'])
+        # Get any other ports that belong to the trunk.
+        filters = {'id': [subport['port_id']
+                          for subport in trunk['sub_ports']
+                          if subport['port_id'] not in subport_ids]}
+        subports = self.plugin.get_ports(plugin_context, filters)
+        # If we were binding, then we need to include the list of
+        # subports being added.
+        if trunk_host:
+            for subport_id in subport_ids:
+                for port in updated_ports:
+                    if port['id'] == subport_id:
+                        subports.append(port)
+                        break
+                else:
+                    # Operation didn't complete, so add an
+                    # entry reflecting the failure.
+                    subports.append(
+                        {'id': subport_id,
+                         portbindings.VIF_TYPE:
+                             portbindings.VIF_TYPE_UNBOUND})
+
+        subports_bound_state = set([self._is_port_bound(subport)
+                                   for subport in subports])
+        if self._is_port_bound(parent_port):
+            if all(subports_bound_state):
+                status = trunk_consts.ACTIVE_STATUS
+            elif True not in subports_bound_state:
+                status = trunk_consts.ERROR_STATUS
+            elif any(subports_bound_state):
+                status = trunk_consts.DEGRADED_STATUS
+        else:
+            status = trunk_consts.DOWN_STATUS
+        self._safe_update_trunk_status(
+            plugin_context, trunk_id, status)
+
+    def _get_subport_segmentation_id(self, context):
+        subport_id = context.current['id']
+        subport_db = self.plugin._get_port(context._plugin_context, subport_id)
+        return (subport_db.sub_port.segmentation_id if subport_db.sub_port
+                else None)
+
+    def _get_trunk_for_subport(self, plugin_context, subport_id):
+        subport_db = self.plugin._get_port(plugin_context, subport_id)
+        return self.trunk_plugin.get_trunk(plugin_context,
+                                           subport_db.sub_port.trunk_id)
 
     def _get_baremetal_topology(self, plugin_context, port):
         """Return topology information for a port of vnic_type baremetal.
@@ -4973,9 +5050,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if mac or interface:
                     interfaces.append((interface, mac))
             if info_dict.get(api.PHYSICAL_NETWORK):
-                physnet = info_dict[api.PHYSICAL_NETWORK]
+                baremetal_physnet = info_dict[api.PHYSICAL_NETWORK]
                 # If it's a VPC, physical_networks should match.
-                if physical_network and physnet != physical_network:
+                if physical_network and baremetal_physnet != physical_network:
                     LOG.error("Invalid topology: port %(port)s has "
                               "inconsistently configured switch_info inside "
                               "the binding:profile's link_local_information "
@@ -4985,9 +5062,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                               "baremetal VNIC.",
                               {'port': port['id'],
                                'pn1': physical_network,
-                               'pn2': physnet})
+                               'pn2': baremetal_physnet})
                     return (None, None, None, None)
-                physical_network = physnet
+                physical_network = baremetal_physnet
             if info_dict.get('physical_domain'):
                 pd = info_dict['physical_domain']
                 # If it's a VPC, physical_domains should match.
@@ -5059,8 +5136,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                else port_context.top_bound_segment)
         btm = (port_context.original_bottom_bound_segment if use_original
                else port_context.bottom_bound_segment)
-        if (top and btm and
-            self._is_opflex_type(top[api.NETWORK_TYPE]) and
+        if (top and btm and top != btm and
+            top[api.NETWORK_TYPE] in SUPPORTED_HPB_SEGMENT_TYPES and
             self._is_supported_non_opflex_type(btm[api.NETWORK_TYPE])):
 
             # if there are no other ports bound to segment, release the segment
