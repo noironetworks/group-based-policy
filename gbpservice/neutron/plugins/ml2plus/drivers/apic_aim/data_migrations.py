@@ -41,6 +41,8 @@ import sqlalchemy as sa
 from sqlalchemy.orm import lazyload
 
 from gbpservice.neutron.extensions import cisco_apic as ext
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    mechanism_driver as md)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 
 
@@ -386,3 +388,61 @@ def do_apic_aim_security_group_migration(session):
 
     alembic_util.msg(
         "Finished data migration for SGs and its rules.")
+
+
+def do_sg_rule_remote_ips_conversion(session, conf=None):
+    alembic_util.msg(
+        "Starting remote_ips conversion for SG rules.")
+    cfg = conf or CONF
+    system_id = cfg.apic_system_id
+    alembic_util.msg("APIC System ID: %s" % system_id)
+
+    aim = aim_manager.AimManager()
+    aim_ctx = aim_context.AimContext(session)
+    mapper = apic_mapper.APICNameMapper()
+    with session.begin(subtransactions=True):
+        sg_rule_dbs = (session.query(sg_models.SecurityGroupRule).
+                       options(lazyload('*')).all())
+        for sg_rule_db in sg_rule_dbs:
+            if not sg_rule_db.get('remote_group_id'):
+                tenant_aname = mapper.project(session, sg_rule_db['tenant_id'])
+                remote_ips = md.convert_sg_rule_remote_ips(
+                    sg_rule_db['id'], sg_rule_db['remote_ip_prefix'],
+                    sg_rule_db['ethertype'].lower())
+                sg_rule_aim = aim_resource.SecurityGroupRule(
+                    tenant_name=tenant_aname,
+                    security_group_name=sg_rule_db['security_group_id'],
+                    security_group_subject_name='default',
+                    name=sg_rule_db['id'])
+                sg_rule_aim = aim.get(aim_ctx, sg_rule_aim)
+                # Validation tool will add the missing SG rules
+                # if there is any.
+                if sg_rule_aim and sg_rule_aim.remote_ips != remote_ips:
+                    aim.update(aim_ctx, sg_rule_aim, remote_ips=remote_ips)
+
+        # Handle the conversion for those default SG rules also.
+        default_sg_name = system_id + '_' + md.DEFAULT_SG_NAME
+        default_sg_rule_names = [
+            'arp_egress', 'arp_ingress', 'dhcp_egress', 'dhcp_ingress',
+            'dhcp6_egress', 'dhcp6_ingress', 'icmp6_egress', 'icmp6_ingress']
+        for sg_rule_name in default_sg_rule_names:
+            sg_rule_aim = aim_resource.SecurityGroupRule(
+                tenant_name='common',
+                security_group_name=default_sg_name,
+                security_group_subject_name='default',
+                name=sg_rule_name)
+            sg_rule_aim = aim.get(aim_ctx, sg_rule_aim)
+            # Missing sg_rule will be re-created when neutron-server
+            # is getting restarted.
+            if not sg_rule_aim:
+                continue
+            aim_remote_ips = sg_rule_aim.remote_ips
+            if aim_remote_ips:
+                aim_remote_ips = aim_remote_ips[0]
+            remote_ips = md.convert_sg_rule_remote_ips(
+                sg_rule_aim.name, aim_remote_ips, sg_rule_aim.ethertype)
+            if sg_rule_aim.remote_ips != remote_ips:
+                aim.update(aim_ctx, sg_rule_aim, remote_ips=remote_ips)
+
+    alembic_util.msg(
+        "Finished remote_ips conversion for SG rules.")
