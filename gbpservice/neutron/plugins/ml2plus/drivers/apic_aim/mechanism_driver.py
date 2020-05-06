@@ -2485,7 +2485,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 from_port=(sg_rule['port_range_min']
                            if sg_rule['port_range_min'] else 'unspecified'),
                 to_port=(sg_rule['port_range_max']
-                         if sg_rule['port_range_max'] else 'unspecified'))
+                         if sg_rule['port_range_max'] else 'unspecified'),
+                remote_group_id=(sg_rule['remote_group_id']
+                                 if sg_rule['remote_group_id'] else ''))
             self.aim.create(aim_ctx, sg_rule_aim)
 
     def update_security_group_precommit(self, context):
@@ -2549,9 +2551,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             for sg_port in sg_ports:
                 for fixed_ip in sg_port['fixed_ips']:
                     remote_ips.append(fixed_ip['ip_address'])
+
+            remote_group_id = sg_rule['remote_group_id']
         else:
             remote_ips = ([sg_rule['remote_ip_prefix']]
                           if sg_rule['remote_ip_prefix'] else '')
+            remote_group_id = ''
 
         sg_rule_aim = aim_resource.SecurityGroupRule(
             tenant_name=tenant_aname,
@@ -2573,7 +2578,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             from_port=(sg_rule['port_range_min']
                        if sg_rule['port_range_min'] else 'unspecified'),
             to_port=(sg_rule['port_range_max']
-                     if sg_rule['port_range_max'] else 'unspecified'))
+                     if sg_rule['port_range_max'] else 'unspecified'),
+            remote_group_id=remote_group_id)
         self.aim.create(aim_ctx, sg_rule_aim)
 
     def delete_security_group_rule_precommit(self, context):
@@ -5820,7 +5826,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 mgr.expect_aim_resource(sg_subject)
                 for rule_db in sg_db.rules:
                     remote_ips = []
+                    remote_group_id = ''
                     if rule_db.remote_group_id:
+                        remote_group_id = rule_db.remote_group_id
                         ip_version = (4 if rule_db.ethertype == 'IPv4' else
                                       6 if rule_db.ethertype == 'IPv6' else
                                       0)
@@ -5843,7 +5851,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                    else 'unspecified'),
                         to_port=(rule_db.port_range_max
                                  if rule_db.port_range_max
-                                 else 'unspecified'))
+                                 else 'unspecified'),
+                        remote_group_id=remote_group_id)
                     mgr.expect_aim_resource(sg_rule)
 
     def _validate_ports(self, mgr):
