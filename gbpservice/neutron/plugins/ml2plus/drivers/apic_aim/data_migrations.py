@@ -386,3 +386,32 @@ def do_apic_aim_security_group_migration(session):
 
     alembic_util.msg(
         "Finished data migration for SGs and its rules.")
+
+
+def do_sg_rule_remote_group_id_insertion(session):
+    alembic_util.msg(
+        "Starting remote_group_id insertion for SG rules.")
+
+    aim = aim_manager.AimManager()
+    aim_ctx = aim_context.AimContext(session)
+    mapper = apic_mapper.APICNameMapper()
+    with session.begin(subtransactions=True):
+        sg_rule_dbs = (session.query(sg_models.SecurityGroupRule).
+                       options(lazyload('*')).all())
+        for sg_rule_db in sg_rule_dbs:
+            if sg_rule_db.get('remote_group_id'):
+                tenant_aname = mapper.project(session, sg_rule_db['tenant_id'])
+                sg_rule_aim = aim_resource.SecurityGroupRule(
+                    tenant_name=tenant_aname,
+                    security_group_name=sg_rule_db['security_group_id'],
+                    security_group_subject_name='default',
+                    name=sg_rule_db['id'])
+                sg_rule_aim = aim.get(aim_ctx, sg_rule_aim)
+                # Validation tool will add the missing SG rules
+                # if there is any.
+                if sg_rule_aim:
+                    aim.update(aim_ctx, sg_rule_aim,
+                               remote_group_id=sg_rule_db['remote_group_id'])
+
+    alembic_util.msg(
+        "Finished remote_group_id insertion for SG rules.")
