@@ -10026,6 +10026,57 @@ class TestOpflexRpc(ApicAimTestCase):
     def test_endpoint_details_bound_svi(self):
         self._test_endpoint_details_bound_vlan_svi(apic_svi=True)
 
+    def _test_endpoint_details_bound_trunk_no_subport(self, apic_svi=False):
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+
+        aim_ctx = aim_context.AimContext(self.db_session)
+        hlink_1 = aim_infra.HostLink(
+            host_name='h1',
+            interface_name='eth1',
+            path='topology/pod-1/paths-102/pathep-[eth1/8]')
+        self.aim_mgr.create(aim_ctx, hlink_1)
+
+        kwargs = {'provider:network_type': u'vlan'}
+        if apic_svi:
+            kwargs.update({'apic:svi': 'True'})
+
+        network = self._make_network(self.fmt, 'net1', True,
+                                     arg_list=self.extension_attributes,
+                                     **kwargs)
+        net1 = network['network']
+        gw1_ip = '10.0.1.1'
+        self._make_subnet(self.fmt, network, gw1_ip, cidr='10.0.1.0/24')
+
+        parent = self._make_port(self.fmt, net1['id'],
+                                 device_owner='compute:')['port']
+        parent_id = parent['id']
+
+        trunk = self._make_trunk(net1['tenant_id'],
+                         parent_id, "t1")['trunk']
+        bound_parent = self._bind_port_to_host(parent_id, 'h1')['port']
+        self.assertEqual(bound_parent['binding:vif_type'], 'ovs')
+
+        request = {
+            'device': 'tap' + parent_id,
+            'timestamp': 12345,
+            'request_id': 'a_request'
+        }
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='h1')
+        trunk_details = response.get('trunk_details')
+        gbp_details = response['gbp_details']
+        if apic_svi:
+            self.assertEqual(True, gbp_details.get('svi'))
+        self.assertEqual(trunk['id'], trunk_details.get('trunk_id'))
+        self.assertEqual(parent_id, trunk_details.get('master_port_id'))
+        self.assertEqual([], trunk_details.get('subports'))
+
+    def test_endpoint_details_bound_trunk_no_subport(self):
+        self._test_endpoint_details_bound_trunk_no_subport()
+
+    def test_endpoint_details_bound_trunk_no_subport_svi(self):
+        self._test_endpoint_details_bound_trunk_no_subport(apic_svi=True)
+
     def test_endpoint_details_unbound(self):
         host = 'host1'
         net = self._make_network(self.fmt, 'net1', True)
