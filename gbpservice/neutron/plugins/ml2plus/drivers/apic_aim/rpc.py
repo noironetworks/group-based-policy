@@ -406,7 +406,7 @@ class ApicRpcHandlerMixin(object):
                     # ports on this host of the endpoint port's
                     # external networks.
                     info['snat_info'] = self._query_endpoint_snat_info(
-                        session, host, info['ext_net_info'].keys())
+                        session, host, list(info['ext_net_info'].keys()))
 
                     # Query for list of trunk subports for a trunk
                     # that the endpoint's port is associated with,
@@ -883,7 +883,7 @@ class ApicRpcHandlerMixin(object):
                 fixed_ips[ip.ip_address] = {'subnet_id': ip.subnet_id,
                                             'ip_address': ip.ip_address}
 
-        return fixed_ips.values()
+        return list(fixed_ips.values())
 
     def _build_endpoint_gbp_details(self, info, neutron_details):
         port_info = info['port_info']
@@ -978,7 +978,7 @@ class ApicRpcHandlerMixin(object):
                                     'active': True}
             elif allowed.ip_address in owned_ips:
                 aaps[allowed.ip_address]['active'] = True
-        return aaps.values()
+        return list(aaps.values())
 
     def _build_fips(self, info):
         ext_net_info = info['ext_net_info']
@@ -1143,7 +1143,7 @@ class ApicRpcHandlerMixin(object):
                 if (not metadata_routes and dhcp_ports and
                     (not self.enable_metadata_opt or
                      (self.enable_metadata_opt and not default_routes))):
-                    for ip in dhcp_ports[dhcp_ports.keys()[0]]:
+                    for ip in dhcp_ports[list(dhcp_ports.keys())[0]]:
                         routes.add((constants.IPV4_METADATA_CIDR, ip))
 
             subnet['dhcp_server_ips'] = dhcp_ips
@@ -1154,7 +1154,7 @@ class ApicRpcHandlerMixin(object):
                 {'destination': destination, 'nexthop': nexthop}
                 for destination, nexthop in routes]
 
-        return subnets.values()
+        return list(subnets.values())
 
     def _build_endpoint_trunk_details(self, info):
         trunk_info = info.get('trunk_info')

@@ -176,7 +176,7 @@ class ValidationManager(object):
         return expected_resources.get(key)
 
     def expected_aim_resources(self, resource_class):
-        return self._expected_aim_resources[resource_class].values()
+        return list(self._expected_aim_resources[resource_class].values())
 
     def actual_aim_resource(self, resource):
         actual_resources = self._actual_aim_resources[resource.__class__]
@@ -184,7 +184,7 @@ class ValidationManager(object):
         return actual_resources.get(key)
 
     def actual_aim_resources(self, resource_class):
-        return self._actual_aim_resources[resource_class].values()
+        return list(self._actual_aim_resources[resource_class].values())
 
     def register_db_instance_class(self, instance_class, primary_keys):
         self._expected_db_instances.setdefault(instance_class, {})
@@ -213,7 +213,7 @@ class ValidationManager(object):
                         if all([getattr(i, k) == v for k, v in
                                 filters.items()])]
         else:
-            return expected_instances.values()
+            return list(expected_instances.values())
 
     def should_repair(self, problem, action='Repairing'):
         if self.result is not api.VALIDATION_FAILED_UNREPAIRABLE:

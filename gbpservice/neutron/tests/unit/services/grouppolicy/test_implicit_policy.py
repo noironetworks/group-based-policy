@@ -305,19 +305,19 @@ class TestImplicitExternalSegment(ImplicitPolicyTestCase):
 
         # Create L3P without ES set
         l3p = self.create_l3_policy()['l3_policy']
-        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(es['id'], list(l3p['external_segments'].keys())[0])
         # Verify persisted
         req = self.new_show_request('l3_policies', l3p['id'],
                                     fmt=self.fmt)
         l3p = self.deserialize(
             self.fmt, req.get_response(self.ext_api))['l3_policy']
-        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(es['id'], list(l3p['external_segments'].keys())[0])
 
         # Verify update
         l3p = self.update_l3_policy(
             l3p['id'], expected_res_status=200,
             external_segments={ndes['id']: []})['l3_policy']
-        self.assertEqual(ndes['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(ndes['id'], list(l3p['external_segments'].keys())[0])
         self.assertEqual(1, len(l3p['external_segments']))
 
         # Verify only one visible ES can exist
@@ -341,7 +341,7 @@ class TestImplicitExternalSegment(ImplicitPolicyTestCase):
 
         l3p = self.create_l3_policy(
             tenant_id='anothertenant')['l3_policy']
-        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(es['id'], list(l3p['external_segments'].keys())[0])
         self.assertEqual(1, len(ep['external_segments']))
 
         res = self._create_default_es(expected_res_status=400,

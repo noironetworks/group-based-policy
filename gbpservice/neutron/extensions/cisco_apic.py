@@ -301,12 +301,12 @@ ADDRESS_SCOPE_ATTRIBUTES = {
 
 EXTENDED_ATTRIBUTES_2_0 = {
     net_def.COLLECTION_NAME: dict(
-        APIC_ATTRIBUTES.items() + EXT_NET_ATTRIBUTES.items() +
-        NET_ATTRIBUTES.items()),
+        list(APIC_ATTRIBUTES.items()) + list(EXT_NET_ATTRIBUTES.items()) +
+        list(NET_ATTRIBUTES.items())),
     subnet_def.COLLECTION_NAME: dict(
-        APIC_ATTRIBUTES.items() + EXT_SUBNET_ATTRIBUTES.items()),
+        list(APIC_ATTRIBUTES.items()) + list(EXT_SUBNET_ATTRIBUTES.items())),
     as_def.COLLECTION_NAME: dict(
-        APIC_ATTRIBUTES.items() + ADDRESS_SCOPE_ATTRIBUTES.items())
+        list(APIC_ATTRIBUTES.items()) + list(ADDRESS_SCOPE_ATTRIBUTES.items()))
 }
 
 

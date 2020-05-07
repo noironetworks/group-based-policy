@@ -755,7 +755,7 @@ class Test_Process_Model(unittest2.TestCase):
         setattr(controller, 'post_event_worker_wait_obj', wait_obj)
         event = controller.create_event(
             id='TEST_POST_EVENT_FROM_WORKER', data='NO_DATA')
-        worker_process = controller._worker_process.values()[0]
+        worker_process = list(controller._worker_process.values())[0]
         worker_process.worker.controller.post_event(event)
 
         controller._manager.manager_run()
@@ -792,7 +792,7 @@ class Test_Process_Model(unittest2.TestCase):
 
         event = controller.create_event(
             id='TEST_POLL_EVENT_FROM_WORKER', data='NO_DATA')
-        worker_process = controller._worker_process.values()[0]
+        worker_process = list(controller._worker_process.values())[0]
         worker_process.worker.controller.post_event(event)
 
         controller._manager.manager_run()
@@ -838,7 +838,7 @@ class Test_Process_Model(unittest2.TestCase):
 
         event = controller.create_event(
             id='TEST_POLL_EVENT_CANCEL_FROM_WORKER', data='NO_DATA')
-        worker_process = controller._worker_process.values()[0]
+        worker_process = list(controller._worker_process.values())[0]
         worker_process.worker.controller.post_event(event)
 
         controller._manager.manager_run()
