@@ -12,9 +12,11 @@
 
 import sys
 
+from collections import OrderedDict
 from neutron_lib import context as n_context
 from oslo_config import cfg
 from oslo_log import log as logging
+from oslo_serialization import jsonutils
 from oslo_utils import importutils
 from stevedore import driver
 
@@ -36,7 +38,7 @@ def get_obj_from_stack(cls):
     i = 1
     try:
         while True:
-            for val in sys._getframe(i).f_locals.itervalues():
+            for val in sys._getframe(i).f_locals.values():
                 if isinstance(val, cls):
                     return val
             i = i + 1
@@ -83,6 +85,33 @@ def admin_context(context):
     admin_context = n_context.get_admin_context()
     admin_context._session = context.session
     return admin_context
+
+
+# created a common function for tackling issues of sorting a list of dict
+# or list of string for Py3 support
+def deep_sort(obj):
+    if isinstance(obj, dict):
+        obj = OrderedDict(sorted(obj.items()))
+        for k, v in obj.items():
+            if isinstance(v, dict) or isinstance(v, list):
+                obj[k] = deep_sort(v)
+
+    if isinstance(obj, list):
+        for i, v in enumerate(obj):
+            if isinstance(v, dict) or isinstance(v, list):
+                obj[i] = deep_sort(v)
+        obj = sorted(
+            obj,
+            key=lambda x: jsonutils.dumps(x, default=lambda o: o.__dict__))
+
+    return obj
+
+
+# comparing 2 (nested) dict or list of (nested) dict
+def is_equal(obj1, obj2):
+    sorted_obj1 = deep_sort(obj1)
+    sorted_obj2 = deep_sort(obj2)
+    return sorted_obj1 == sorted_obj2
 
 
 class DictClass(dict):

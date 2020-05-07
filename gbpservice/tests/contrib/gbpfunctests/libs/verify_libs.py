@@ -445,7 +445,7 @@ class Gbp_Verify(object):
         # heat template
         outputs_dict = heat_conf["outputs"]
         print(outputs_dict)
-        for key in outputs_dict.iterkeys():
+        for key in outputs_dict.keys():
             cmd = 'heat stack-show %s | grep -B 2 %s' % (heat_stack_name, key)
             print(cmd)
             cmd_out = commands.getoutput(cmd)

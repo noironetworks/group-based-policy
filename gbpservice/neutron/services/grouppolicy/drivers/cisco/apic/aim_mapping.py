@@ -321,7 +321,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         external_segments = context.current['external_segments']
         if external_segments:
             self._unplug_l3p_routers_from_ext_segment(
-                context, context.current, external_segments.keys(), True)
+                context, context.current, list(external_segments.keys()), True)
         self._delete_l3p_subnetpools_postcommit(context)
         for router_id in context.current['routers']:
             self._cleanup_router(context._plugin_context, router_id)
@@ -983,7 +983,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_filter_entries = self._get_aim_filter_entries(
             session, context.current)
         context.current['status'] = self._merge_aim_status(
-            session, aim_filters.values() + aim_filter_entries.values())
+            session,
+            list(aim_filters.values()) + list(aim_filter_entries.values()))
 
     @log.log_method_call
     def create_policy_rule_set_precommit(self, context):
@@ -1974,7 +1975,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             # if NAT is disabled, allow only one L3P per ES
             ess = context._plugin.get_external_segments(
                 context._plugin_context,
-                filters={'id': l3policy['external_segments'].keys()})
+                filters={'id': list(l3policy['external_segments'].keys())})
             for es in ess:
                 ext_net = self._ext_segment_2_ext_network(context, es)
                 if (ext_net and
@@ -2029,7 +2030,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                                          ext_seg_info):
         plugin_context = context._plugin_context
         es_list = self._get_external_segments(plugin_context,
-            filters={'id': ext_seg_info.keys()})
+            filters={'id': list(ext_seg_info.keys())})
         l3p_subs = self._get_l3p_subnets(context, l3policy)
 
         # REVISIT: We are not re-using the first router created
@@ -2190,7 +2191,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _get_auto_ptg_id(self, l2p_id):
         if l2p_id:
-            return AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
+            return AUTO_PTG_ID_PREFIX % hashlib.md5(
+                l2p_id.encode('utf-8')).hexdigest()
 
     def _is_auto_ptg(self, ptg):
         return ptg['id'].startswith(AUTO_PTG_PREFIX)
@@ -2313,8 +2315,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         context._plugin_context = admin_context
         session = admin_context.session
         aim_ctx = aim_context.AimContext(session)
-        contract_name_prefix = alib.get_service_contract_filter_entries(
-                ).keys()[0]
+        contract_name_prefix = list(alib.get_service_contract_filter_entries(
+                ).keys())[0]
 
         query = BAKERY(lambda s: s.query(
             gpmdb.L3PolicyMapping))

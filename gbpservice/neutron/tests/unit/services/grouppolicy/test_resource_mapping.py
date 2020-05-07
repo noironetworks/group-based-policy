@@ -195,9 +195,12 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         """Override the routine for allowing the router:external attribute."""
         # attributes containing a colon should be passed with
         # a double underscore
-        new_args = dict(itertools.izip(map(lambda x: x.replace('__', ':'),
-                                           kwargs),
-                                       kwargs.values()))
+        try:
+            new_args = dict(itertools.izip(map(lambda x: x.replace('__', ':'),
+                                               kwargs), kwargs.values()))
+        except AttributeError:
+            new_args = dict(zip(map(lambda x: x.replace('__', ':'),
+                                    kwargs), kwargs.values()))
         arg_list = new_args.pop('arg_list', ()) + (external_net.EXTERNAL,)
         return super(ResourceMappingTestCase, self)._create_network(
             fmt, name, admin_state_up, arg_list=arg_list, **new_args)
@@ -1816,7 +1819,7 @@ class TestL3Policy(ResourceMappingTestCase,
                                     'l3_policy']
                             self.assertEqual(
                                 1, len(l3p['external_segments'][
-                                    external_segments.keys()[0]]))
+                                    list(external_segments.keys())[0]]))
                         # es2 to [es1, es2]
                         external_segments = {es2['id']: [], es1['id']: []}
                         res = self.update_l3_policy(
@@ -1906,8 +1909,8 @@ class TestL3Policy(ResourceMappingTestCase,
                                                     fmt=self.fmt)
                         res = self.deserialize(self.fmt,
                                                req.get_response(self.ext_api))
-                        self.assertEqual(routes1.sort(),
-                                         res['router']['routes'].sort())
+                        self.assertTrue(utils.is_equal(routes1,
+                                         res['router']['routes']))
                         es_dict = {es2['id']: []}
                         self.update_l3_policy(l3p['id'],
                                               external_segments=es_dict,
@@ -1917,8 +1920,8 @@ class TestL3Policy(ResourceMappingTestCase,
                                                     fmt=self.fmt)
                         res = self.deserialize(self.fmt,
                                                req.get_response(self.ext_api))
-                        self.assertEqual(routes2.sort(),
-                                         res['router']['routes'].sort())
+                        self.assertTrue(utils.is_equal(routes2,
+                                         res['router']['routes']))
 
     def test_create_l3p_using_different_tenant_router_rejected(self):
         with self.router() as router1:
@@ -4174,7 +4177,8 @@ class TestExternalSegment(ResourceMappingTestCase):
                     name="default",
                     subnet_id=sub['subnet']['id'])['external_segment']
                 l3p = self.create_l3_policy()['l3_policy']
-                self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+                self.assertEqual(es['id'],
+                    list(l3p['external_segments'].keys())[0])
                 self._check_ip_in_cidr(l3p['external_segments'][es['id']][0],
                                        self._show_subnet(
                                            es['subnet_id'])['subnet']['cidr'])
@@ -4195,7 +4199,8 @@ class TestExternalSegment(ResourceMappingTestCase):
                     tenant_id='admin', name="default",
                     subnet_id=sub['subnet']['id'])['external_segment']
                 l3p = self.create_l3_policy()['l3_policy']
-                self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+                self.assertEqual(es['id'],
+                    list(l3p['external_segments'].keys())[0])
                 self._check_ip_in_cidr(l3p['external_segments'][es['id']][0],
                                        self._show_subnet(
                                            es['subnet_id'])['subnet']['cidr'])

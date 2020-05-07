@@ -38,6 +38,7 @@ from opflexagent import constants as ocst
 from oslo_config import cfg
 import webob.exc
 
+import gbpservice.common.utils as g_utils
 from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import cisco_apic
@@ -466,8 +467,9 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
 
         self.assertEqual(12, len(aim_filter_entries))
 
-        entries_attrs = alib.get_service_contract_filter_entries().values()
-        entries_attrs.extend(alib.get_arp_filter_entry().values())
+        entries_attrs = list(
+            alib.get_service_contract_filter_entries().values())
+        entries_attrs.extend(list(alib.get_arp_filter_entry().values()))
         expected_entries_attrs = []
         for entry in entries_attrs:
             new_entry = copy.deepcopy(DEFAULT_FILTER_ENTRY)
@@ -1817,7 +1819,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         ptg = self._gbp_plugin.get_policy_target_groups(
             self._neutron_context)[0]
         l2p_id = ptg['l2_policy_id']
-        auto_ptg_id = aimd.AUTO_PTG_ID_PREFIX % hashlib.md5(l2p_id).hexdigest()
+        auto_ptg_id = aimd.AUTO_PTG_ID_PREFIX % hashlib.md5(
+            l2p_id.encode('utf-8')).hexdigest()
         self.assertEqual(auto_ptg_id, ptg['id'])
         self.assertEqual(aimd.AUTO_PTG_NAME_PREFIX % l2p_id, str(ptg['name']))
         return ptg
@@ -2451,7 +2454,7 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
             kwargs[self.ip_dict[ip_version]['subnetpools_id_key']] = [sp['id']
                 for sp in self.ip_dict[ip_version]['subnetpools']]
         if len(self.ip_dict.keys()) == 1:
-            kwargs['ip_version'] = self.ip_dict.keys()[0]
+            kwargs['ip_version'] = list(self.ip_dict.keys())[0]
         else:
             kwargs['ip_version'] = 46
         l3p = self.create_l3_policy(**kwargs)['l3_policy']
@@ -2703,7 +2706,7 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
             self.assertIn(subnet['subnet']['cidr'], mapping_cidrs)
             dhcp_server_ports = mapping['subnets'][0]['dhcp_server_ports']
             self.assertIn(dhcp_port['mac_address'],
-                          dhcp_server_ports.keys())
+                          list(dhcp_server_ports.keys()))
             dhcp_server_port = dhcp_server_ports[dhcp_port['mac_address']]
             self.assertEqual(dhcp_server_port[0],
                              dhcp_port['fixed_ips'][0]['ip_address'])
@@ -3994,7 +3997,7 @@ class TestPolicyRuleBase(AIMBaseTestCase):
         expected_filter_entry = self.driver._aim_filter_entry(
             self._neutron_context.session, afilter, filter_entry_name,
             alib.map_to_aim_filter_entry(
-                expected_entries.items()[0][1].items()[0][1]))
+                list(list(expected_entries.items())[0][1].items())[0][1]))
 
         self.assertItemsEqual(
             aim_object_to_dict(expected_filter_entry),
@@ -4012,9 +4015,9 @@ class TestPolicyRuleBase(AIMBaseTestCase):
             expected_filter_entry = self.driver._aim_filter_entry(
                     self._neutron_context.session, afilter, e_name,
                     alib.map_to_aim_filter_entry(value))
-            filter_entry = (
+            filter_entry = next(
                 entry for entry in filter_entries if entry.name == e_name
-                           ).next()
+                           )
             self.assertItemsEqual(
                     aim_object_to_dict(expected_filter_entry),
                     # special processing to convert unicode to str
@@ -4488,19 +4491,19 @@ class TestImplicitExternalSegment(AIMBaseTestCase):
 
         # Create L3P without ES set
         l3p = self.create_l3_policy()['l3_policy']
-        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(es['id'], list(l3p['external_segments'].keys())[0])
         # Verify persisted
         req = self.new_show_request('l3_policies', l3p['id'],
                                     fmt=self.fmt)
         l3p = self.deserialize(
             self.fmt, req.get_response(self.ext_api))['l3_policy']
-        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(es['id'], list(l3p['external_segments'].keys())[0])
 
         # Verify update
         l3p = self.update_l3_policy(
             l3p['id'], expected_res_status=200,
             external_segments={ndes['id']: []})['l3_policy']
-        self.assertEqual(ndes['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(ndes['id'], list(l3p['external_segments'].keys())[0])
         self.assertEqual(1, len(l3p['external_segments']))
 
         # Verify only one visible ES can exist
@@ -4525,7 +4528,7 @@ class TestImplicitExternalSegment(AIMBaseTestCase):
 
         l3p = self.create_l3_policy(
             tenant_id='anothertenant')['l3_policy']
-        self.assertEqual(es['id'], l3p['external_segments'].keys()[0])
+        self.assertEqual(es['id'], list(l3p['external_segments'].keys())[0])
         self.assertEqual(1, len(ep['external_segments']))
 
         res = self._create_default_es(expected_res_status=400,
@@ -5402,7 +5405,7 @@ class TestNestedDomain(AIMBaseTestCase):
                   'apic:nested_domain_allowed_vlans': vlans_arg,
                   }
         net = self._make_network(self.fmt, 'net1', True,
-                arg_list=tuple(kwargs.keys()), **kwargs)
+                arg_list=tuple(list(kwargs.keys())), **kwargs)
         self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
 
         p1 = self._make_port(self.fmt, net['network']['id'],
@@ -5663,13 +5666,15 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
-        self.assertEqual(sorted(allow_addr),
-                         sorted(details['allowed_address_pairs']))
+        self.assertTrue(
+            g_utils.is_equal(allow_addr,
+                             details["allowed_address_pairs"]))
         details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
-        self.assertEqual(sorted(allow_addr),
-                         sorted(details['allowed_address_pairs']))
+        self.assertTrue(
+            g_utils.is_equal(allow_addr,
+                             details['allowed_address_pairs']))
 
         # Call agent => plugin RPC, requesting ownership of a /32 IP
         ip_owner_info = {'port': p_active_aap['id'],
@@ -5680,8 +5685,9 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             self._neutron_admin_context, device='tap%s' % p_active_aap['id'],
             host='h1')
         # There should be no active aap here
-        self.assertEqual(sorted(allow_addr_active_aap),
-                         sorted(details['allowed_address_pairs']))
+        self.assertTrue(
+            g_utils.is_equal(allow_addr_active_aap,
+                             details['allowed_address_pairs']))
 
         ip_owner_info = {'port': p1['id'],
                          'ip_address_v4': owned_addr[0],
@@ -5716,8 +5722,9 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             return expected_aaps
 
         expected_aaps1 = _get_expected_aaps(allow_addr, owned_addr[0])
-        self.assertEqual(sorted(expected_aaps1),
-                         sorted(details['allowed_address_pairs']))
+        self.assertTrue(
+            g_utils.is_equal(expected_aaps1,
+                             details['allowed_address_pairs']))
 
         # Call RPC sent by the agent, requesting ownership of a /32 IP
         ip_owner_info = {'port': p2['id'],
@@ -5734,8 +5741,9 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             host='h2')
         expected_aaps2 = _get_expected_aaps(allow_addr, owned_addr[1])
 
-        self.assertEqual(sorted(expected_aaps2),
-                         sorted(details['allowed_address_pairs']))
+        self.assertTrue(
+            g_utils.is_equal(expected_aaps2,
+                             details['allowed_address_pairs']))
 
         # set allowed-address as fixed-IP of ports p3 and p4, which also have
         # floating-IPs. Verify that FIP is "stolen" by p1 and p2
@@ -5840,8 +5848,9 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
         expected_aaps3 = _get_expected_aaps(update_addr, update_owned_addr[0])
-        self.assertEqual(sorted(expected_aaps3),
-                         sorted(details['allowed_address_pairs']))
+        self.assertTrue(
+            g_utils.is_equal(expected_aaps3,
+                             details['allowed_address_pairs']))
 
         p2 = self._update('ports', p2['id'],
             {'port': {'allowed_address_pairs': update_addr}},
@@ -5857,8 +5866,9 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             self._neutron_admin_context, device='tap%s' % p2['id'],
             host='h2')
         expected_aaps4 = _get_expected_aaps(update_addr, update_owned_addr[1])
-        self.assertEqual(sorted(expected_aaps4),
-                         sorted(details['allowed_address_pairs']))
+        self.assertTrue(
+            g_utils.is_equal(expected_aaps4,
+                             details['allowed_address_pairs']))
 
     def test_gbp_details_for_allowed_address_pair(self):
         # 'aap' is configured, 'owned' is IP requested from agent
@@ -6035,8 +6045,9 @@ class TestL2PolicyRouteInjection(AIMBaseTestCase):
                      'nexthop': subnet_details['dns_nameservers'][0]})
         else:
             self.assertNotIn('gateway_ip', subnet_details)
-        self.assertEqual(sorted(expected_host_routes),
-                         sorted(subnet_details['host_routes']))
+        self.assertTrue(
+            g_utils.is_equal(expected_host_routes,
+                             subnet_details['host_routes']))
 
     def _test_route_injection(self, inject):
         # Create GBP resources and bind port.

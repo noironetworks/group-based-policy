@@ -547,7 +547,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         return result
 
     def _deploy_servicechain_nodes(self, context, deployers):
-        self.plumber.plug_services(context, deployers.values())
+        self.plumber.plug_services(context, list(deployers.values()))
         for deploy in deployers.values():
             driver = deploy['driver']
             driver.create(deploy['context'])
@@ -579,7 +579,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                 finally:
                     self.driver_manager.clear_node_owner(destroy['context'])
         finally:
-            self.plumber.unplug_services(context, destroyers.values())
+            self.plumber.unplug_services(context, list(destroyers.values()))
 
     def _validate_profile_update(self, context, original, updated):
         # Raise if the profile is in use by any instance
