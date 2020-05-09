@@ -776,7 +776,7 @@ class ApicRpcHandlerMixin(object):
             trunk_models.SubPort.segmentation_type,
             trunk_models.SubPort.segmentation_id,
         ))
-        query += lambda q: q.join(
+        query += lambda q: q.outerjoin(
             trunk_models.SubPort,
             trunk_models.SubPort.trunk_id == trunk_models.Trunk.id)
         query += lambda q: q.filter(
@@ -1166,4 +1166,5 @@ class ApicRpcHandlerMixin(object):
                 'subports': [{'port_id': sp.subport_port_id,
                               'segmentation_type': sp.segmentation_type,
                               'segmentation_id': sp.segmentation_id}
-                             for sp in trunk_info]}
+                             for sp in trunk_info if (
+                             sp.subport_port_id is not None)]}
