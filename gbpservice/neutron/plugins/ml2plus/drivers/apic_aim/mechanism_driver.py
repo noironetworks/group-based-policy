@@ -189,8 +189,9 @@ class KeystoneNotificationEndpoint(object):
                 return None
 
             disp_name = aim_utils.sanitize_display_name(prj_details[0])
-            self._driver.aim.update(aim_ctx, tenant, display_name
-                    = disp_name, descr=prj_details[1])
+            descr = aim_utils.sanitize_description(prj_details[1])
+            self._driver.aim.update(
+                aim_ctx, tenant, display_name=disp_name, descr=descr)
             return oslo_messaging.NotificationResult.HANDLED
 
         if event_type == 'identity.project.deleted':
@@ -563,15 +564,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             tenant_aname = self.name_mapper.project(session, project_id)
             project_details = (self.project_details_cache.
                 get_project_details(project_id))
+            disp_name = aim_utils.sanitize_display_name(project_details[0])
+            descr = aim_utils.sanitize_description(project_details[1])
             aim_ctx = aim_context.AimContext(session)
             tenant = aim_resource.Tenant(
-                name=tenant_aname, descr=project_details[1], display_name=
-                aim_utils.sanitize_display_name(project_details[0]))
-            # NOTE(ivar): by overwriting the existing tenant, we make sure
-            # existing deployments will update their description value. This
-            # however negates any change to the Tenant object done by direct
-            # use of aimctl.
-            self.aim.create(aim_ctx, tenant, overwrite=True)
+                name=tenant_aname, descr=descr, display_name=disp_name)
+            if not self.aim.get(aim_ctx, tenant):
+                self.aim.create(aim_ctx, tenant)
             # REVISIT: Setting of display_name was added here to match
             # aim_lib behavior when it creates APs, but the
             # display_name aim_lib uses might vary.
@@ -5937,7 +5936,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 project_id)
             tenant.display_name = aim_utils.sanitize_display_name(
                 project_details[0])
-            tenant.descr = project_details[1]
+            tenant.descr = aim_utils.sanitize_description(project_details[1])
             tenant.monitored = False
             mgr.expect_aim_resource(tenant)
 

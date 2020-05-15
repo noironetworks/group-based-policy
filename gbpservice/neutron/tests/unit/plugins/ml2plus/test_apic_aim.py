@@ -159,7 +159,7 @@ TEST_TENANT_NAMES = {
 
 # REVISIT(rkukura): Use mock for this instead?
 class FakeProject(object):
-    def __init__(self, id, name, description=''):
+    def __init__(self, id, name, description='bad\"\'descr'):
         self.id = id
         self.name = name
         self.description = description
@@ -1426,6 +1426,10 @@ class TestAimMapping(ApicAimTestCase):
         sg_id = sg['id']
         self._check_sg(sg)
 
+        tenant_aname = self.name_mapper.project(None, sg['tenant_id'])
+        aim_tenant = self._get_tenant(tenant_aname)
+        self.assertEqual(aim_tenant.descr, "bad__descr")
+
         # Test show.
         sg = self._show('security-groups', sg_id)['security_group']
         self._check_sg(sg)
@@ -2123,10 +2127,10 @@ class TestAimMapping(ApicAimTestCase):
 
         # Test project.updated event. Update both name and description.
         FakeProjectManager.set('test-tenant-update',
-            'new-tenant', 'new-descr')
+            'new-tenant', 'bad\"\'descr')
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
         assert(self.driver.aim.update.call_args_list[0] == mock.call(
-            mock.ANY, tenant, display_name='new-tenant', descr = 'new-descr'))
+            mock.ANY, tenant, display_name='new-tenant', descr = 'bad__descr'))
 
         # Test project.updated event. Update only the project name.
         FakeProjectManager.set('test-tenant-update', 'name123', 'new-descr')
