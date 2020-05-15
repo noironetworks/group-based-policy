@@ -97,8 +97,8 @@ class HAIPAddressToPortAssociation(model_base.BASEV2):
 class VMName(model_base.BASEV2):
     __tablename__ = 'apic_aim_vm_names'
 
-    device_id = sa.Column(sa.String(36), primary_key=True)
-    vm_name = sa.Column(sa.String(64))
+    device_id = sa.Column(sa.String(255), primary_key=True)
+    vm_name = sa.Column(sa.String(255))
 
 
 # At any point of time, there should only be one entry in this table.
