@@ -559,6 +559,69 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             return mock.DEFAULT
         return verify
 
+    def _get_tenant(self, tenant_name):
+        session = db_api.get_session()
+        aim_ctx = aim_context.AimContext(session)
+        tenant = aim_resource.Tenant(name=tenant_name)
+        tenant = self.aim_mgr.get(aim_ctx, tenant)
+        self.assertIsNotNone(tenant)
+        return tenant
+
+    def _check_sg(self, sg):
+        tenant_aname = self.name_mapper.project(None, sg['tenant_id'])
+        self._get_tenant(tenant_aname)
+
+        aim_sg = self._get_sg(sg['id'], tenant_aname)
+        self.assertEqual(tenant_aname, aim_sg.tenant_name)
+        self.assertEqual(sg['id'], aim_sg.name)
+        self.assertEqual(sg['name'], aim_sg.display_name)
+
+        # check those SG rules including the default ones
+        for sg_rule in sg.get('security_group_rules', []):
+            self._check_sg_rule(sg['id'], sg_rule)
+
+    def _check_sg_rule(self, sg_id, sg_rule):
+        tenant_aname = self.name_mapper.project(None, sg_rule['tenant_id'])
+        self._get_tenant(tenant_aname)
+
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', sg_id, tenant_aname)
+
+        self.assertEqual(tenant_aname, aim_sg_rule.tenant_name)
+        self.assertEqual(sg_id, aim_sg_rule.security_group_name)
+        self.assertEqual('default',
+                         aim_sg_rule.security_group_subject_name)
+        self.assertEqual(sg_rule['id'], aim_sg_rule.name)
+        self.assertEqual(sg_rule['direction'], aim_sg_rule.direction)
+        self.assertEqual(sg_rule['ethertype'].lower(),
+                         aim_sg_rule.ethertype)
+        self.assertEqual('reflexive', aim_sg_rule.conn_track)
+        self.assertEqual(([sg_rule['remote_ip_prefix']] if
+                          sg_rule['remote_ip_prefix'] else []),
+                         aim_sg_rule.remote_ips)
+        self.assertEqual((sg_rule['remote_group_id'] if
+                          sg_rule['remote_group_id'] else ''),
+                         aim_sg_rule.remote_group_id)
+        self.assertEqual(str(self.driver.get_aim_protocol(
+                         sg_rule['protocol'])), str(aim_sg_rule.ip_protocol))
+        self.assertEqual((str(sg_rule['port_range_min']) if
+                          sg_rule['port_range_min'] else 'unspecified'),
+                         aim_sg_rule.from_port)
+        self.assertEqual((str(sg_rule['port_range_max']) if
+                          sg_rule['port_range_max'] else 'unspecified'),
+                         aim_sg_rule.to_port)
+        if (sg_rule['protocol'] and sg_rule['protocol'].lower() == 'icmp'):
+            if (sg_rule['port_range_min']):
+                self.assertEqual(str(sg_rule['port_range_min']),
+                    aim_sg_rule.icmp_code)
+            else:
+                self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
+            if (sg_rule['port_range_max']):
+                self.assertEqual(str(sg_rule['port_range_max']),
+                    aim_sg_rule.icmp_type)
+            else:
+                self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
+
 
 class TestRpcListeners(ApicAimTestCase):
     @staticmethod
@@ -733,14 +796,6 @@ class TestAimMapping(ApicAimTestCase):
     def tearDown(self):
         self.call_wrapper.tearDown()
         super(TestAimMapping, self).tearDown()
-
-    def _get_tenant(self, tenant_name):
-        session = db_api.get_session()
-        aim_ctx = aim_context.AimContext(session)
-        tenant = aim_resource.Tenant(name=tenant_name)
-        tenant = self.aim_mgr.get(aim_ctx, tenant)
-        self.assertIsNotNone(tenant)
-        return tenant
 
     def _get_vrf(self, vrf_name, tenant_name, should_exist=True):
         session = db_api.get_session()
@@ -1049,58 +1104,6 @@ class TestAimMapping(ApicAimTestCase):
     def _check_address_scope_deleted(self, scope):
         aname = self.name_mapper.address_scope(None, scope['id'])
         self._vrf_should_not_exist(aname)
-
-    def _check_sg(self, sg):
-        tenant_aname = self.name_mapper.project(None, sg['tenant_id'])
-        self._get_tenant(tenant_aname)
-
-        aim_sg = self._get_sg(sg['id'], tenant_aname)
-        self.assertEqual(tenant_aname, aim_sg.tenant_name)
-        self.assertEqual(sg['id'], aim_sg.name)
-        self.assertEqual(sg['name'], aim_sg.display_name)
-
-        # check those SG rules including the default ones
-        for sg_rule in sg.get('security_group_rules', []):
-            self._check_sg_rule(sg['id'], sg_rule)
-
-    def _check_sg_rule(self, sg_id, sg_rule):
-        tenant_aname = self.name_mapper.project(None, sg_rule['tenant_id'])
-        self._get_tenant(tenant_aname)
-
-        aim_sg_rule = self._get_sg_rule(
-            sg_rule['id'], 'default', sg_id, tenant_aname)
-
-        self.assertEqual(tenant_aname, aim_sg_rule.tenant_name)
-        self.assertEqual(sg_id, aim_sg_rule.security_group_name)
-        self.assertEqual('default',
-                         aim_sg_rule.security_group_subject_name)
-        self.assertEqual(sg_rule['id'], aim_sg_rule.name)
-        self.assertEqual(sg_rule['direction'], aim_sg_rule.direction)
-        self.assertEqual(sg_rule['ethertype'].lower(),
-                         aim_sg_rule.ethertype)
-        self.assertEqual('reflexive', aim_sg_rule.conn_track)
-        self.assertEqual(([sg_rule['remote_ip_prefix']] if
-                          sg_rule['remote_ip_prefix'] else []),
-                         aim_sg_rule.remote_ips)
-        self.assertEqual(str(self.driver.get_aim_protocol(
-                         sg_rule['protocol'])), str(aim_sg_rule.ip_protocol))
-        self.assertEqual((str(sg_rule['port_range_min']) if
-                          sg_rule['port_range_min'] else 'unspecified'),
-                         aim_sg_rule.from_port)
-        self.assertEqual((str(sg_rule['port_range_max']) if
-                          sg_rule['port_range_max'] else 'unspecified'),
-                         aim_sg_rule.to_port)
-        if (sg_rule['protocol'] and sg_rule['protocol'].lower() == 'icmp'):
-            if (sg_rule['port_range_min']):
-                self.assertEqual(str(sg_rule['port_range_min']),
-                    aim_sg_rule.icmp_code)
-            else:
-                self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
-            if (sg_rule['port_range_max']):
-                self.assertEqual(str(sg_rule['port_range_max']),
-                    aim_sg_rule.icmp_type)
-            else:
-                self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
 
     def _check_router_deleted(self, router):
         aname = self.name_mapper.router(None, router['id'])
@@ -4722,6 +4725,43 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         self.assertIsNotNone(sgsubs)
         sgrules = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupRule)
         self.assertIsNotNone(sgrules)
+
+    def test_sg_rule_remote_group_id_insertion(self):
+        sg = self._make_security_group(self.fmt,
+                                       'sg1', 'test')['security_group']
+        # Add 2 more rules.
+        rule1 = self._build_security_group_rule(
+            sg['id'], 'ingress', n_constants.PROTO_NAME_TCP, '22', '23',
+            remote_ip_prefix="1.1.1.0/24", remote_group_id=None,
+            ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule1['security_group_rule']]}
+        sg_rule1 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+
+        rule2 = self._build_security_group_rule(
+            sg['id'], 'egress', n_constants.PROTO_NAME_TCP, '44', '45',
+            remote_ip_prefix=None, remote_group_id=sg['id'],
+            ethertype=n_constants.IPv6)
+        rules = {'security_group_rules': [rule2['security_group_rule']]}
+        sg_rule2 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+
+        # It will check all the sg_rules inside _check_sg().
+        self._check_sg(sg)
+        for sg_rule in [sg_rule1, sg_rule2]:
+            self._check_sg_rule(sg['id'], sg_rule)
+
+        # Wipe out the remote_group_id of all the sg_rules.
+        aim_ctx = aim_context.AimContext(self.db_session)
+        sg_rules = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupRule)
+        for sg_rule in sg_rules:
+            self.aim_mgr.update(aim_ctx, sg_rule, remote_group_id='')
+
+        data_migrations.do_sg_rule_remote_group_id_insertion(self.db_session)
+
+        self._check_sg(sg)
+        for sg_rule in [sg_rule1, sg_rule2]:
+            self._check_sg_rule(sg['id'], sg_rule)
 
 
 class TestPortBinding(ApicAimTestCase):
@@ -8518,6 +8558,8 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         aim_sg_rule = self._get_sg_rule(
             sg_rule['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+        self.assertEqual(
+            aim_sg_rule.remote_group_id, sg_rule['remote_group_id'])
 
         # add another rule with remote_group_id set
         rule1 = self._build_security_group_rule(
@@ -8529,6 +8571,8 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         aim_sg_rule = self._get_sg_rule(
             sg_rule1['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+        self.assertEqual(
+            aim_sg_rule.remote_group_id, sg_rule1['remote_group_id'])
 
         rule2 = self._build_security_group_rule(
             default_sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, '2', '33',
