@@ -47,6 +47,7 @@ class NsxPolicyMappingTestCase(test_rmd.ResourceMappingTestCase):
 
     def tearDown(self):
         super(NsxPolicyMappingTestCase, self).tearDown()
+        self.patcher.stop()
 
     def set_up_config(self):
         cfg.CONF.register_opts(driver.policy_opts, driver.DRIVER_OPT_GROUP)
@@ -62,6 +63,15 @@ class NsxPolicyMappingTestCase(test_rmd.ResourceMappingTestCase):
                    ".NsxPolicyEnforcementPointApi").start()
         mock.patch("vmware_nsxlib.v3.cluster.ClusteredAPI"
                    "._init_endpoints").start()
+        # To avoid:
+        # '>' not supported between instances of 'MagicMock' and 'int'
+        # due to
+        # `MAX_NSGROUPS_CRITERIA_TAGS = max(10, max_tags - 5)`
+        # in vmware_nsxlib.v3.utils._update_max_nsgroups_criteria_tags()
+        self.patcher = mock.patch("vmware_nsxlib.v3.utils."
+            "_update_max_nsgroups_criteria_tags")
+        self.patcher.return_value = 10
+        self.patcher.start()
 
     def _mock_domain_create(self):
         return mock.patch.object(self.nsx_policy.domain, 'create_or_overwrite')

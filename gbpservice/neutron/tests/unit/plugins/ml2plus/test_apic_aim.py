@@ -57,6 +57,7 @@ from opflexagent import constants as ofcst
 from oslo_config import cfg
 import webob.exc
 
+import gbpservice.common.utils as g_utils
 from gbpservice.neutron.db import all_models  # noqa
 from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
@@ -173,7 +174,7 @@ class FakeProjectManager(object):
                           for k, v in TEST_TENANT_NAMES.items()}
 
     def list(self):
-        return self._projects.values()
+        return list(self._projects.values())
 
     def get(self, project_id):
         return self._projects.get(project_id)
@@ -1385,7 +1386,7 @@ class TestAimMapping(ApicAimTestCase):
         kwargs = {'apic:extra_provided_contracts': ['ep1', 'ep2'],
                   'apic:extra_consumed_contracts': ['ec1', 'ec2']}
         net = self._make_network(
-            self.fmt, 'net1', True, arg_list=tuple(kwargs.keys()),
+            self.fmt, 'net1', True, arg_list=tuple(list(kwargs.keys())),
             **kwargs)['network']
         net_id = net['id']
         self._check_network(net)
@@ -1444,7 +1445,8 @@ class TestAimMapping(ApicAimTestCase):
         # Verify creating network with extra provided contracts fails.
         kwargs['apic:extra_provided_contracts'] = ['ep1']
         resp = self._create_network(
-            self.fmt, 'net', True, arg_list=tuple(kwargs.keys()), **kwargs)
+            self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
+            **kwargs)
         result = self.deserialize(self.fmt, resp)
         self.assertEqual(
             'InvalidNetworkForExtraContracts',
@@ -1454,7 +1456,8 @@ class TestAimMapping(ApicAimTestCase):
         # Verify creating network with extra consumed contracts fails.
         kwargs['apic:extra_consumed_contracts'] = ['ec1']
         resp = self._create_network(
-            self.fmt, 'net', True, arg_list=tuple(kwargs.keys()), **kwargs)
+            self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
+            **kwargs)
         result = self.deserialize(self.fmt, resp)
         self.assertEqual(
             'InvalidNetworkForExtraContracts',
@@ -1464,7 +1467,7 @@ class TestAimMapping(ApicAimTestCase):
         # Create network without extra provided or consumed contracts.
         net_id = self._make_network(
             self.fmt, 'net', True,
-            arg_list=tuple(kwargs.keys()), **kwargs)['network']['id']
+            arg_list=tuple(list(kwargs.keys())), **kwargs)['network']['id']
 
         # Verify setting extra provided contracts on network fails.
         result = self._update(
@@ -4779,13 +4782,13 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         ns.common_scope = None
         wrong_res = ns.get_l3outside_resources(aim_ctx, l3out)
         self.assertEqual(len(right_res), len(wrong_res))
-        self.assertNotEqual(sorted(right_res), sorted(wrong_res))
+        self.assertFalse(g_utils.is_equal(right_res, wrong_res))
 
         data_migrations.do_ap_name_change(self.db_session, cfg.CONF)
         # Verify new model
         ns = self.driver._nat_type_to_strategy(None)
         final_res = ns.get_l3outside_resources(aim_ctx, l3out)
-        self.assertEqual(sorted(right_res), sorted(final_res))
+        self.assertTrue(g_utils.is_equal(right_res, final_res))
         self.assertIsNone(aim.get(aim_ctx, wrong_ap))
         self.assertIsNone(aim.get(aim_ctx, wrong_epg))
         self.assertIsNone(aim.get(aim_ctx, wrong_bd))
@@ -5852,7 +5855,7 @@ class TestExtensionAttributes(ApicAimTestCase):
                   }
 
         net1 = self._make_network(self.fmt, 'net1', True,
-                                  arg_list=tuple(kwargs.keys()),
+                                  arg_list=tuple(list(kwargs.keys())),
                                   **kwargs)['network']
         self.assertEqual('myk8s', net1['apic:nested_domain_name'])
         self.assertEqual('k8s', net1['apic:nested_domain_type'])
@@ -5901,7 +5904,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         kwargs = {'apic:extra_provided_contracts': provided,
                   'apic:extra_consumed_contracts': consumed}
         net = self._make_network(
-            self.fmt, 'net1', True, arg_list=tuple(kwargs.keys()),
+            self.fmt, 'net1', True, arg_list=tuple(list(kwargs.keys())),
             **kwargs)['network']
         net_id = net['id']
         self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
@@ -8513,15 +8516,15 @@ class TestPortVlanNetwork(ApicAimTestCase):
                                        host_name='h1')
         if not is_svi:
             epg2 = self.aim_mgr.get(aim_ctx, epg2)
-            self.assertEqual(
-                sorted(
+            self.assertTrue(
+                g_utils.is_equal(
                     [{'path': host_links[0].path, 'encap': 'vlan-%s' % vlan_p2,
                       'host': 'h1'},
                      {'path': host_links[1].path, 'encap': 'vlan-%s' % vlan_p2,
                       'host': 'h1'},
                      {'path': host_links[2].path, 'encap': 'vlan-%s' % vlan_p2,
-                      'host': 'h1'}]),
-                sorted(epg2.static_paths))
+                      'host': 'h1'}],
+                    epg2.static_paths))
         else:
             ext_net = aim_resource.ExternalNetwork.from_dn(
                 net2[DN]['ExternalNetwork'])
@@ -10101,7 +10104,7 @@ class TestOpflexRpc(ApicAimTestCase):
                 # deterministic. Therefore, be sure to specify
                 # metadata routes or default routes for subnets with
                 # multiple DHCP ports.
-                for ip in dhcp_server_ports.values()[0]:
+                for ip in list(dhcp_server_ports.values())[0]:
                     host_routes.append(
                         {'destination': '169.254.169.254/16',
                          'nexthop': ip})
@@ -10114,8 +10117,8 @@ class TestOpflexRpc(ApicAimTestCase):
                              sorted(details['dns_nameservers']))
             self.assertEqual(gateway_ip, details['gateway_ip'])
             self.assertEqual(subnet['enable_dhcp'], details['enable_dhcp'])
-            self.assertEqual(sorted(host_routes),
-                             sorted(details['host_routes']))
+            self.assertTrue(g_utils.is_equal(host_routes,
+                            details['host_routes']))
             self.assertEqual(subnet['id'], details['id'])
             self.assertEqual(subnet['ip_version'], details['ip_version'])
 

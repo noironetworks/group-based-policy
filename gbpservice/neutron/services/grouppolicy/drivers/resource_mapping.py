@@ -588,8 +588,8 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             shared_subpools = self._get_subnetpools(
                 context._plugin_context, filters) or []
             # Union of the above two lists of subnetpools
-            candidate_subpools = {x['id']: x for x in candidate_subpools +
-                                  shared_subpools}.values()
+            candidate_subpools = list({x['id']: x for x in candidate_subpools +
+                                  shared_subpools}.values())
             subnet = None
             for pool in candidate_subpools:
                 try:
@@ -1080,7 +1080,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             return es_list_with_nat_pools
         external_segments = context._plugin.get_external_segments(
             context._plugin_context,
-            filters={'id': external_segments})
+            filters={'id': list(external_segments)})
         for es in external_segments:
             if es['nat_pools']:
                 es_list_with_nat_pools.append(es)
@@ -1237,7 +1237,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                         external_segments = (
                             context._plugin.get_external_segments(
                                 context._plugin_context,
-                                filters={'id': external_segments}))
+                                filters={'id': list(external_segments)}))
                 else:
                     gpip = cfg.CONF.group_policy_implicit_policy
                     filter = {'tenant_id': [context.current['tenant_id']],
@@ -2523,7 +2523,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     def _plug_router_to_external_segment(self, context, es_dict):
         es_list = context._plugin.get_external_segments(
-            context._plugin_context, filters={'id': es_dict.keys()})
+            context._plugin_context, filters={'id': list(es_dict.keys())})
         if context.current['routers']:
             router_id = context.current['routers'][0]
             for es in es_list:
@@ -3121,7 +3121,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             routes = []
             if es_ids:
                 es_list = context._plugin.get_external_segments(
-                    context._plugin_context, filters={'id': es_ids})
+                    context._plugin_context, filters={'id': list(es_ids)})
                 for es in es_list:
                     routes += es['external_routes']
             return routes

@@ -29,6 +29,7 @@ from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 from oslo_log import log as logging
 
+import gbpservice.common.utils as g_utils
 from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.services.grouppolicy import config
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
@@ -109,9 +110,9 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
 
     def tearDown(self):
         LOG.warning("SFCDs used in this test: %s",
-                    self.sfc_plugin.driver_manager.drivers.keys())
+                    list(self.sfc_plugin.driver_manager.drivers.keys()))
         LOG.warning("FLCDs used in this test: %s",
-                    self.flowc_plugin.driver_manager.drivers.keys())
+                    list(self.flowc_plugin.driver_manager.drivers.keys()))
         # Always reset configuration to dummy driver. Any
         # test which requires to configure a different
         # policy driver would have done so in it's setup
@@ -387,7 +388,8 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                 if hcheck_type:
                     dst['redirect_health_group_dn'] = srgh_dn_by_pp[pp['id']]
                 observed_destinations.append(dst)
-            self.assertEqual(sorted(observed_destinations), pbr.destinations)
+            self.assertTrue(g_utils.is_equal(observed_destinations,
+                                             pbr.destinations))
 
     def _verify_pc_mapping(self, pc, multiple=False):
         ctx = self._aim_context
@@ -539,10 +541,11 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                 self.assertEqual(dci.dn, dcic.device_cluster_interface_dn)
                 self.assertNotEqual('', dcic.service_redirect_policy_dn)
             self.assertEqual(
-                sorted({'name': x.name, 'device_cluster_name': x.name,
-                        'device_cluster_tenant_name': x.tenant_name}
-                       for x in device_clusters),
-                sorted(sg.linear_chain_nodes))
+                g_utils.deep_sort(
+                    list({'name': x.name, 'device_cluster_name': x.name,
+                    'device_cluster_tenant_name': x.tenant_name}
+                    for x in device_clusters)),
+                g_utils.deep_sort(sg.linear_chain_nodes))
 
     def _verify_pc_delete(self, pc):
         ctx = self._aim_context
@@ -736,12 +739,12 @@ class TestPortPairOpflexAgent(TestAIMServiceFunctionChainingBase):
         # Correct work flow with both nets of type vlan.
         kwargs = {'provider:network_type': 'vlan'}
         net1 = self._make_network(self.fmt, 'net1', True,
-            arg_list=tuple(kwargs.keys()), **kwargs)
+            arg_list=tuple(list(kwargs.keys())), **kwargs)
         self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
         p1 = self._make_port(self.fmt, net1['network']['id'])['port']
 
         net2 = self._make_network(self.fmt, 'net2', True,
-            arg_list=tuple(kwargs.keys()), **kwargs)
+            arg_list=tuple(list(kwargs.keys())), **kwargs)
         self._make_subnet(self.fmt, net2, '192.168.1.1', '192.168.1.0/24')
         p2 = self._make_port(self.fmt, net2['network']['id'])['port']
         self._register_agent('h1', AGENT_CONF_OPFLEX)
@@ -756,7 +759,7 @@ class TestPortPairOpflexAgent(TestAIMServiceFunctionChainingBase):
         # Validate that opflex type nets are invalid.
         kwargs = {'provider:network_type': 'vlan'}
         net1 = self._make_network(self.fmt, 'net1', True,
-            arg_list=tuple(kwargs.keys()), **kwargs)
+            arg_list=tuple(list(kwargs.keys())), **kwargs)
         self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
         p1 = self._make_port(self.fmt, net1['network']['id'])['port']
 

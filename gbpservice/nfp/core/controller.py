@@ -441,7 +441,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
     def report_state(self):
         """Invoked by report_task to report states of all agents. """
-        for value in self._rpc_agents.itervalues():
+        for value in self._rpc_agents.values():
             for agent in value['agents']:
                 agent.report_state()
 

@@ -802,7 +802,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
             display_name=graph.display_name)
 
     def _generate_contract_name(self, prov_name, graph_name):
-        return hashlib.sha256(prov_name + graph_name).hexdigest()
+        return hashlib.sha256(
+            prov_name.encode('utf-8') + graph_name.encode('utf-8')).hexdigest()
 
     def _get_ppg_service_redirect_policy(self, session, ppg, direction,
                                          tenant):
@@ -941,7 +942,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
                 self.name_mapper.reverse_port(context.session, cdi.name),
                 []).append(cdi)
         ports = self.plugin.get_ports(context,
-                                      filters={'id': cdi_by_port.keys()})
+                                      filters={'id': list(cdi_by_port.keys())})
         networks_map = {x[0]['id']: x[1] for x in networks_map}
 
         for port in ports:

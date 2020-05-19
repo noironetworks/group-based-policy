@@ -307,7 +307,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                                 es_cidr=cidr)
             es_list_all = self.get_external_segments(
                 context.elevated(),
-                filters={'id': current['external_segments'].keys()})
+                filters={'id': list(current['external_segments'].keys())})
             self._validate_identical_external_routes(es_list_all)
 
     def _validate_identical_external_routes(self, es_list):

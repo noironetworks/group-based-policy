@@ -1947,7 +1947,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             router_vrf = (
                 self._map_default_vrf(
                     session,
-                    router_shared_net or router_topology.itervalues().next())
+                    router_shared_net or next(iter(router_topology.values())))
                 if router_topology else None)
 
             # Choose VRF and move one topology if necessary.
@@ -2193,7 +2193,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 router_shared_net = self._topology_shared(router_topology)
                 router_vrf = self._map_default_vrf(
                     session,
-                    router_shared_net or router_topology.itervalues().next())
+                    router_shared_net or next(iter(router_topology.values())))
                 if old_vrf.identity != router_vrf.identity:
                     router_vrf = self._ensure_default_vrf(aim_ctx, router_vrf)
                     self._move_topology(
@@ -3376,7 +3376,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             vrf = self._get_network_vrf(network_db.aim_mapping)
             vrfs[tuple(vrf.identity)] = vrf
 
-        return vrfs.values()
+        return list(vrfs.values())
 
     # Used by policy driver.
     def _get_address_scope_ids_for_vrf(self, session, vrf):
@@ -3607,14 +3607,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                        nets_to_notify):
         LOG.info("Moving routed networks %(topology)s from VRF "
                  "%(old_vrf)s to VRF %(new_vrf)s",
-                 {'topology': topology.keys(),
+                 {'topology': list(topology.keys()),
                   'old_vrf': old_vrf,
                   'new_vrf': new_vrf})
 
         # TODO(rkukura): Validate that nothing in new_vrf overlaps
         # with topology.
 
-        for network_db in topology.itervalues():
+        for network_db in topology.values():
             if old_vrf.tenant_name != new_vrf.tenant_name:
                 # New VRF is in different Tenant, so move BD, EPG, and
                 # all Subnets to new VRF's Tenant and set BD's VRF.
@@ -3681,7 +3681,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # All non-router ports on all networks in topology need to be
         # notified since their BDs' VRFs and possibly their BDs' and
         # EPGs' Tenants have changed.
-        nets_to_notify.update(topology.keys())
+        nets_to_notify.update(list(topology.keys()))
 
         self._add_postcommit_vrf_notification(ctx, old_vrf)
         self._add_postcommit_vrf_notification(ctx, new_vrf)
@@ -3738,7 +3738,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             query += lambda q: q.distinct()
             results = query(session).params(
                 added_ids=list(added_ids),
-                visited_networks=visited_networks.keys()).all()
+                visited_networks=list(visited_networks.keys())).all()
 
             self._expand_topology_for_networks(
                 session, visited_networks, visited_router_ids,

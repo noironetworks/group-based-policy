@@ -47,8 +47,8 @@ EXT_GW_ATTRIBUTES = {
 }
 
 EXTENDED_ATTRIBUTES_2_0 = {
-    l3.ROUTERS: dict(cisco_apic.APIC_ATTRIBUTES.items() +
-                     EXT_GW_ATTRIBUTES.items())
+    l3.ROUTERS: dict(list(cisco_apic.APIC_ATTRIBUTES.items()) +
+                     list(EXT_GW_ATTRIBUTES.items()))
 }
 
 # Pass this key with the value True in the interface_info parameter to
