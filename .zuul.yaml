@@ -16,6 +16,7 @@
             voting: false
         - legacy-group-based-policy-dsvm-aim:
             nodeset: ubuntu-xenial
+            voting: true
         - legacy-group-based-policy-dsvm-nfp:
             nodeset: ubuntu-xenial
             voting: false
