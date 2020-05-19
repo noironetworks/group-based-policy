@@ -14,9 +14,9 @@
 #    under the License.
 
 import abc
-import six
 
 from neutron_lib.plugins.ml2 import api as driver_api
+import six
 
 BULK_EXTENDED = 'ml2plus:_bulk_extended'
 

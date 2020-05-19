@@ -202,6 +202,7 @@ class NfpGBPContextManager(ContextManager):
 
         return True
 
+
 # Create the respective instances once, so that no need
 # to instantiate them again any where
 

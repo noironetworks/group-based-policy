@@ -17,12 +17,8 @@ from collections import defaultdict
 from collections import namedtuple
 import copy
 from datetime import datetime
-import netaddr
 import os
 import re
-import sqlalchemy as sa
-from sqlalchemy.ext import baked
-from sqlalchemy import orm
 
 from aim.aim_lib.db import model as aim_lib_model
 from aim.aim_lib import nat_strategy
@@ -33,6 +29,7 @@ from aim.common import utils
 from aim import context as aim_context
 from aim import exceptions as aim_exceptions
 from aim import utils as aim_utils
+import netaddr
 from neutron.agent import securitygroups_rpc
 from neutron.common import rpc as n_rpc
 from neutron.common import utils as n_utils
@@ -75,6 +72,9 @@ from oslo_log import log
 import oslo_messaging
 from oslo_service import loopingcall
 from oslo_utils import importutils
+import sqlalchemy as sa
+from sqlalchemy.ext import baked
+from sqlalchemy import orm
 
 from gbpservice.common import utils as gbp_utils
 from gbpservice.neutron.db import api as db_api
@@ -102,7 +102,7 @@ from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import config as
 LOG = log.getLogger(__name__)
 
 BAKERY = baked.bakery(500, _size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+    "sqlalchemy baked query cache size exceeded in %s", __name__))
 
 ANY_FILTER_NAME = 'AnyFilter'
 ANY_FILTER_ENTRY_NAME = 'AnyFilterEntry'
@@ -848,14 +848,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             epg = self.aim.get(aim_ctx, self._get_network_epg(mapping))
 
             if added_prov or removed_prov:
-                contracts = ((set(epg.provided_contract_names) | added_prov)
-                             - removed_prov)
+                contracts = ((set(epg.provided_contract_names) | added_prov) -
+                             removed_prov)
                 self.aim.update(
                     aim_ctx, epg, provided_contract_names=contracts)
 
             if added_cons or removed_cons:
-                contracts = ((set(epg.consumed_contract_names) | added_cons)
-                             - removed_cons)
+                contracts = ((set(epg.consumed_contract_names) | added_cons) -
+                             removed_cons)
                 self.aim.update(
                     aim_ctx, epg, consumed_contract_names=contracts)
 
@@ -956,10 +956,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 aim_resource.L3OutInterfaceBgpPeerP(
                                     tenant_name=l3out_if.tenant_name,
                                     l3out_name=l3out_if.l3out_name,
-                                    node_profile_name=
-                                    l3out_if.node_profile_name,
-                                    interface_profile_name=
-                                    l3out_if.interface_profile_name,
+                                    node_profile_name=(
+                                        l3out_if.node_profile_name),
+                                    interface_profile_name=(
+                                        l3out_if.interface_profile_name),
                                     interface_path=l3out_if.interface_path,
                                     addr=subnet,
                                     asn=asn))
@@ -1220,9 +1220,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # REVISIT: We may need to handle VRF notifications for
             #          external networks as well.
             vrf = self._get_network_vrf(network_db.aim_mapping)
-            if (vrf and (self._is_unrouted_vrf(vrf) or
-                         self._is_default_vrf(vrf))
-                    and not network_db.external):
+            if (vrf and
+                (self._is_unrouted_vrf(vrf) or self._is_default_vrf(vrf)) and
+                not network_db.external):
                 self._add_postcommit_vrf_notification(
                     context._plugin_context, vrf)
 
@@ -1331,9 +1331,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # REVISIT: We may need to handle VRF notifications for
             #          external networks as well.
             vrf = self._get_network_vrf(network_db.aim_mapping)
-            if (vrf and (self._is_unrouted_vrf(vrf) or
-                         self._is_default_vrf(vrf))
-                    and not network_db.external):
+            if (vrf and
+                (self._is_unrouted_vrf(vrf) or self._is_default_vrf(vrf)) and
+                not network_db.external):
                 self._add_postcommit_vrf_notification(
                     context._plugin_context, vrf)
 
@@ -2706,12 +2706,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._send_postcommit_notifications(context._plugin_context)
 
     def _is_port_router_gateway(self, port):
-        return (port['device_owner'] == n_constants.DEVICE_OWNER_ROUTER_GW
-                and port['device_id'])
+        return (
+            port['device_owner'] == n_constants.DEVICE_OWNER_ROUTER_GW and
+            port['device_id'])
 
     def _is_port_router_interface(self, port):
-        return (port['device_owner'] == n_constants.DEVICE_OWNER_ROUTER_INTF
-                and port['device_id'])
+        return (
+            port['device_owner'] == n_constants.DEVICE_OWNER_ROUTER_INTF and
+            port['device_id'])
 
     def _process_router_interface_port(self, context, new_ips, old_ips):
         router_id = context.current['device_id']
@@ -2858,7 +2860,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             name=sg_rule['id'],
             direction=sg_rule['direction'],
             ethertype=sg_rule['ethertype'].lower(),
-            ip_protocol= self.get_aim_protocol(sg_rule['protocol']),
+            ip_protocol=self.get_aim_protocol(sg_rule['protocol']),
             remote_ips=remote_ips,
             icmp_code=(sg_rule['port_range_min']
                        if (sg_rule['port_range_min'] and
@@ -2973,9 +2975,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             events.PRECOMMIT_UPDATE, self, context=context,
                             networks_map=nets_segs, host_links=hlinks,
                             host=host)
-        for net, seg in nets_segs:
-            self._rebuild_host_path_for_network(context, net, seg, host,
-                                                hlinks)
+        for network, segment in nets_segs:
+            self._rebuild_host_path_for_network(
+                context, network, segment, host, hlinks)
 
     def _agent_bind_port(self, context, agent_type, bind_strategy):
         current = context.current
@@ -4350,7 +4352,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                          snat_subnet['id'])
 
         # Failed to allocate SNAT port.
-        LOG.warning("Failed to allocate SNAT IP on external network %s" %
+        LOG.warning("Failed to allocate SNAT IP on external network %s",
                     ext_network['id'])
 
     def _has_snat_ip_ports(self, plugin_context, subnet_id):
@@ -4750,8 +4752,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             network_db = self.plugin._get_network(plugin_context,
                                                   network['id'])
             if (network_db.aim_extension_mapping.bgp_enable and
-                    network_db.aim_extension_mapping.bgp_type
-                    == 'default_export'):
+                network_db.aim_extension_mapping.bgp_type ==
+                'default_export'):
                 aim_bgp_peer_prefix = aim_resource.L3OutInterfaceBgpPeerP(
                     tenant_name=l3out.tenant_name,
                     l3out_name=l3out.name,
@@ -6410,7 +6412,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         name=rule_db.id,
                         direction=rule_db.direction,
                         ethertype=rule_db.ethertype.lower(),
-                        ip_protocol = self.get_aim_protocol(rule_db.protocol),
+                        ip_protocol=self.get_aim_protocol(rule_db.protocol),
                         remote_ips=remote_ips,
                         from_port=(rule_db.port_range_min
                                    if rule_db.port_range_min

@@ -10,13 +10,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import zlib
+
 from oslo_log import log as logging
 import oslo_serialization.jsonutils as jsonutils
 
 from pecan.hooks import HookController
 from pecan.hooks import PecanHook
 from pecan import rest
-import zlib
 
 LOG = logging.getLogger(__name__)
 

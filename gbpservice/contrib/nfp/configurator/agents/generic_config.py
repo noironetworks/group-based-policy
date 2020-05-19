@@ -12,6 +12,7 @@
 
 import copy
 import os
+
 import six
 
 from gbpservice.contrib.nfp.configurator.agents import agent_base
@@ -132,7 +133,8 @@ class GenericConfigRpcManager(agent_base.AgentBaseRPCManager):
                          gen_cfg_const.EVENT_CLEAR_ROUTES)
 
     def configure_healthmonitor(self, context, resource_data):
-        """Enqueues event for worker to process configure healthmonitor request.
+        """Enqueues event for worker to process configure healthmonitor
+        request.
 
         :param context: The agent info dictionary prepared in demuxer library
          which contains the API context alongside other information.

@@ -217,5 +217,6 @@ class test_gbp_pr_neg(object):
         self._log.info("\n## TESTCASE_GBP_PR_NEG_4: PASSED")
         return 1
 
+
 if __name__ == '__main__':
     main()

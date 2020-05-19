@@ -363,10 +363,10 @@ def get_create_servicechain_node_attrs():
 
 @gbp_attributes
 def get_update_servicechain_node_attrs():
-        return {
-            'name': 'new_name',
-            'config': 'new_config',
-        }
+    return {
+        'name': 'new_name',
+        'config': 'new_config',
+    }
 
 
 @gbp_attributes

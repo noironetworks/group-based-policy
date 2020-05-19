@@ -12,9 +12,12 @@
 
 
 import copy
+import time
+
+from oslo_concurrency import lockutils
+from oslo_serialization import jsonutils
 import requests
 import six
-import time
 
 
 from gbpservice.contrib.nfp.configurator.drivers.base import base_driver
@@ -26,9 +29,6 @@ from gbpservice.contrib.nfp.configurator.lib import constants as common_const
 from gbpservice.contrib.nfp.configurator.lib import data_parser
 from gbpservice.contrib.nfp.configurator.lib import vpn_constants as vpn_const
 from gbpservice.nfp.core import log as nfp_logging
-
-from oslo_concurrency import lockutils
-from oslo_serialization import jsonutils
 
 LOG = nfp_logging.getLogger(__name__)
 

@@ -14,7 +14,7 @@
 #    under the License.
 
 # REVISIT: Eliminate this module as soon as definitions from
-# neutron.db.api, which is eliminated in stein, are not longer
+# neutron.db.api, which is eliminated in stein, are no longer
 # needed. Please DO NOT add any definition to this module that is not
 # a direct alias of a definion in the version of neutron_lib.db.api
 # corresponding to the newest neutron branch supported by this

@@ -123,8 +123,8 @@ class ProjectDetailsCache(object):
                     prj_details[1] != project.description):
                     self.project_details[project_id] = (
                         project.name, project.description)
-                    LOG.debug("Project updated %s " % (
-                        str(self.project_details[project_id])))
+                    LOG.debug("Project updated %s ",
+                              str(self.project_details[project_id]))
                     return self.project_details[project_id]
         return None
 

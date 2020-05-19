@@ -43,6 +43,7 @@ class ControllerResolver(object):
     network_function_event = controller.Controller("network_function_event")
     get_requests = controller.Controller("get_requests")
 
+
 """ This class forwards HTTP requests starting with /v1/nfp.
 
 All HTTP requests with path starting from /v1

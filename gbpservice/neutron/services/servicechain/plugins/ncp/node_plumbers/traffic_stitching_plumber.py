@@ -18,9 +18,9 @@ from oslo_log import log as logging
 from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
 from gbpservice.neutron.extensions import group_policy
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
+from gbpservice.neutron.services.servicechain.plugins.ncp.node_plumbers \
+    import common
 from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base
-from gbpservice.neutron.services.servicechain.plugins.ncp.node_plumbers import(
-    common as common)
 
 LOG = logging.getLogger(__name__)
 TSCP_RESOURCE_PREFIX = 'tscp_'

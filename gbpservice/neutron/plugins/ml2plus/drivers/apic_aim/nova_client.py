@@ -11,6 +11,7 @@
 #    under the License.
 
 import datetime
+
 from neutron.notifiers import nova as n_nova
 from novaclient import exceptions as nova_exceptions
 from oslo_log import log as logging

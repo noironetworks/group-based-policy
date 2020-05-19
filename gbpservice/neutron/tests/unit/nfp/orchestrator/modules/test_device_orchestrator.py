@@ -12,16 +12,16 @@
 # limitations under the License.
 
 import copy
-from gbpservice.nfp.orchestrator.db import nfp_db as nfpdb
+import uuid as pyuuid
 
-
-from gbpservice.nfp.lib import transport
 import mock
 from mock import patch
 from oslo_config import cfg
 import unittest2
 
-import uuid as pyuuid
+from gbpservice.nfp.lib import transport
+from gbpservice.nfp.orchestrator.db import nfp_db as nfpdb
+
 
 dummy_data = {}
 
@@ -788,6 +788,7 @@ class DeviceOrchestratorTestCase(unittest2.TestCase):
 
 def main():
     unittest2.main()
+
 
 if __name__ == '__main__':
     main()

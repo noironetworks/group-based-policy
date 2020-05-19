@@ -10,14 +10,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import oslo_serialization.jsonutils as jsonutils
-
-from oslo_log import log as logging
-import pecan
-import requests
 import subprocess
 from subprocess import CalledProcessError
 import time
+
+from oslo_log import log as logging
+import oslo_serialization.jsonutils as jsonutils
+import pecan
+import requests
 
 from gbpservice._i18n import _
 from gbpservice.nfp.pecan import base_controller
@@ -77,7 +77,7 @@ class Controller(base_controller.BaseController):
         reachable = False
         command = 'nc ' + vm_ip + ' ' + vm_port + ' -z'
         ping_command = 'ping -c1 ' + vm_ip
-        for _ in range(self.max_retries):
+        for x in range(self.max_retries):
             try:
                 subprocess.check_output(ping_command, stderr=subprocess.STDOUT,
                                         shell=True)

@@ -10,16 +10,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import netaddr
-import netifaces
-import pecan
-from pecan import rest
 import subprocess
 import time
-import yaml
 
+import netaddr
+import netifaces
 from oslo_log import log as logging
 import oslo_serialization.jsonutils as jsonutils
+import pecan
+from pecan import rest
+import yaml
 
 LOG = logging.getLogger(__name__)
 SUCCESS = 'SUCCESS'

@@ -18,6 +18,7 @@ def build_option_parser(parser):
     """Hook to add global options"""
     return parser
 
+
 try:
     from networking_sfc.cli import port_pair_group
     from networking_sfc.osc.sfc import port_pair_group as osc_ppg

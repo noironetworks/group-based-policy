@@ -15,7 +15,6 @@
 
 import ast
 import functools
-import six
 
 from neutron_lib.api import converters as conv
 from neutron_lib.api.definitions import address_scope as as_def
@@ -24,6 +23,7 @@ from neutron_lib.api.definitions import subnet as subnet_def
 from neutron_lib.api import extensions
 from neutron_lib.api import validators as valid
 from oslo_log import log as logging
+import six
 
 ALIAS = 'cisco-apic'
 

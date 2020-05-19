@@ -15,10 +15,8 @@
 
 from collections import defaultdict
 from collections import namedtuple
-import netaddr
-import sqlalchemy as sa
-from sqlalchemy.ext import baked
 
+import netaddr
 from neutron.common import rpc as n_rpc
 from neutron.db.extra_dhcp_opt import models as dhcp_models
 from neutron.db.models import allowed_address_pair as aap_models
@@ -38,6 +36,8 @@ from opflexagent import rpc as o_rpc
 from oslo_log import log
 import oslo_messaging
 from oslo_serialization import jsonutils
+import sqlalchemy as sa
+from sqlalchemy.ext import baked
 
 from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import constants
@@ -47,7 +47,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 LOG = log.getLogger(__name__)
 
 BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+    "sqlalchemy baked query cache size exceeded in %s", __name__))
 
 EndpointPortInfo = namedtuple(
     'EndpointPortInfo',

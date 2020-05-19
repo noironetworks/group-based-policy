@@ -11,10 +11,10 @@
 #    under the License.
 
 from collections import namedtuple
-import sqlalchemy as sa
-from sqlalchemy.ext import baked
 
 from oslo_log import log
+import sqlalchemy as sa
+from sqlalchemy.ext import baked
 
 from gbpservice.neutron.db.grouppolicy.extensions import (
     apic_auto_ptg_db as auto_ptg_db)
@@ -28,7 +28,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
 LOG = log.getLogger(__name__)
 
 BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+    "sqlalchemy baked query cache size exceeded in %s", __name__))
 
 EndpointPtInfo = namedtuple(
     'EndpointPtInfo',

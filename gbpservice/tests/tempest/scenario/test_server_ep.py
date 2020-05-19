@@ -11,8 +11,9 @@
 #  under the License.
 
 import collections
-from oslo_log import log as logging
 import subprocess
+
+from oslo_log import log as logging
 from tempest.common.utils import data_utils
 from tempest import config
 from tempest.scenario import manager
@@ -93,7 +94,7 @@ class TestServerEp(manager.NetworkScenarioTest):
                 LOG.debug("Waiting for Server to get Active")
                 retry -= 1
                 if retry is 0:
-                    LOG.error("Error - %s" % (output,))
+                    LOG.error("Error - %s", (output,))
                     break
 
         LOG.debug("Closing Subprocess")
@@ -103,13 +104,13 @@ class TestServerEp(manager.NetworkScenarioTest):
     def _delete_security_group_rule(self, servers):
         for server in servers:
             sg = server['security_groups']
-            LOG.debug("Security group is %s " % (sg,))
+            LOG.debug("Security group is %s ", (sg,))
             rule_list_body = (
                 self.security_group_rules_client.list_security_group_rules())
             for rule in rule_list_body['security_group_rules']:
                 if ("icmp" == rule["protocol"] and
                         rule["direction"] == "ingress"):
-                    LOG.debug("The rule is %s " % (rule,))
+                    LOG.debug("The rule is %s ", (rule,))
                     (self.security_group_rules_client.
                      delete_security_group_rule(rule["id"]))
 

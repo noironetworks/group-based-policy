@@ -12,7 +12,9 @@
 
 import operator
 import os
+
 import oslo_messaging as messaging
+from oslo_serialization import jsonutils
 import requests
 import six
 
@@ -23,8 +25,6 @@ from gbpservice.contrib.nfp.configurator.lib import utils as load_driver
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
-
-from oslo_serialization import jsonutils
 
 LOG = nfp_logging.getLogger(__name__)
 

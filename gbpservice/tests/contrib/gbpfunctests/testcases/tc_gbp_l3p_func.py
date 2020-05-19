@@ -457,5 +457,6 @@ class test_gbp_l3p_func(object):
         self._log.info("\n## TESTCASE_GBP_L3P_FUNC_4: PASSED")
         return 1
 
+
 if __name__ == '__main__':
     main()

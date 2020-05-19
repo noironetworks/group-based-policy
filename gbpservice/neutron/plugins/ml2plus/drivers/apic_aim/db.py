@@ -31,7 +31,7 @@ VM_UPDATE_PURPOSE = 'VmUpdate'
 LOG = log.getLogger(__name__)
 
 BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+    "sqlalchemy baked query cache size exceeded in %s", __name__))
 
 
 class AddressScopeMapping(model_base.BASEV2):

@@ -99,5 +99,6 @@ def main():
     test = ConfigureIPtables(json_blob)
     test.update_chain()
 
+
 if __name__ == "__main__":
     main()

@@ -29,7 +29,7 @@ from gbpservice.neutron.extensions import cisco_apic_l3
 LOG = log.getLogger(__name__)
 
 BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+    "sqlalchemy baked query cache size exceeded in %s", __name__))
 
 
 class NetworkExtensionDb(model_base.BASEV2):

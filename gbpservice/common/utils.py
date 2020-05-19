@@ -10,9 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from collections import OrderedDict
 import sys
 
-from collections import OrderedDict
 from neutron_lib import context as n_context
 from oslo_config import cfg
 from oslo_log import log as logging

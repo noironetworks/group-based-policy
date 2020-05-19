@@ -79,11 +79,10 @@ def _get_ptg_or_ep(context, group_id):
               'subnets', 'tenant_id']
     if group_id:
         groups = get_gbp_plugin().get_policy_target_groups(
-                                    context, filters = {'id': [group_id]},
-                                    fields = fields)
+            context, filters={'id': [group_id]}, fields=fields)
         if not groups:
             groups = get_gbp_plugin().get_external_policies(
-                                    context, filters = {'id': [group_id]})
+                context, filters={'id': [group_id]})
             if groups:
                 is_group_external = True
         if groups:

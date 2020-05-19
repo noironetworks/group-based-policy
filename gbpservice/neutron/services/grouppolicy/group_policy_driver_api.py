@@ -76,7 +76,8 @@ class PolicyTargetContext(object):
 
 @six.add_metaclass(abc.ABCMeta)
 class PolicyTargetGroupContext(object):
-    """Context passed to policy engine for policy_target_group resource changes.
+    """
+    Context passed to policy engine for policy_target_group resource changes.
 
     PolicyTargetContext instance wraps a policy_target_group resource. It
     provides helper methods for accessing other relevant information. Results
@@ -228,7 +229,6 @@ class L2PolicyContext(object):
 
 @six.add_metaclass(abc.ABCMeta)
 class L3PolicyContext(object):
-
     """Context passed to policy engine for l3_policy resource changes.
 
     A L3PolicyContext instance wraps an l3_policy resource.
@@ -409,7 +409,8 @@ class PolicyRuleContext(object):
 
 @six.add_metaclass(abc.ABCMeta)
 class PolicyRuleSetContext(object):
-    """Context passed to policy engine for changes to policy_rule_set resources.
+    """
+    Context passed to policy engine for changes to policy_rule_set resources.
 
     PolicyRuleSetContext instance wraps a policy_rule_set resource. It
     provides helper methods for accessing other relevant information. Results
@@ -438,7 +439,6 @@ class PolicyRuleSetContext(object):
 
 @six.add_metaclass(abc.ABCMeta)
 class ExternalSegmentContext(object):
-
     """Context passed to policy engine for external_segment resource.
 
     A ExternalSegmentContext instance wraps an external_segment
@@ -481,7 +481,6 @@ class ExternalSegmentContext(object):
 
 @six.add_metaclass(abc.ABCMeta)
 class ExternalPolicyContext(object):
-
     """Context passed to policy engine for external_policy resource.
 
     A ExternalPolicyContext instance wraps an external_policy
@@ -521,7 +520,6 @@ class ExternalPolicyContext(object):
 
 @six.add_metaclass(abc.ABCMeta)
 class NatPoolContext(object):
-
     """Context passed to policy engine for nat_pool resource.
 
     A NatPoolContext instance wraps an nat_pool

@@ -13,10 +13,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import weakref
+
 from neutron_lib.db import utils as db_utils
 from oslo_db.sqlalchemy import utils as sa_utils
 import six
-import weakref
 
 
 # TODO(ashu): Below class need to extend neutron's CommonDbMixin.

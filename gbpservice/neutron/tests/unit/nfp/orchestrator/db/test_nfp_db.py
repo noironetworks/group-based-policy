@@ -12,18 +12,19 @@
 # limitations under the License.
 
 import copy
+import uuid
+
 import fixtures
 import mock
 from neutron.tests import base
 from neutron_lib import context
+from sqlalchemy.orm import exc
 
 from gbpservice.neutron.db import api as db_api
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.orchestrator.db import nfp_db
 from gbpservice.nfp.orchestrator.db import nfp_db_model
-from sqlalchemy.orm import exc
-import uuid
 
 
 class SqlFixture(fixtures.Fixture):

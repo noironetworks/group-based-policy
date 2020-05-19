@@ -10,11 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import netaddr
 import operator
 
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
+import netaddr
 from neutron.common import exceptions as neutron_exc
 from neutron.db import models_v2
 from neutron.extensions import securitygroup as ext_sg

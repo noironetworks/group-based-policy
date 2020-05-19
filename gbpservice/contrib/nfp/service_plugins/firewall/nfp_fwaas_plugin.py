@@ -46,7 +46,6 @@ class NFPFirewallPlugin(ref_fw_plugin.FirewallPlugin):
         # L3 agent was where reference firewall agent runs
         # patch that topic to the NFP firewall agent's topic name
         ref_fw_plugin.f_const.L3_AGENT = topics.FW_NFP_CONFIGAGENT_TOPIC
-        #n_topics.L3_AGENT = topics.FW_NFP_CONFIGAGENT_TOPIC
 
         # Ensure neutron fwaas extensions are loaded
         ext_path = neutron_fwaas.extensions.__path__[0]
@@ -114,6 +113,7 @@ def create_firewall(self, context, firewall, status=None):
                 status=status)
         context.session.add(firewall_db)
     return self._make_firewall_dict(firewall_db)
+
 
 n_firewall.Firewall_db_mixin.create_firewall = create_firewall
 

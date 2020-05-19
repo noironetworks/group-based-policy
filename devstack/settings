@@ -19,16 +19,16 @@ ConfiguratorQcow2Image=${ConfiguratorQcow2Image:-build}
 _neutron_service_plugin_class_add "group_policy,ncp"
 
 # Preferred git mirror
-GIT_BASE=${GIT_BASE:-https://git.openstack.org}
+GIT_BASE=${GIT_BASE:-https://opendev.org}
 
 # Git repositories needed to deploy GBP:
-GBPSERVICE_REPO=${GBPSERVICE_REPO:-${GIT_BASE}/openstack/group-based-policy.git}
+GBPSERVICE_REPO=${GBPSERVICE_REPO:-${GIT_BASE}/x/group-based-policy.git}
 GBPSERVICE_BRANCH=${GBPSERVICE_BRANCH:-master}
-GBPCLIENT_REPO=${GBPCLIENT_REPO:-${GIT_BASE}/openstack/python-group-based-policy-client.git}
+GBPCLIENT_REPO=${GBPCLIENT_REPO:-${GIT_BASE}/x/python-group-based-policy-client.git}
 GBPCLIENT_BRANCH=${GBPCLIENT_BRANCH:-master}
-GBPUI_REPO=${GBPUI_REPO:-${GIT_BASE}/openstack/group-based-policy-ui.git}
+GBPUI_REPO=${GBPUI_REPO:-${GIT_BASE}/x/group-based-policy-ui.git}
 GBPUI_BRANCH=${GBPUI_BRANCH:-master}
-GBPHEAT_REPO=${GBPHEAT_REPO:-${GIT_BASE}/openstack/group-based-policy-automation.git}
+GBPHEAT_REPO=${GBPHEAT_REPO:-${GIT_BASE}/x/group-based-policy-automation.git}
 GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-master}
 AIM_BRANCH=${AIM_BRANCH:-master}
 OPFLEX_BRANCH=${OPFLEX_BRANCH:-master}

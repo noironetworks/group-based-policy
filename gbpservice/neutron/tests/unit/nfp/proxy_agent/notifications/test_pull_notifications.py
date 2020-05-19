@@ -32,6 +32,7 @@ class TestContext(object):
                     tenant_id='admin', is_advsvc=True, is_admin=True)
         return context.to_dict()
 
+
 """Common class for pull notification tests"""
 
 

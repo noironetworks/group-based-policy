@@ -11,9 +11,9 @@
 #    under the License.
 
 import abc
-import six
 
 from oslo_log import log as logging
+import six
 
 from gbpservice.neutron.extensions import group_policy
 from gbpservice.neutron.services.servicechain.plugins.ncp import exceptions

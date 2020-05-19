@@ -10,8 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-from oslo_log import log as logging
 import re
+
+from oslo_log import log as logging
 
 from gbpservice._i18n import _
 from gbpservice.neutron.db.grouppolicy.extensions import (
@@ -59,7 +60,7 @@ class ApicAllowedVMNameExtensionDriver(api.ExtensionDriver,
 
     def process_update_l3_policy(self, session, data, result):
         l3p = data['l3_policy']
-        if not 'allowed_vm_names' in l3p:
+        if 'allowed_vm_names' not in l3p:
             return
         rows = self.get_l3_policy_allowed_vm_names(
             session, l3_policy_id=result['id'])

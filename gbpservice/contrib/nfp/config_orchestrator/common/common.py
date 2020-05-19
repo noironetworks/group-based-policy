@@ -90,18 +90,9 @@ def _filter_data(routers, networks, filters):
 
 
 def get_core_context(context, filters, config):
-    #routers = get_routers(context, config.host)
     routers = []
     networks = get_networks(context, config)
     return _filter_data(routers, networks, filters)
-
-
-def get_routers(context, host):
-    target = messaging.Target(topic=n_topics.L3PLUGIN, version='1.0')
-    client = n_rpc.get_client(target)
-    cctxt = client.prepare()
-    return cctxt.call(context, 'sync_routers', host=host,
-                      router_ids=None)
 
 
 def get_dhcp_agent_host(config):

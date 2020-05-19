@@ -18,7 +18,7 @@ from sqlalchemy.ext import baked
 LOG = log.getLogger(__name__)
 
 BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
-    "sqlalchemy baked query cache size exceeded in %s" % __name__))
+    "sqlalchemy baked query cache size exceeded in %s", __name__))
 
 
 class ApicIntraPtgDB(model_base.BASEV2):

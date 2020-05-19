@@ -3,28 +3,43 @@
     templates:
       - openstack-python-jobs
       - publish-to-pypi
+    # REVISIT: In the jobs below, the required-projects clause is needed on
+    # the master branch to select the correct version of the requirements
+    # repository. Otherwise, the master version will be used. It can be
+    # eliminated on the stable branches, and on the master branch once this
+    # repository's master branch is based on the neutron repository's master
+    # branch.
     check:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-xenial
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/queens
         - openstack-tox-py27:
-            nodeset: ubuntu-xenial
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/queens
         - openstack-tox-py35:
-            nodeset: ubuntu-xenial
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/queens
         - legacy-group-based-policy-dsvm-functional:
-            nodeset: ubuntu-xenial
             voting: false
         - legacy-group-based-policy-dsvm-aim:
-            nodeset: ubuntu-xenial
             voting: true
         - legacy-group-based-policy-dsvm-nfp:
-            nodeset: ubuntu-xenial
             voting: false
     gate:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-xenial
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/queens
         - openstack-tox-py27:
-            nodeset: ubuntu-xenial
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/queens
         - openstack-tox-py35:
-            nodeset: ubuntu-xenial
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/queens

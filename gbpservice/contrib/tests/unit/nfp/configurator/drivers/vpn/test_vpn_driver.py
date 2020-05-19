@@ -10,10 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import requests
-
 import json
+
 import mock
+from neutron.tests import base
+from oslo_serialization import jsonutils
+import requests
 import six
 
 from gbpservice.contrib.nfp.configurator.agents import vpn
@@ -22,10 +24,6 @@ from gbpservice.contrib.nfp.configurator.drivers.vpn.vyos import (
     vyos_vpn_driver)
 from gbpservice.contrib.tests.unit.nfp.configurator.test_data import (
     vpn_test_data)
-
-from neutron.tests import base
-
-from oslo_serialization import jsonutils
 
 
 bdobj = base_driver.BaseDriver('conf')

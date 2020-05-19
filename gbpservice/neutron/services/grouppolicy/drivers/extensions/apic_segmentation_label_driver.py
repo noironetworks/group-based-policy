@@ -47,7 +47,7 @@ class ApicSegmentationLabelExtensionDriver(api.ExtensionDriver,
 
     def process_update_policy_target(self, session, data, result):
         pt = data['policy_target']
-        if not 'segmentation_labels' in pt:
+        if 'segmentation_labels' not in pt:
             self.extend_policy_target_dict(session, result)
             return
         rows = self.get_policy_target_segmentation_labels(

@@ -10,11 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import collections
+
+import six
 
 from gbpservice.nfp.core import log as nfp_logging
-
-import collections
-import six
 
 deque = collections.deque
 
@@ -57,6 +57,7 @@ class Path(object):
 
     def done(self):
         self._waitq.clear()
+
 
 # {'key': {'current':Path, 'waiting':Path}
 paths = {}
@@ -133,8 +134,8 @@ def path_complete(path_type, key):
 
 
 def create_path(key):
-        # Create cannot progress if there is already a path
-        # with the same key in any state
+    # Create cannot progress if there is already a path
+    # with the same key in any state
     try:
         path = paths[key]
         assert False, "Path (%s) with key (%s) is already in progress" % (

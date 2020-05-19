@@ -11,21 +11,21 @@
 #    under the License.
 
 import ast
-import eventlet
-eventlet.monkey_patch()
-
 import collections
 import multiprocessing
 import operator
 import os
 import pickle
-import six
 import sys
 import time
 import zlib
 
+import eventlet
+eventlet.monkey_patch()
+
 from oslo_config import cfg as oslo_config
 from oslo_service import service as oslo_service
+import six
 
 from gbpservice.nfp.core import cfg as nfp_cfg
 from gbpservice.nfp.core import common as nfp_common

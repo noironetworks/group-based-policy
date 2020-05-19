@@ -11,16 +11,13 @@
 #    under the License.
 
 
+from neutron.agent import rpc as n_agent_rpc
+from neutron.common import rpc as n_rpc
+from neutron_lib import context as n_context
 from oslo_config import cfg as oslo_config
-
 from oslo_service import loopingcall as oslo_looping_call
 from oslo_service import periodic_task as oslo_periodic_task
 from oslo_service import service as oslo_service
-
-from neutron.agent import rpc as n_agent_rpc
-from neutron.common import rpc as n_rpc
-
-from neutron_lib import context as n_context
 
 from gbpservice.nfp.core import log as nfp_logging
 
@@ -148,6 +145,7 @@ class ReportState(object):
         except Exception:
             message = "Stopped reporting agent state!"
             LOG.exception(message)
+
 
 """Periodic task to report neutron *aaS agent state.
 

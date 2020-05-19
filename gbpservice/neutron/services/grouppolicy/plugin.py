@@ -642,8 +642,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
             pt_ids = policy_target_group['policy_targets']
             for pt in self.get_policy_targets(context.elevated(),
                                               {'id': pt_ids}):
-                if (pt['port_id'] and self._is_port_bound(pt['port_id'])
-                        and not (self._is_service_target(context, pt['id']))):
+                if (pt['port_id'] and self._is_port_bound(pt['port_id']) and
+                    not (self._is_service_target(context, pt['id']))):
                     raise gp_exc.PolicyTargetGroupInUse(
                         policy_target_group=policy_target_group_id)
             policy_context = p_context.PolicyTargetGroupContext(
@@ -766,8 +766,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 updated_application_policy_group, 'application_policy_group')
             policy_context = p_context.ApplicationPolicyGroupContext(
                 self, context, updated_application_policy_group,
-                original_application_policy_group=
-                original_application_policy_group)
+                original_application_policy_group=(
+                    original_application_policy_group))
             pdm.update_application_policy_group_precommit(policy_context)
 
         pdm.update_application_policy_group_postcommit(policy_context)
@@ -962,8 +962,8 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 updated_network_service_policy, 'network_service_policy')
             policy_context = p_context.NetworkServicePolicyContext(
                 self, context, updated_network_service_policy,
-                original_network_service_policy=
-                original_network_service_policy)
+                original_network_service_policy=(
+                    original_network_service_policy))
             self.policy_driver_manager.update_network_service_policy_precommit(
                 policy_context)
 

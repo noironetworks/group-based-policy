@@ -257,8 +257,8 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         return updated_sc_node
 
     @log.log_method_call
-    def get_servicechain_node(self, context, servicechain_node_id,
-                              fields = None):
+    def get_servicechain_node(
+            self, context, servicechain_node_id, fields=None):
         return self._get_resource(context, 'servicechain_node',
                                   servicechain_node_id, fields)
 
@@ -294,7 +294,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
 
     @log.log_method_call
     def get_servicechain_spec(self, context,
-                              servicechain_spec_id, fields = None):
+                              servicechain_spec_id, fields=None):
         return self._get_resource(context, 'servicechain_spec',
                                   servicechain_spec_id, fields)
 
@@ -323,7 +323,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         return updated_profile
 
     @log.log_method_call
-    def get_service_profile(self, context, service_profile_id, fields = None):
+    def get_service_profile(self, context, service_profile_id, fields=None):
         return self._get_resource(context, 'service_profile',
                                   service_profile_id, fields)
 

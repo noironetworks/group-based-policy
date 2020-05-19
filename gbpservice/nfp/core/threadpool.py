@@ -10,9 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import eventlet
 import os
 
+import eventlet
 from eventlet import greenpool
 from eventlet import greenthread
 
@@ -45,6 +45,7 @@ class Thread(object):
 
     def identify(self):
         return "(%d -> %s)" % (os.getpid(), 'Thread')
+
 
 """Abstract class to manage green threads """
 

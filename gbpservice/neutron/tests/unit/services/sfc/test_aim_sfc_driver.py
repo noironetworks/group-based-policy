@@ -1091,10 +1091,10 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
 
         res = self._delete_network(
             fc['l7_parameters']['logical_source_network'])
-        self.assertTrue(res.status_int >= 400)
+        self.assertGreaterEqual(res.status_int, 400)
         res = self._delete_network(
             fc['l7_parameters']['logical_destination_network'])
-        self.assertTrue(res.status_int >= 400)
+        self.assertGreaterEqual(res.status_int, 400)
 
     def test_vrf_update(self):
         fc = self._create_simple_flowc(src_svi=self.src_svi,

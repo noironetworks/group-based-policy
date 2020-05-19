@@ -13,8 +13,6 @@
 
 import copy
 import os
-import six
-import webob.exc
 
 import mock
 from neutron.api import extensions
@@ -28,6 +26,8 @@ from neutron_lib.plugins import constants
 from neutron_lib.plugins import directory
 from oslo_utils import importutils
 from oslo_utils import uuidutils
+import six
+import webob.exc
 
 from gbpservice.neutron.db import all_models  # noqa
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
@@ -1362,11 +1362,11 @@ class TestGroupResources(GroupPolicyDbTestCase):
             self.create_policy_classifier()['policy_classifier']['id']]
         policy_rules = sorted([
             self.create_policy_rule(
-                policy_classifier_id=
-                policy_classifiers[0])['policy_rule']['id'],
+                policy_classifier_id=policy_classifiers[0]
+            )['policy_rule']['id'],
             self.create_policy_rule(
-                policy_classifier_id=
-                policy_classifiers[1])['policy_rule']['id']])
+                policy_classifier_id=policy_classifiers[1]
+            )['policy_rule']['id']])
         child_policy_rule_sets = sorted(
             [self.create_policy_rule_set()['policy_rule_set']['id'],
              self.create_policy_rule_set()['policy_rule_set']['id']])

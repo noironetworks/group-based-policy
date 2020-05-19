@@ -177,7 +177,7 @@ class TestImplicitServiceChains(ResourceMappingStitchingPlumberGBPTestCase,
         context = n_context.get_admin_context()
         self._create_simple_service_chain(service_type='TRANSPARENT_FIREWALL')
         targets = model.get_service_targets(context.session)
-        self.assertTrue(len(targets) > 0)
+        self.assertGreater(len(targets), 0)
         for target in targets:
             pt = self.show_policy_target(
                 target.policy_target_id)['policy_target']
@@ -190,7 +190,7 @@ class TestImplicitServiceChains(ResourceMappingStitchingPlumberGBPTestCase,
         context = n_context.get_admin_context()
         self._create_simple_service_chain(service_type='LOADBALANCERV2')
         targets = model.get_service_targets(context.session)
-        self.assertTrue(len(targets) > 0)
+        self.assertGreater(len(targets), 0)
         for target in targets:
             pt = self.show_policy_target(
                 target.policy_target_id)['policy_target']

@@ -179,5 +179,6 @@ class CommonLibraryTest(unittest2.TestCase):
 
             transport.get_response_from_configurator(conf)
 
+
 if __name__ == '__main__':
     unittest2.main()

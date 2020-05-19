@@ -71,11 +71,11 @@ class ServiceTarget(model_base.BASEV2):
 def set_node_owner(context, driver_name):
     session = context.session
     with session.begin(subtransactions=True):
-            owner = NodeToDriverMapping(
-                servicechain_instance_id=context.instance['id'],
-                servicechain_node_id=context.current_node['id'],
-                driver_name=driver_name)
-            session.add(owner)
+        owner = NodeToDriverMapping(
+            servicechain_instance_id=context.instance['id'],
+            servicechain_node_id=context.current_node['id'],
+            driver_name=driver_name)
+        session.add(owner)
 
 
 def get_node_owner(context):
@@ -104,13 +104,13 @@ def unset_node_owner(context):
 def set_service_target(context, policy_target_id, relationship):
     session = context.session
     with session.begin(subtransactions=True):
-            owner = ServiceTarget(
-                policy_target_id=policy_target_id,
-                servicechain_instance_id=context.instance['id'],
-                servicechain_node_id=context.current_node['id'],
-                position=context.current_position,
-                relationship=relationship)
-            session.add(owner)
+        owner = ServiceTarget(
+            policy_target_id=policy_target_id,
+            servicechain_instance_id=context.instance['id'],
+            servicechain_node_id=context.current_node['id'],
+            position=context.current_position,
+            relationship=relationship)
+        session.add(owner)
 
 
 def get_service_targets(session, policy_target_id=None, relationship=None,

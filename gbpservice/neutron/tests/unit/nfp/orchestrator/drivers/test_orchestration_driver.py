@@ -10,11 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import uuid as pyuuid
+
 import mock
 from mock import patch
-import unittest2
-
 from oslo_config import cfg
+import unittest2
 
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import exceptions
@@ -22,7 +23,6 @@ from gbpservice.nfp.orchestrator.drivers import (
     orchestration_driver
 )
 
-import uuid as pyuuid
 
 cfg.CONF.import_group('keystone_authtoken', 'keystonemiddleware.auth_token')
 OPENSTACK_DRIVER_CLASS_PATH = ('gbpservice.nfp.orchestrator'
@@ -187,9 +187,8 @@ class OrchestrationDriverTestCase(unittest2.TestCase):
                           device_data)
         device_data['service_details']['device_type'] = 'nova'
 
-        self.assertTrue(
-            driver.get_network_function_device_status(device_data) ==
-            'ACTIVE')
+        self.assertEqual(
+            driver.get_network_function_device_status(device_data), 'ACTIVE')
 
     def test_plug_network_function_device_interfaces(self):
         driver = orchestration_driver.OrchestrationDriver(

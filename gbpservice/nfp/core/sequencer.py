@@ -11,6 +11,7 @@
 #    under the License.
 
 import collections
+
 import six
 
 from gbpservice.nfp.core import log as nfp_logging
@@ -26,6 +27,7 @@ class SequencerEmpty(Exception):
 
 class SequencerBusy(Exception):
     pass
+
 
 """Sequences the events. """
 

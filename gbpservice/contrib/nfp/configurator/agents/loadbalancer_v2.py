@@ -11,6 +11,7 @@
 #    under the License.
 
 import os
+
 import six
 
 from gbpservice.contrib.nfp.configurator.agents import agent_base

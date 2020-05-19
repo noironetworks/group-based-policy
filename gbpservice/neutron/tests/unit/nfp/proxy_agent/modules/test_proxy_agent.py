@@ -29,6 +29,7 @@ class TestContext(object):
                     tenant_id='admin', is_advsvc=True, is_admin=True)
         return context.to_dict()
 
+
 "Common class for proxy agent test cases"
 
 
@@ -81,6 +82,7 @@ class ConfigAgentProxyTestCase(unittest2.TestCase):
             mock_send.side_effect = self._post
             self.manager.network_function_event(
                 self.context, _data)
+
 
 if __name__ == "__main__":
     unittest2.main()

@@ -25,7 +25,7 @@ NEUTRON_CONF_DIR=/etc/neutron
 NEUTRON_CONF=$NEUTRON_CONF_DIR/neutron.conf
 NFP_CONF_DIR=/etc/nfp
 DISKIMAGE_CREATE_DIR=$NFPSERVICE_DIR/gbpservice/contrib/nfp/tools/image_builder
-NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER=stable/mitaka
+NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER=stable/queens
 
 # Save trace setting
 XTRACE=$(set +o | grep xtrace)
@@ -246,10 +246,10 @@ function create_nfp_image {
             git_clone $GBPSERVICE_REPO $DEVSTACK_DIR/group-based-policy $GBPSERVICE_BRANCH
             cp -r $DEVSTACK_DIR/group-based-policy/gbpservice $DISKIMAGE_CREATE_DIR/gbpservice
             rm -rf $DEVSTACK_DIR/group-based-policy
-            git clone -b $NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER https://github.com/openstack/neutron.git
+            git clone -b $NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER https://opendev.org/openstack/neutron.git
             cp -r neutron/neutron $DISKIMAGE_CREATE_DIR/neutron
             rm -rf neutron
-            git clone -b $NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER https://github.com/openstack/neutron-lbaas.git
+            git clone -b $NEUTRON_SRC_BRANCH_FOR_NFP_CONTROLLER https://opendev.org/openstack/neutron-lbaas.git
             cp -r neutron-lbaas/neutron_lbaas $DISKIMAGE_CREATE_DIR/neutron_lbaas
             rm -rf neutron-lbaas
             sudo python -c\

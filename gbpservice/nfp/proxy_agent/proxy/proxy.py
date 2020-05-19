@@ -10,17 +10,19 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import eventlet
-eventlet.monkey_patch()
-
-from gbpservice._i18n import _
-from gbpservice.nfp.core import log as nfp_logging
 import os
-from oslo_config import cfg as oslo_config
-from oslo_log import log as oslo_logging
 import socket
 import sys
 import time
+
+import eventlet
+eventlet.monkey_patch()
+
+from oslo_config import cfg as oslo_config
+from oslo_log import log as oslo_logging
+
+from gbpservice._i18n import _
+from gbpservice.nfp.core import log as nfp_logging
 
 
 oslo_logging.register_options(oslo_config.CONF)
@@ -319,6 +321,7 @@ class Proxy(object):
         else:
             pc = ProxyConnection(self.conf, unixsocket, tcpsocket)
             ConnQ.put(pc)
+
 
 PROXY_OPTS = [
     oslo_config.IntOpt(

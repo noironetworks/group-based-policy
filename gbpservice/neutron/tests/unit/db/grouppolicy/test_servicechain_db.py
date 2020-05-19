@@ -74,6 +74,7 @@ class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
         test_group_policy_db.UNSUPPORTED_REQUIRED_EXTS)
     path_prefix = "/servicechain"
 
+
 DB_GP_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
                       ServiceChainDBTestPlugin.__name__)
 
