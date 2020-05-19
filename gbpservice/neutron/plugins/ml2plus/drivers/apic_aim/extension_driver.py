@@ -89,8 +89,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         is_bgp_enabled = data.get(cisco_apic.BGP, False)
         bgp_type = data.get(cisco_apic.BGP_TYPE, "default_export")
         asn = data.get(cisco_apic.BGP_ASN, "0")
-        if not is_svi and (is_bgp_enabled or (bgp_type != "default_export")
-                           or (asn != "0")):
+        if not is_svi and (is_bgp_enabled or (bgp_type != "default_export") or
+                           (asn != "0")):
             raise n_exc.InvalidInput(error_message="Network has to be created"
                                      " as svi type(--apic:svi True) to enable"
                                      " BGP or to set BGP parameters")
@@ -241,7 +241,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         result.update(res_dict)
 
     def process_update_subnet(self, plugin_context, data, result):
-        if not cisco_apic.SNAT_HOST_POOL in data:
+        if cisco_apic.SNAT_HOST_POOL not in data:
             return
         res_dict = {cisco_apic.SNAT_HOST_POOL: data[cisco_apic.SNAT_HOST_POOL]}
         self.set_subnet_extn_db(plugin_context.session, result['id'],

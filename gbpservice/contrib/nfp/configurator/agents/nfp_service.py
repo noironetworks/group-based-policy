@@ -11,6 +11,7 @@
 #    under the License.
 
 import os
+
 import oslo_messaging as messaging
 import six
 

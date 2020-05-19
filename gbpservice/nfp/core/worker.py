@@ -10,13 +10,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import eventlet
-import greenlet
 import os
 import sys
 import time
 import traceback
 
+import eventlet
+import greenlet
 from oslo_service import service as oslo_service
 
 from gbpservice.nfp.core import common as nfp_common

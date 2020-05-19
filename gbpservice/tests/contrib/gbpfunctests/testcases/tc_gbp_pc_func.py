@@ -434,5 +434,6 @@ class test_gbp_pc_func(object):
             return 0
         self._log.info("\n## TESTCASE_GBP_PC_FUNC_4: PASSED")
 
+
 if __name__ == '__main__':
     main()

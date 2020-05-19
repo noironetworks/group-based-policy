@@ -12,9 +12,6 @@
 
 import hashlib
 import re
-import six
-import sqlalchemy as sa
-from sqlalchemy.ext import baked
 
 from aim import aim_manager
 from aim.api import resource as aim_resource
@@ -29,6 +26,9 @@ from oslo_config import cfg
 from oslo_log import helpers as log
 from oslo_log import log as logging
 from oslo_utils import excutils
+import six
+import sqlalchemy as sa
+from sqlalchemy.ext import baked
 
 from gbpservice._i18n import _
 from gbpservice.common import utils as gbp_utils
@@ -524,8 +524,8 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                 session, context.current, bd.name, bd.tenant_name,
                 provided_contracts=provided_contracts,
                 consumed_contracts=consumed_contracts,
-                policy_enforcement_pref=
-                self._get_policy_enforcement_pref(context.current))
+                policy_enforcement_pref=(
+                    self._get_policy_enforcement_pref(context.current)))
 
             # AIM EPG will be persisted in the following call
             self._add_implicit_svc_contracts_to_epg(context, l2p_db, aim_epg)
@@ -1932,7 +1932,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         return merged_status
 
     def _db_plugin(self, plugin_obj):
-            return super(gbp_plugin.GroupPolicyPlugin, plugin_obj)
+        return super(gbp_plugin.GroupPolicyPlugin, plugin_obj)
 
     def _get_aim_context(self, context):
         if hasattr(context, 'session'):

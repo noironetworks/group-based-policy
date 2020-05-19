@@ -306,5 +306,6 @@ class test_gbp_l2p_func(object):
         self._log.info("\n## TESTCASE_GBP_L2P_FUNC_2: PASSED")
         return 1
 
+
 if __name__ == '__main__':
     main()

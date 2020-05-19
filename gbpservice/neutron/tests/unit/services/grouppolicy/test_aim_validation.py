@@ -415,8 +415,8 @@ class TestNeutronMapping(AimValidationTestCase):
             # use _test_routed_subnet().
             #
             sn = aim_resource.Subnet(
-                tenant_name = bd.tenant_name,
-                bd_name = bd.name,
+                tenant_name=bd.tenant_name,
+                bd_name=bd.name,
                 gw_ip_mask='10.0.2.1/24')
             self._test_aim_resource(sn, 'gw_ip_mask', '10.0.3.1/24')
 

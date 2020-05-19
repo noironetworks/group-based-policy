@@ -387,8 +387,9 @@ class SfcAIMDriver(SfcAIMDriverBase):
                 path, encap, host = self.aim_mech._get_port_static_path_info(
                     plugin_context, p)
                 if path is None:
-                    LOG.warning("Path not found for Port Pair %s member %s "
-                                "Port might be unbound." % (pp['id'], p['id']))
+                    LOG.warning("Path not found for Port Pair %(pp)s member "
+                                "%(p)s - Port might be unbound.",
+                                {'pp': pp['id'], 'p': p['id']})
                     path = ''
                     # TODO(ivar): what if encap is None? is it an Opflex port?
                 # Create Concrete Device Interface
@@ -653,8 +654,8 @@ class SfcAIMDriver(SfcAIMDriverBase):
                 else:
                     epg.provided_contract_names.remove(contract.name)
             except ValueError:
-                LOG.warning("Contract %s not present in EPG %s" %
-                            (contract.name, epg))
+                LOG.warning("Contract %(name)s not present in EPG %(epg)s",
+                            {'name': contract.name, 'epg': epg})
             else:
                 epg = self.aim.create(aim_ctx, epg, overwrite=True)
             if (ext_net and not epg.consumed_contract_names and not
@@ -720,9 +721,10 @@ class SfcAIMDriver(SfcAIMDriverBase):
         attrs = ['port_pairs', 'name']
         param_curr = context.current['port_pair_group_parameters']
         param_orig = context.original['port_pair_group_parameters']
-        return (any(context.current[a] != context.original[a] for a in attrs)
-                or any(param_curr.get(x) != param_orig.get(x) for x in
-                       sfc_cts.AIM_PPG_PARAMS.keys()))
+        return (
+            any(context.current[a] != context.original[a] for a in attrs) or
+            any(param_curr.get(x) != param_orig.get(x) for x in
+                sfc_cts.AIM_PPG_PARAMS.keys()))
 
     def _should_regenerate_pc(self, context):
         attrs = ['flow_classifiers', 'port_pair_groups', 'name']
@@ -735,9 +737,9 @@ class SfcAIMDriver(SfcAIMDriverBase):
         l7_orig = original['l7_parameters']
         return (
             any(current[x] != original[x] for x in
-                sfc_cts.AIM_FLC_PARAMS + ['name'])
-            or any(l7_curr[x] != l7_orig[x] for x in
-                   sfc_cts.AIM_FLC_L7_PARAMS.keys()))
+                sfc_cts.AIM_FLC_PARAMS + ['name']) or
+            any(l7_curr[x] != l7_orig[x] for x in
+                sfc_cts.AIM_FLC_L7_PARAMS.keys()))
 
     def _get_ppg_device_cluster(self, session, ppg, tenant):
         tenant_aid = tenant
@@ -939,9 +941,10 @@ class SfcAIMDriver(SfcAIMDriverBase):
 
         for port in ports:
             if port['network_id'] not in networks_map:
-                LOG.warning("We found a ConcreteDeviceInterface for port %s "
-                            "and host %s, but no segment associated to it." %
-                            (port['id'], host))
+                LOG.warning("We found a ConcreteDeviceInterface for port "
+                            "%(port)s and host %(host)s, but no segment "
+                            "associated to it.",
+                            {'port': port['id'], 'host': host})
                 continue
             hlinks = self.aim_mech._filter_host_links_by_segment(
                 context.session, networks_map[port['network_id']], host_links)

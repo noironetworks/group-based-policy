@@ -431,14 +431,14 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         tenant_id = self._get_tenant_id_for_create(context, pt)
         with db_api.CONTEXT_WRITER.using(context):
             self._validate_pt_port_exta_attributes(context, pt)
-            pt_db = PolicyTargetMapping(id=uuidutils.generate_uuid(),
-                                        tenant_id=tenant_id,
-                                        name=pt['name'],
-                                        description=pt['description'],
-                                        policy_target_group_id=
-                                        pt['policy_target_group_id'],
-                                        port_id=pt['port_id'],
-                                        cluster_id=pt['cluster_id'])
+            pt_db = PolicyTargetMapping(
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
+                name=pt['name'],
+                description=pt['description'],
+                policy_target_group_id=pt['policy_target_group_id'],
+                port_id=pt['port_id'],
+                cluster_id=pt['cluster_id'])
             context.session.add(pt_db)
             return self._make_policy_target_dict(
                 pt_db, port_attributes=pt.get('port_attributes', {}))
@@ -592,15 +592,15 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                                            l3p['subnet_prefix_length'],
                                            l3p.get('ip_pool', None))
         with db_api.CONTEXT_WRITER.using(context):
-            l3p_db = L3PolicyMapping(id=uuidutils.generate_uuid(),
-                                     tenant_id=tenant_id,
-                                     name=l3p['name'],
-                                     ip_version=l3p['ip_version'],
-                                     ip_pool=l3p['ip_pool'],
-                                     subnet_prefix_length=
-                                     l3p['subnet_prefix_length'],
-                                     description=l3p['description'],
-                                     shared=l3p.get('shared', False))
+            l3p_db = L3PolicyMapping(
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
+                name=l3p['name'],
+                ip_version=l3p['ip_version'],
+                ip_pool=l3p['ip_pool'],
+                subnet_prefix_length=l3p['subnet_prefix_length'],
+                description=l3p['description'],
+                shared=l3p.get('shared', False))
 
             self._set_address_scope_for_l3_policy(
                 context, l3p_db, l3p.get('address_scope_v4_id'),

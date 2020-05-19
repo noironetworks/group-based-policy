@@ -11,12 +11,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import eventlet
-from eventlet import greenpool
-import six
 import sys
 import threading
 
+import eventlet
+from eventlet import greenpool
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as keyclient
 from neutron.common import rpc as n_rpc
@@ -28,6 +27,7 @@ from oslo_log import log as logging
 import oslo_messaging
 from oslo_serialization import jsonutils
 from oslo_utils import excutils
+import six
 import sqlalchemy as sa
 
 from gbpservice._i18n import _
@@ -948,11 +948,11 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
         if (service_details['device_type'] != 'None' and (
             not provider_service_targets or (service_type in
             [pconst.FIREWALL, pconst.VPN] and not consumer_service_targets))):
-                LOG.error("Service Targets are not created for the Node "
-                          "of service_type %(service_type)s",
-                          {'service_type': service_type})
-                raise Exception(_("Service Targets are not created "
-                                  "for the Node"))
+            LOG.error("Service Targets are not created for the Node "
+                      "of service_type %(service_type)s",
+                      {'service_type': service_type})
+            raise Exception(_("Service Targets are not created "
+                              "for the Node"))
 
         if (not consumer_service_targets and
                 not provider_service_targets):
@@ -1234,8 +1234,8 @@ class NFPNodeDriver(driver_base.NodeDriverBase):
                 context.gbp_plugin.update_policy_target(
                         context.plugin_context, pt['id'],
                         {'policy_target': {'port_id': None}})
-                LOG.debug('Detached port %s from pt %s' % (pt['id'],
-                    pt['port_id']))
+                LOG.debug('Detached port %(port)s from pt %(pt)s',
+                          {'pt': pt['id'], 'port': pt['port_id']})
 
         except Exception:
             LOG.warning("Failed to disassociate port from"

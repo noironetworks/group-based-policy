@@ -58,6 +58,7 @@ class PollDesc(object):
         # Reference to original event, UUID.
         self.ref = kwargs.get('ref')
 
+
 """Defines the descriptor of an event.
 
     Holds the metadata for an event. Useful
@@ -111,6 +112,7 @@ class EventDesc(object):
                 'path_type': self.path_type,
                 'path_key': self.path_key
                 }
+
 
 """Defines the event structure.
 

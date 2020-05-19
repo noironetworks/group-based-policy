@@ -11,10 +11,12 @@
 #    under the License.
 
 import copy
+
 from keystoneauth1.identity import v2
 from keystoneauth1 import session
 from keystoneclient.v2_0 import client as identity_client
 import mock
+from neutronclient.v2_0 import client as neutron_client
 from oslo_config import cfg
 from oslo_utils import uuidutils
 import unittest2
@@ -25,7 +27,6 @@ from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.orchestrator.config_drivers import (
     heat_client as heat_client)
 from gbpservice.nfp.orchestrator.config_drivers import heat_driver
-from neutronclient.v2_0 import client as neutron_client
 
 
 class MockStackObject(object):
@@ -65,6 +66,7 @@ class MockHeatClient(object):
 
     def __init__(self, api_version, endpoint, **kwargs):
         self.stacks = MockHeatClientFunctions()
+
 
 cfg.CONF.import_group('nfp_keystone_authtoken',
                       'gbpservice.nfp.orchestrator.modules.__init__')

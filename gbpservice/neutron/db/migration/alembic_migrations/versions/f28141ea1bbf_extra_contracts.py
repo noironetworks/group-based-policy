@@ -32,10 +32,10 @@ def upgrade():
         sa.Column('network_id', sa.String(36), nullable=False),
         sa.Column('contract_name', sa.String(64), nullable=False),
         sa.Column('provides', sa.Boolean, nullable=False),
-        sa.ForeignKeyConstraint(['network_id'], ['networks.id'],
-                                name=
-                                'apic_aim_network_contract_extn_fk_network',
-                                ondelete='CASCADE'),
+        sa.ForeignKeyConstraint(
+            ['network_id'], ['networks.id'],
+            name='apic_aim_network_contract_extn_fk_network',
+            ondelete='CASCADE'),
         sa.PrimaryKeyConstraint('network_id', 'contract_name', 'provides')
     )
 

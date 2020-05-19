@@ -11,13 +11,13 @@
 #    under the License.
 
 import ast
+import zlib
 
 from neutron.tests import base
 import oslo_serialization.jsonutils as jsonutils
 import pecan
 from pecan import rest
 import webtest
-import zlib
 
 from gbpservice.nfp.pecan import constants
 
@@ -38,10 +38,7 @@ class ControllerTestCase(base.BaseTestCase, rest.RestController):
     """This class contains  unittest cases for REST server of configurator.
 
     This class tests success and failure cases for all the HTTP requests which
-    are implemented in REST server. run_tests.sh file is used for running all
-    the tests in this class. All the methods of this class started with test
-    prefix called and on success it will print ok and on failure it will
-    print the error trace.
+    are implemented in REST server.
 
     """
 

@@ -437,5 +437,6 @@ class test_gbp_nsp_func(object):
         self._log.info("\n## TESTCASE_GBP_NSP_FUNC_3: PASSED")
         return 1
 
+
 if __name__ == '__main__':
     main()

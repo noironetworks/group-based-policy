@@ -10,8 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import mock
 import uuid
+
+import mock
+from neutron.tests import base
+from neutron_lib import context as ctx
 
 from gbpservice.contrib.nfp.config_orchestrator.common import common
 from gbpservice.contrib.nfp.config_orchestrator.handlers.config import (
@@ -20,9 +23,6 @@ from gbpservice.contrib.nfp.config_orchestrator.handlers.config import vpn
 from gbpservice.contrib.nfp.config_orchestrator.handlers.notification import (
     handler as notif_handler)
 from gbpservice.nfp.lib import transport
-
-from neutron.tests import base
-from neutron_lib import context as ctx
 
 
 class TestContext(object):
@@ -294,9 +294,6 @@ class VPNTestCase(base.BaseTestCase):
     def _get_networks(self):
         return []
 
-    def _get_routers(self):
-        return []
-
     def test_update_vpnservice_for_vpnservice(self):
         import_send = self.import_lib + '.send_request_to_configurator'
         with mock.patch(self.import_gvs_api) as gvs, mock.patch(
@@ -339,9 +336,7 @@ class VPNTestCase(base.BaseTestCase):
                 return_value=network_function_desc)
 
             networks = self._get_networks()
-            routers = self._get_routers()
             common.get_networks = mock.MagicMock(return_value=networks)
-            common.get_routers = mock.MagicMock(return_value=routers)
 
             mock_call.side_effect = self._call_data
             mock_send.side_effect = self._cast_vpn

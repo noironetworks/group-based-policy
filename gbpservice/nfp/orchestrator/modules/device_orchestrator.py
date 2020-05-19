@@ -10,7 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import copy
+import sys
+import traceback
 
+from neutron.common import rpc as n_rpc
+from neutron_lib import context as n_context
 import oslo_messaging as messaging
 
 from gbpservice._i18n import _
@@ -20,6 +25,7 @@ from gbpservice.nfp.common import topics as nsf_topics
 from gbpservice.nfp.common import utils as nfp_utils
 from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core.event import Event
+from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
 from gbpservice.nfp.core.rpc import RpcAgent
 from gbpservice.nfp.lib import nfp_context_manager as nfp_ctx_mgr
@@ -27,14 +33,8 @@ from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.db import nfp_db as nfp_db
 from gbpservice.nfp.orchestrator.drivers import orchestration_driver
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
-from neutron.common import rpc as n_rpc
-from neutron_lib import context as n_context
 
-import copy
-import sys
-import traceback
 
-from gbpservice.nfp.core import log as nfp_logging
 LOG = nfp_logging.getLogger(__name__)
 
 STOP_POLLING = {'poll': False}

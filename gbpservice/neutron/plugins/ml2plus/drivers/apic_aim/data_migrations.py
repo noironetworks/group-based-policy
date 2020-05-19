@@ -31,9 +31,9 @@ from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
 from alembic import util as alembic_util
+from neutron.db.migration.cli import CONF
 from neutron.db.models import address_scope as as_db
 from neutron.db.models import securitygroup as sg_models
-from neutron.db.migration.cli import *  # noqa
 from neutron.db import models_v2
 from neutron.db import segments_db  # noqa
 from neutron_lib.db import model_base

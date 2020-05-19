@@ -638,5 +638,6 @@ class test_gbp_prs_func(object):
         self._log.info("\nTESTCASE_GBP_PRS_FUNC_6: PASSED")
         return 1
 
+
 if __name__ == '__main__':
     main()

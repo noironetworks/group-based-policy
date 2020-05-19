@@ -531,9 +531,9 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # Note that the list could be empty in which case we interpret
             # it as clering existing rules.
             for pr_action_assoc in context.session.query(
-                PolicyRuleActionAssociation).filter_by(
-                    policy_rule_id=pr_db.id):
-                    context.session.delete(pr_action_assoc)
+                    PolicyRuleActionAssociation).filter_by(
+                        policy_rule_id=pr_db.id):
+                context.session.delete(pr_action_assoc)
             pr_db.policy_actions = []
             for action_id in action_id_list:
                 assoc = PolicyRuleActionAssociation(policy_rule_id=pr_db.id,
@@ -1420,14 +1420,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         nsp = network_service_policy['network_service_policy']
         tenant_id = self._get_tenant_id_for_create(context, nsp)
         with db_api.CONTEXT_WRITER.using(context):
-            nsp_db = NetworkServicePolicy(id=uuidutils.generate_uuid(),
-                                          tenant_id=tenant_id,
-                                          name=nsp['name'],
-                                          description=nsp['description'],
-                                          shared=nsp.get('shared', False),
-                                          status=nsp.get('status'),
-                                          status_details=
-                                          nsp.get('status_details'))
+            nsp_db = NetworkServicePolicy(
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
+                name=nsp['name'],
+                description=nsp['description'],
+                shared=nsp.get('shared', False),
+                status=nsp.get('status'),
+                status_details=nsp.get('status_details'))
             context.session.add(nsp_db)
             self._set_params_for_network_service_policy(
                 context, nsp_db, nsp)
@@ -1489,18 +1489,18 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         port_min, port_max = GroupPolicyDbPlugin._get_min_max_ports_from_range(
             pc['port_range'])
         with db_api.CONTEXT_WRITER.using(context):
-            pc_db = PolicyClassifier(id=uuidutils.generate_uuid(),
-                                     tenant_id=tenant_id,
-                                     name=pc['name'],
-                                     description=pc['description'],
-                                     protocol=pc['protocol'],
-                                     port_range_min=port_min,
-                                     port_range_max=port_max,
-                                     direction=pc['direction'],
-                                     shared=pc.get('shared', False),
-                                     status=pc.get('status'),
-                                     status_details=
-                                     pc.get('status_details'))
+            pc_db = PolicyClassifier(
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
+                name=pc['name'],
+                description=pc['description'],
+                protocol=pc['protocol'],
+                port_range_min=port_min,
+                port_range_max=port_max,
+                direction=pc['direction'],
+                shared=pc.get('shared', False),
+                status=pc.get('status'),
+                status_details=pc.get('status_details'))
             context.session.add(pc_db)
             return self._make_policy_classifier_dict(pc_db)
 
@@ -1560,16 +1560,16 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         pa = policy_action['policy_action']
         tenant_id = self._get_tenant_id_for_create(context, pa)
         with db_api.CONTEXT_WRITER.using(context):
-            pa_db = PolicyAction(id=uuidutils.generate_uuid(),
-                                 tenant_id=tenant_id,
-                                 name=pa['name'],
-                                 description=pa['description'],
-                                 action_type=pa['action_type'],
-                                 action_value=pa['action_value'],
-                                 shared=pa.get('shared', False),
-                                 status=pa.get('status'),
-                                 status_details=
-                                 pa.get('status_details'))
+            pa_db = PolicyAction(
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
+                name=pa['name'],
+                description=pa['description'],
+                action_type=pa['action_type'],
+                action_value=pa['action_value'],
+                shared=pa.get('shared', False),
+                status=pa.get('status'),
+                status_details=pa.get('status_details'))
             context.session.add(pa_db)
             return self._make_policy_action_dict(pa_db)
 
@@ -1728,8 +1728,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                     context, policy_rule_set_id))
 
             if prs_ids:
-                raise gpolicy.PolicyRuleSetInUse(policy_rule_set_id=
-                                                 policy_rule_set_id)
+                raise gpolicy.PolicyRuleSetInUse(
+                    policy_rule_set_id=policy_rule_set_id)
             context.session.delete(prs_db)
 
     @log.log_method_call

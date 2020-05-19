@@ -10,16 +10,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sys
+import traceback
+
+from neutron_lib import context as n_context
+
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
 from gbpservice.nfp.lib import transport as transport
 from gbpservice.nfp.proxy_agent.lib import topics as a_topics
-
-from neutron_lib import context as n_context
-
-import sys
-import traceback
 
 LOG = nfp_logging.getLogger(__name__)
 

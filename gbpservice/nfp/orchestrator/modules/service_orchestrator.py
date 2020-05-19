@@ -10,6 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import sys
+import traceback
+
 from neutron.common import rpc as n_rpc
 from neutron_lib import context as n_context
 from oslo_log import helpers as log_helpers
@@ -22,6 +25,7 @@ from gbpservice.nfp.common import exceptions as nfp_exc
 from gbpservice.nfp.common import topics as nfp_rpc_topics
 from gbpservice.nfp.core import context as module_context
 from gbpservice.nfp.core.event import Event
+from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
 from gbpservice.nfp.core import path as nfp_path
 from gbpservice.nfp.core.rpc import RpcAgent
@@ -30,11 +34,6 @@ from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.config_drivers import heat_driver
 from gbpservice.nfp.orchestrator.db import nfp_db as nfp_db
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
-
-import sys
-import traceback
-
-from gbpservice.nfp.core import log as nfp_logging
 
 LOG = nfp_logging.getLogger(__name__)
 

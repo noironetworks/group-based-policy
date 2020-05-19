@@ -12,12 +12,12 @@
 
 import commands
 import logging
-import six
 import sys
 
 from libs import config_libs
 from libs import utils_libs
 from libs import verify_libs
+import six
 
 
 def main():

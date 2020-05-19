@@ -149,8 +149,8 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
             # then postcommit functionality will  be executed by the call
             # from gbp plugin
             if not gutils.is_precommit_policy_driver_configured():
-                    method = getattr(self, '_' + caller_method)
-                    method(context)
+                method = getattr(self, '_' + caller_method)
+                method(context)
             elif 'create_policy_target_group' in caller_method or (
                 'create_external_policy' in caller_method):
                 if hasattr(context, 'provider_context') and (
@@ -588,8 +588,8 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                         chain_context, context.current, sci)
 
     def _handle_redirect_spec_id_update(self, context):
-        if (context.current['action_type'] != gconst.GP_ACTION_REDIRECT
-            or context.current['action_value'] ==
+        if (context.current['action_type'] != gconst.GP_ACTION_REDIRECT or
+            context.current['action_value'] ==
             context.original['action_value']):
             return
 
@@ -675,8 +675,8 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                 if (self._is_redirect_in_policy_rule_sets(
                     context, policy_rule_set_ids) and not policy_actions):
                     continue
-                spec_id = (policy_actions and policy_actions[0]['action_value']
-                           or None)
+                spec_id = (policy_actions and
+                           policy_actions[0]['action_value'] or None)
                 for ptg_providing_prs in ptgs_providing_prs:
                     # REVISIT(Magesh): There are concurrency issues here with
                     # concurrent updates to the same PRS, Policy Rule or Action
@@ -941,7 +941,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
         if self._is_group_chainable(context, ptg):
             if self._prss_redirect_rules(context._plugin_context.session,
                                          ptg['provided_policy_rule_sets']) > 1:
-                    raise exc.PTGAlreadyProvidingRedirectPRS(ptg_id=ptg['id'])
+                raise exc.PTGAlreadyProvidingRedirectPRS(ptg_id=ptg['id'])
 
     def _handle_classifier_update_notification(self, context):
         # Invoke Service chain update notify hook if protocol or port or
@@ -964,7 +964,7 @@ class ChainMappingDriver(api.PolicyDriver, local_api.LocalAPI,
                     ctx, sc_instance['id'])
 
     def _stash_ptg_modified_chains(self, context):
-        #Update service chain instance when any ruleset is changed
+        # Update service chain instance when any ruleset is changed
         orig_provided_policy_rule_sets = context.original[
             'provided_policy_rule_sets']
         curr_provided_policy_rule_sets = context.current[

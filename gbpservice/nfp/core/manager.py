@@ -11,6 +11,7 @@
 #    under the License.
 
 import os
+
 import six
 
 from gbpservice.nfp.core import event as nfp_event

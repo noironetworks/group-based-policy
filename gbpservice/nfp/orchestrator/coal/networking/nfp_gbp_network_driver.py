@@ -11,11 +11,10 @@
 #    under the License.
 
 from gbpservice.nfp.lib import nfp_context_manager as nfp_ctx_mgr
-
-from gbpservice.nfp.orchestrator.openstack import openstack_driver
-from gbpservice.nfp.orchestrator.coal.networking import(
+from gbpservice.nfp.orchestrator.coal.networking import (
     nfp_neutron_network_driver as neutron_nd
 )
+from gbpservice.nfp.orchestrator.openstack import openstack_driver
 
 
 class NFPGBPNetworkDriver(neutron_nd.NFPNeutronNetworkDriver):

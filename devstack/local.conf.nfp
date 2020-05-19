@@ -15,8 +15,8 @@ SERVICE_TOKEN=admin
 
 # NFP Service
 ENABLE_NFP=True
-GBPSERVICE_REPO=https://git.openstack.org/openstack/group-based-policy.git
-GBPSERVICE_BRANCH=master
+GBPSERVICE_REPO=https://opendev.org/x/group-based-policy.git
+GBPSERVICE_BRANCH=stable/queens
 # Edit NFP_DEVSTACK_MODE with either 'base' or 'advanced'
 if [[ $ENABLE_NFP = True ]]; then
     NFP_DEVSTACK_MODE=base
@@ -43,13 +43,11 @@ if [[ $ENABLE_NFP = True ]]; then
         # Make sure that your public interface is not attached to any bridge.
         PUBLIC_INTERFACE=
 
-        enable_plugin neutron-fwaas http://git.openstack.org/openstack/neutron-fwaas stable/queens
-        enable_plugin neutron-lbaas https://git.openstack.org/openstack/neutron-lbaas stable/queens
-        enable_plugin neutron https://github.com/openstack/neutron.git stable/queens
-        enable_plugin neutron-vpnaas https://git.openstack.org/openstack/neutron-vpnaas stable/queens
-        enable_plugin octavia https://git.openstack.org/openstack/octavia
-        #enable_plugin barbican https://git.openstack.org/openstack/barbican master
-        #enable_plugin ceilometer https://git.openstack.org/openstack/ceilometer.git master
+        enable_plugin neutron-fwaas http://opendev.org/openstack/neutron-fwaas.git stable/queens
+        enable_plugin neutron-lbaas https://opendev.org/openstack/neutron-lbaas.git stable/queens
+        enable_plugin neutron https://opendev.org/openstack/neutron.git stable/queens
+        enable_plugin neutron-vpnaas https://opendev.org/openstack/neutron-vpnaas.git stable/queens
+        enable_plugin octavia https://opendev.org/openstack/octavia.git stable/queens
 
     fi
 fi

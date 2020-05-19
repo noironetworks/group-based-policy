@@ -58,6 +58,7 @@ class RestClientException(exceptions.Exception):
 
     """ RestClient Exception """
 
+
 """ Common Class to handle restclient request"""
 
 
@@ -170,6 +171,7 @@ class RestApi(object):
             message = "Rest API %s - Failed. Reason: %s" % (
                 url, rce)
             LOG.error(message)
+
 
 """ Common Class to handle rpcclient request"""
 

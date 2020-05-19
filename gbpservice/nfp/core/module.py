@@ -11,6 +11,7 @@
 #    under the License.
 
 from abc import abstractmethod
+
 import six
 
 
@@ -27,6 +28,7 @@ def poll_event_desc(*args, **kwargs):
         return f
 
     return decorator
+
 
 """Meta class. """
 
@@ -46,6 +48,7 @@ class _Meta(type):
             if getattr(value, '_desc', False):
                 desc = value
                 cls._poll_desc_table[desc._event] = desc
+
 
 """Base class for nfp event handlers.
 

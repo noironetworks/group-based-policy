@@ -248,5 +248,6 @@ class test_gbp_pa_func(object):
         self._log.info("\n## TESTCASE_GBP_PA_FUNC_2: PASSED")
         return 1
 
+
 if __name__ == '__main__':
     main()

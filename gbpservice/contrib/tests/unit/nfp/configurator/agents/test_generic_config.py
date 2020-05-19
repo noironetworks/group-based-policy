@@ -10,11 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import mock
 import subprocess
-import unittest2
 
+import mock
 from neutron.tests import base
+import unittest2
 
 from gbpservice.contrib.nfp.configurator.agents import generic_config as gc
 from gbpservice.contrib.nfp.configurator.lib import (

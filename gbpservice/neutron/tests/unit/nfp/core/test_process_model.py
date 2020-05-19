@@ -10,6 +10,10 @@
 #  License for the specific language governing permissions and limitations
 #  under the License.
 
+import multiprocessing
+import random
+import time
+
 from gbpservice.nfp.core import context as nfp_context
 from gbpservice.nfp.core import controller as nfp_controller
 from gbpservice.nfp.core import event as nfp_event
@@ -17,11 +21,8 @@ from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import manager as nfp_manager
 from gbpservice.nfp.core import worker as nfp_worker
 import mock
-import multiprocessing as multiprocessing
 from oslo_config import cfg as oslo_config
-import random
 import six
-import time
 import unittest2
 
 NFP_MODULES_PATH = ['gbpservice.neutron.tests.unit.nfp.core']
@@ -32,6 +33,7 @@ def mocked_get_logging_context(**kwargs):
         'meta_id': '',
         'auth_token': None,
         'namespace': None}
+
 
 nfp_logging.get_logging_context = mocked_get_logging_context
 
@@ -103,6 +105,7 @@ class MockedWatchdog(object):
 
     def cancel(self):
         pass
+
 
 nfp_manager.WATCHDOG = MockedWatchdog
 
@@ -199,7 +202,7 @@ class Test_Process_Model(unittest2.TestCase):
         # Check if 2 workers are created
         workers = controller.get_childrens()
         pids = workers.keys()
-        self.assertTrue(len(pids) == 2)
+        self.assertEqual(len(pids), 2)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
     @mock.patch(
@@ -214,7 +217,7 @@ class Test_Process_Model(unittest2.TestCase):
         # Check if 4 workers are created
         workers = controller.get_childrens()
         pids = workers.keys()
-        self.assertTrue(len(pids) == 4)
+        self.assertEqual(len(pids), 4)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
     @mock.patch(
@@ -229,7 +232,7 @@ class Test_Process_Model(unittest2.TestCase):
         controller._update_manager()
         # Check if 2 workers are added to manager
         pids = controller._manager._resource_map.keys()
-        self.assertTrue(len(pids) == 2)
+        self.assertEqual(len(pids), 2)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
     @mock.patch(
@@ -256,7 +259,7 @@ class Test_Process_Model(unittest2.TestCase):
         # Run one more time and check if it detects the difference
         controller._manager.manager_run()
         pids = controller._manager._resource_map.keys()
-        self.assertTrue(len(pids) == 2)
+        self.assertEqual(len(pids), 2)
         if pid not in old_childs:
             self.assertFalse(old_childs[0] in pids)
         self.assertTrue(old_childs[1] in pids)
@@ -546,7 +549,7 @@ class Test_Process_Model(unittest2.TestCase):
         called = controller.poll_event_wait_obj.is_set()
         end_time = time.time()
         self.assertTrue(called)
-        self.assertTrue(round(end_time - start_time) == 1.0)
+        self.assertEqual(round(end_time - start_time), 1.0)
 
     @mock.patch(
         'gbpservice.nfp.core.controller.NfpController.pipe_send')
@@ -591,7 +594,7 @@ class Test_Process_Model(unittest2.TestCase):
         called = controller.poll_event_wait_obj.is_set()
         end_time = time.time()
         self.assertTrue(called)
-        self.assertTrue(round(end_time - start_time) == 1.0)
+        self.assertEqual(round(end_time - start_time), 1.0)
 
     @mock.patch(
         'gbpservice.nfp.core.controller.NfpController.pipe_send')
@@ -637,7 +640,7 @@ class Test_Process_Model(unittest2.TestCase):
         called = controller.poll_event_dec_wait_obj.is_set()
         end_time = time.time()
         self.assertTrue(called)
-        self.assertTrue(round(end_time - start_time) == 2.0)
+        self.assertEqual(round(end_time - start_time), 2.0)
 
     @mock.patch(
         'gbpservice.nfp.core.controller.NfpController.compress')
@@ -709,7 +712,7 @@ class Test_Process_Model(unittest2.TestCase):
 
         # Check if 1 worker is added to manager
         pids = controller._manager._resource_map.keys()
-        self.assertTrue(len(pids) == 1)
+        self.assertEqual(len(pids), 1)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
         wait_obj = multiprocessing.Event()
@@ -748,7 +751,7 @@ class Test_Process_Model(unittest2.TestCase):
 
         # Check if 1 worker is added to manager
         pids = controller._manager._resource_map.keys()
-        self.assertTrue(len(pids) == 1)
+        self.assertEqual(len(pids), 1)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
         wait_obj = multiprocessing.Event()
@@ -782,7 +785,7 @@ class Test_Process_Model(unittest2.TestCase):
 
         # Check if 1 worker is added to manager
         pids = controller._manager._resource_map.keys()
-        self.assertTrue(len(pids) == 1)
+        self.assertEqual(len(pids), 1)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
         wait_obj = multiprocessing.Event()
@@ -826,7 +829,7 @@ class Test_Process_Model(unittest2.TestCase):
 
         # Check if 1 worker is added to manager
         pids = controller._manager._resource_map.keys()
-        self.assertTrue(len(pids) == 1)
+        self.assertEqual(len(pids), 1)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
         wait_obj = multiprocessing.Event()
@@ -865,6 +868,7 @@ class Test_Process_Model(unittest2.TestCase):
         controller.poll_event_poll_cancel_wait_obj.wait(1)
         called = controller.poll_event_poll_cancel_wait_obj.is_set()
         self.assertTrue(called)
+
 
 if __name__ == '__main__':
     unittest2.main()

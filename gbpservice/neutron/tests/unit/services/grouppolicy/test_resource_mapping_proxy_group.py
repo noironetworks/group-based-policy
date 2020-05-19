@@ -291,7 +291,7 @@ class TestPolicyTarget(ResourceMappingProxyGroupGBPTestCase,
             policy_target_group_id=ptg['id'],
             group_default_gateway=True)['policy_target']
         port = self._get_object('ports', pt['port_id'], self.api)['port']
-        self.assertTrue(len(port['fixed_ips']) > 0)
+        self.assertGreater(len(port['fixed_ips']), 0)
         for fixed_ip in port['fixed_ips']:
             subnet = self._get_object('subnets', fixed_ip['subnet_id'],
                                       self.api)['subnet']

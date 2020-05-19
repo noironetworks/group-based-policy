@@ -427,14 +427,14 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         spec = servicechain_spec['servicechain_spec']
         tenant_id = self._get_tenant_id_for_create(context, spec)
         with db_api.CONTEXT_WRITER.using(context):
-            spec_db = ServiceChainSpec(id=uuidutils.generate_uuid(),
-                                       tenant_id=tenant_id,
-                                       name=spec['name'],
-                                       description=spec['description'],
-                                       shared=spec['shared'],
-                                       status=spec.get('status'),
-                                       status_details=
-                                       spec.get('status_details'))
+            spec_db = ServiceChainSpec(
+                id=uuidutils.generate_uuid(),
+                tenant_id=tenant_id,
+                name=spec['name'],
+                description=spec['description'],
+                shared=spec['shared'],
+                status=spec.get('status'),
+                status_details=spec.get('status_details'))
             self._process_nodes_for_spec(context, spec_db, spec,
                                          set_params=set_params)
             context.session.add(spec_db)

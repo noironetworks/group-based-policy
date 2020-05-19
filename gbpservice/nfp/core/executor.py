@@ -10,9 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import six
-
 from argparse import Namespace
+
+import six
 
 from gbpservice._i18n import _
 from gbpservice.nfp.core import context

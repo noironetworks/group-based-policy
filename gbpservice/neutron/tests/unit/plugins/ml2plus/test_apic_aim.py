@@ -15,13 +15,7 @@
 
 import copy
 import datetime
-import fixtures
-import mock
-import netaddr
 import re
-import six
-from sqlalchemy.orm import exc as sql_exc
-import testtools
 import time
 
 from aim.aim_lib import nat_strategy
@@ -34,8 +28,10 @@ from aim import context as aim_context
 from aim.db import model_base as aim_model_base
 from aim.db import models as aim_models  # noqa
 from aim import utils as aim_utils
-
+import fixtures
 from keystoneclient.v3 import client as ksc_client
+import mock
+import netaddr
 from neutron.api import extensions
 from neutron.db import provisioning_blocks
 from neutron.db import segments_db
@@ -55,6 +51,9 @@ from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 from oslo_config import cfg
+import six
+from sqlalchemy.orm import exc as sql_exc
+import testtools
 import webob.exc
 
 import gbpservice.common.utils as g_utils
@@ -1582,7 +1581,7 @@ class TestAimMapping(ApicAimTestCase):
             scope_vrf = scope['apic:distinguished_names']['VRF']
         unrouted_vrf = aim_resource.VRF(
             tenant_name='common',
-            name = self.driver.apic_system_id + '_UnroutedVRF').dn
+            name=self.driver.apic_system_id + '_UnroutedVRF').dn
         vrfs_to_notify = [unrouted_vrf]
 
         with mock.patch.object(self.driver, 'notifier') as notify:
@@ -2205,13 +2204,13 @@ class TestAimMapping(ApicAimTestCase):
             'new-tenant', 'bad\"\'descr')
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
         assert(self.driver.aim.update.call_args_list[0] == mock.call(
-            mock.ANY, tenant, display_name='new-tenant', descr = 'bad__descr'))
+            mock.ANY, tenant, display_name='new-tenant', descr='bad__descr'))
 
         # Test project.updated event. Update only the project name.
         FakeProjectManager.set('test-tenant-update', 'name123', 'new-descr')
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
         assert(self.driver.aim.update.call_args_list[1] == mock.call(
-            mock.ANY, tenant, display_name='name123', descr = 'new-descr'))
+            mock.ANY, tenant, display_name='name123', descr='new-descr'))
 
         # Test project.updated event. Update only the project description.
         FakeProjectManager.set('test-tenant-update', 'name123', 'descr123')
@@ -2272,8 +2271,8 @@ class TestAimMapping(ApicAimTestCase):
             # This proves that the looping thread continued to run even
             # after seeing an exception.
             time.sleep(1)
-            self.assertTrue(
-                self.driver._update_nova_vm_name_cache.call_count > 1)
+            self.assertGreater(
+                self.driver._update_nova_vm_name_cache.call_count, 1)
             self.driver.vm_update.stop()
 
     def test_update_nova_vm_name_cache(self):
@@ -2398,7 +2397,7 @@ class TestAimMapping(ApicAimTestCase):
                 tenant_name=tenant_aname, name='DefaultVRF').dn
             unrouted_vrf = aim_resource.VRF(
                 tenant_name='common',
-                name = self.driver.apic_system_id + '_UnroutedVRF').dn
+                name=self.driver.apic_system_id + '_UnroutedVRF').dn
 
             # Create a v6 scope and pool.
             scope6 = self._make_address_scope(
@@ -5799,7 +5798,7 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Test create SVI network with BGP.
         net2 = self._make_network(self.fmt, 'net2', True,
-                                  arg_list = self.extension_attributes,
+                                  arg_list=self.extension_attributes,
                                   ** {'apic:svi': True,
                                       BGP: True,
                                       ASN: "65000"})['network']
@@ -10096,8 +10095,8 @@ class TestOpflexRpc(ApicAimTestCase):
             if not default_routes and gateway_ip:
                 host_routes.append(
                     {'destination': '0.0.0.0/0', 'nexthop': gateway_ip})
-            if (not metadata_routes
-                and dhcp_server_ports and not default_routes):
+            if (not metadata_routes and dhcp_server_ports and
+                not default_routes):
                 # This test may not work if there are multiple DHCP
                 # ports for the subnet, since which DHCP port's IPs
                 # will be used for the metadata routes is not

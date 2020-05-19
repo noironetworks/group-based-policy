@@ -14,9 +14,10 @@ import commands
 import logging
 import os
 import re
-import six
 import string
 import sys
+
+import six
 
 
 # Initialize logging
@@ -177,7 +178,6 @@ class Gbp_Config(object):
         _log.info(cmd)
         # Execute the cmd
         cmd_out = commands.getoutput(cmd)
-        #_log.info(cmd_out)
         # Catch for non-exception error strings, even though try clause
         # succeeded
         if self.cmd_error_check(cmd_out) == 0:
@@ -258,7 +258,6 @@ class Gbp_Config(object):
         _log.info(cmd)
         # Execute the update cmd
         cmd_out = commands.getoutput(cmd)
-        #_log.info(cmd_out)
         # Catch for non-exception error strings, even though try clause
         # succeeded
         if self.cmd_error_check(cmd_out) == 0:

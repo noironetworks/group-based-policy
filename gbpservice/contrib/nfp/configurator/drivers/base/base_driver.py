@@ -10,10 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import requests
 import subprocess
 
 from oslo_serialization import jsonutils
+import requests
 
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.nfp.core import log as nfp_logging

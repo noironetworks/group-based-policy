@@ -10,15 +10,14 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import exceptions
 import httplib
-import httplib2
+import socket
 import zlib
 
-import six.moves.urllib.parse as urlparse
-import socket
-
+import exceptions
+import httplib2
 from oslo_serialization import jsonutils
+import six.moves.urllib.parse as urlparse
 
 from gbpservice._i18n import _
 from gbpservice.nfp.core import log as nfp_logging

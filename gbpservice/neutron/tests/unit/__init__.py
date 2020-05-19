@@ -13,6 +13,8 @@
 # The following two are required when running tox since the nsx packages
 # have a foreign key dependency on LBaaS tables. Those tables are not
 # getting loaded without these explicit imports.
+import sys
+
 from neutron_lbaas.db.loadbalancer import loadbalancer_dbv2  # noqa
 from neutron_lbaas.db.loadbalancer import models  # noqa
 
@@ -35,7 +37,6 @@ local_api.LOG.warning = local_api.LOG.info
 named.LOG.warning = named.LOG.info
 
 
-import sys
 orig_warning = resource.LOG.warning
 
 

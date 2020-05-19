@@ -12,12 +12,12 @@
 
 import commands
 import logging
-import six
 import sys
 
 from libs import config_libs
 from libs import utils_libs
 from libs import verify_libs
+import six
 
 
 def main():
@@ -301,6 +301,7 @@ class test_gbp_l3p_neg(object):
             return 0
         self._log.info("\nTESTCASE_GBP_L3P_NEG_5: PASSED")
         return 1
+
 
 if __name__ == '__main__':
     main()

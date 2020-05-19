@@ -262,5 +262,6 @@ class test_gbp_pc_neg(object):
         self._log.info("\n## TESTCASE_GBP_PC_NEG_6: PASSED")
         return 1
 
+
 if __name__ == '__main__':
     main()

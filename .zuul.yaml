@@ -6,24 +6,22 @@
     check:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-xenial
+            voting: true
         - openstack-tox-py27:
-            nodeset: ubuntu-xenial
+            voting: true
         - openstack-tox-py35:
-            nodeset: ubuntu-xenial
+            voting: true
         - legacy-group-based-policy-dsvm-functional:
-            nodeset: ubuntu-xenial
             voting: false
         - legacy-group-based-policy-dsvm-aim:
-            nodeset: ubuntu-xenial
+            voting: true
         - legacy-group-based-policy-dsvm-nfp:
-            nodeset: ubuntu-xenial
             voting: false
     gate:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-xenial
+            voting: true
         - openstack-tox-py27:
-            nodeset: ubuntu-xenial
+            voting: true
         - openstack-tox-py35:
-            nodeset: ubuntu-xenial
+            voting: true

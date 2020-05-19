@@ -11,10 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import mock
+import uuid as pyuuid
 
 from keystoneclient.v2_0 import client as identity_client
-
+import mock
 from oslo_config import cfg
 
 from gbpservice.neutron.tests.unit.nfp.orchestrator.db import test_nfp_db
@@ -28,9 +28,6 @@ from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.modules import (
     service_orchestrator as nso)
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
-
-
-import uuid as pyuuid
 
 
 nfp_context_manager.sql_lock_support = False

@@ -183,5 +183,6 @@ class test_gbp_ri_func_1(object):
         utils_libs.report_results('test_gbp_ri_func_1', 'test_results.txt')
         sys.exit(1)
 
+
 if __name__ == '__main__':
     main()

@@ -173,10 +173,10 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
             raise ServiceConfigNotJsonString()
 
         if (not service_template.get('AWSTemplateFormatVersion') and
-                not service_template.get('heat_template_version')):
-                raise HeatTemplateVersionNotSupported()
+            not service_template.get('heat_template_version')):
+            raise HeatTemplateVersionNotSupported()
         is_template_aws_version = service_template.get(
-                                        'AWSTemplateFormatVersion', False)
+            'AWSTemplateFormatVersion', False)
         resources_key = 'Resources' if is_template_aws_version else 'resources'
         if not service_template.get(resources_key):
             raise ServiceResourceDefinitionsMissing()
@@ -351,9 +351,8 @@ class HeatNodeDriver(driver_base.NodeDriverBase):
                     context, provider_ptg, provider_cidr, consumer_cidrs,
                     stack_template, is_template_aws_version)
 
-        node_params = (stack_template.get('Parameters')
-                       or stack_template.get('parameters')
-                       or [])
+        node_params = (stack_template.get('Parameters') or
+                       stack_template.get('parameters') or [])
         for parameter in node_params:
             if parameter == "Subnet":
                 stack_params[parameter] = provider_ptg_subnet_id

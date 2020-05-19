@@ -11,9 +11,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import copy
 import itertools
 
-import copy
 import heatclient
 import mock
 from neutron_lib.api.definitions import external_net
@@ -447,7 +447,7 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
             provider_cidr = self._get_ptg_cidr(provider)
             # TODO(ivar): This has to be removed once support to consumer list
             # is implemented
-            #consumer_cidr = self._get_ptg_cidr(consumer)
+            # consumer_cidr = self._get_ptg_cidr(consumer)
             consumer_cidr = []
             fw_rule = self._get_firewall_rule_dict(
                 'Rule_1', classifier_protocol, classifier_port,

@@ -204,7 +204,7 @@ class NFPIPsecVPNDriver(base_ipsec.BaseIPsecVPNDriver):
             vpnservice = self.service_plugin.get_vpnservice(
                                         context,
                                         ipsec_site_connection['vpnservice_id'])
-            #(Revisit):Due to device driver issue neutron is making vpnservice
+            # (Revisit):Due to device driver issue neutron is making vpnservice
             #          state in Down state, At this point of time,
             #           Allowing ipsec site connection to gets created though
             #          vpnservice is in down state.

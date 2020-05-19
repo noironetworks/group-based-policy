@@ -13,14 +13,14 @@
 
 import copy
 import hashlib
-import mock
-import netaddr
 
 from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource
 from aim.api import status as aim_status
 from aim import context as aim_context
 from keystoneclient.v3 import client as ksc_client
+import mock
+import netaddr
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.db.models import securitygroup as sg_models
@@ -1928,8 +1928,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
             'application_policy_group']
         apg_id = apg['id']
         self.show_application_policy_group(apg_id, expected_res_status=200)
-        ptg = self.create_policy_target_group(application_policy_group_id=
-                                              apg['id'])['policy_target_group']
+        ptg = self.create_policy_target_group(
+            application_policy_group_id=apg['id'])['policy_target_group']
         self.assertEqual(apg_id, ptg['application_policy_group_id'])
         self._test_application_profile(apg)
         self._test_epg_policy_enforcement_attr(ptg)
@@ -2127,8 +2127,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
             'application_policy_group']
         apg_id = apg['id']
         self.show_application_policy_group(apg_id, expected_res_status=200)
-        ptg = self.create_policy_target_group(application_policy_group_id=
-                                              apg_id)['policy_target_group']
+        ptg = self.create_policy_target_group(
+            application_policy_group_id=apg_id)['policy_target_group']
         self.assertEqual(apg_id, ptg['application_policy_group_id'])
         pt = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
@@ -2971,7 +2971,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         self.assertEqual(webob.exc.HTTPNotFound.code, res.status_int)
 
     def test_policy_target_segmentation_label_update(self):
-        if not 'apic_segmentation_label' in self._extension_drivers:
+        if 'apic_segmentation_label' not in self._extension_drivers:
             self.skipTest("apic_segmentation_label ED not configured")
         mock_notif = mock.Mock()
         self.mech_driver.notifier.port_update = mock_notif
@@ -3762,21 +3762,20 @@ class TestPolicyTargetDvs(AIMBaseTestCase):
             return_value={'key': BOOKED_PORT_VALUE})
 
     def _verify_dvs_notifier(self, notifier, port, host):
-            # can't use getattr() with mock, so use eval instead
-            try:
-                dvs_mock = eval('self.mech_driver.dvs_notifier.' +
-                                notifier)
-            except Exception:
-                self.assertTrue(False,
-                                "The method " + notifier + " was not called")
-                return
+        # can't use getattr() with mock, so use eval instead
+        try:
+            dvs_mock = eval('self.mech_driver.dvs_notifier.' + notifier)
+        except Exception:
+            self.assertTrue(False,
+                            "The method " + notifier + " was not called")
+            return
 
-            self.assertTrue(dvs_mock.called)
-            a1, a2, a3, a4 = dvs_mock.call_args[0]
-            self.assertEqual(a1['id'], port['id'])
-            if notifier != 'delete_port_call':
-                self.assertEqual(a2['id'], port['id'])
-            self.assertEqual(a4, host)
+        self.assertTrue(dvs_mock.called)
+        a1, a2, a3, a4 = dvs_mock.call_args[0]
+        self.assertEqual(a1['id'], port['id'])
+        if notifier != 'delete_port_call':
+            self.assertEqual(a2['id'], port['id'])
+        self.assertEqual(a4, host)
 
     def _pg_name(self, project, profile, network):
         return ('prj_' + str(project) + '|' + str(profile) + '|' + network)
@@ -4407,30 +4406,30 @@ class NotificationTest(AIMBaseTestCase):
         return calls
 
     def _test_notifier(self, notifier, expected_calls):
-            ptg = self.create_policy_target_group(name="ptg1")
-            ptg_id = ptg['policy_target_group']['id']
-            pt = self.create_policy_target(
-                name="pt1", policy_target_group_id=ptg_id)['policy_target']
-            self.assertEqual(pt['policy_target_group_id'], ptg_id)
+        ptg = self.create_policy_target_group(name="ptg1")
+        ptg_id = ptg['policy_target_group']['id']
+        pt = self.create_policy_target(
+            name="pt1", policy_target_group_id=ptg_id)['policy_target']
+        self.assertEqual(pt['policy_target_group_id'], ptg_id)
+        self.new_delete_request(
+            'policy_targets', pt['id']).get_response(self.ext_api)
+        self.new_delete_request(
+            'policy_target_groups', ptg_id).get_response(self.ext_api)
+        sg_rules = self._plugin.get_security_group_rules(
+            self._neutron_context)
+        sg_ids = set([x['security_group_id'] for x in sg_rules])
+        for sg_id in sg_ids:
             self.new_delete_request(
-                'policy_targets', pt['id']).get_response(self.ext_api)
-            self.new_delete_request(
-                'policy_target_groups', ptg_id).get_response(self.ext_api)
-            sg_rules = self._plugin.get_security_group_rules(
-                self._neutron_context)
-            sg_ids = set([x['security_group_id'] for x in sg_rules])
-            for sg_id in sg_ids:
-                self.new_delete_request(
-                    'security-groups', sg_id).get_response(self.ext_api)
-            # Remove any port update calls for port-binding
-            new_mock = mock.MagicMock()
-            call_list = []
-            for call in notifier.mock_calls:
-                if call[1][-1] != 'port.update.end':
-                    call_list.append(call)
-            new_mock.mock_calls = call_list
-            new_mock.assert_has_calls(expected_calls(), any_order=False)
-            return new_mock
+                'security-groups', sg_id).get_response(self.ext_api)
+        # Remove any port update calls for port-binding
+        new_mock = mock.MagicMock()
+        call_list = []
+        for call in notifier.mock_calls:
+            if call[1][-1] != 'port.update.end':
+                call_list.append(call)
+        new_mock.mock_calls = call_list
+        new_mock.assert_has_calls(expected_calls(), any_order=False)
+        return new_mock
 
     def test_dhcp_notifier(self):
         with mock.patch.object(dhcp_rpc_agent_api.DhcpAgentNotifyAPI,

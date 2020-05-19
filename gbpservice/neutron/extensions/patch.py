@@ -113,6 +113,7 @@ def _get_security_groups_on_port(self, context, port):
 
     return requested_groups
 
+
 securitygroups_db.SecurityGroupDbMixin._get_security_groups_on_port = (
     _get_security_groups_on_port)
 
@@ -122,6 +123,7 @@ def get_port_from_device_mac(context, device_mac):
     qry = context.session.query(models_v2.Port).filter_by(
         mac_address=device_mac).order_by(models_v2.Port.device_owner.desc())
     return qry.first()
+
 
 ml2_db.get_port_from_device_mac = get_port_from_device_mac
 
@@ -147,14 +149,16 @@ common_db_mixin.CommonDbMixin._get_tenant_id_for_create = (
 
 
 def extend_resources(self, version, attr_map):
-        """Extend resources with additional resources or attributes.
+    """Extend resources with additional resources or attributes.
 
-        :param attr_map: the existing mapping from resource name to
-        attrs definition.
+    :param attr_map: the existing mapping from resource name to
+    attrs definition.
 
-        After this function, we will extend the attr_map if an extension
-        wants to extend this map.
-        """
+    After this function, we will extend the attr_map if an extension
+    wants to extend this map.
+    """
+    # Match indentation of original version, making comparison easier.
+    if True:
         processed_exts = {}
         exts_to_process = self.extensions.copy()
         check_optionals = True
@@ -217,6 +221,7 @@ def extend_resources(self, version, attr_map):
         for ext in processed_exts.values():
             ext.update_attributes_map(attr_map)
 
+
 extensions.ExtensionManager.extend_resources = extend_resources
 
 
@@ -265,6 +270,7 @@ def fill_post_defaults(
             if attr in res_dict:
                 msg = _("Attribute '%s' not allowed in POST") % attr
                 raise exc_cls(msg)
+
 
 attributes.AttributeInfo.fill_post_defaults = fill_post_defaults
 

@@ -451,5 +451,6 @@ class test_gbp_ptg_func(object):
         self._log.info("\n## TESTCASE_GBP_PTG_FUNC_3: PASSED")
         return 1
 
+
 if __name__ == '__main__':
     main()

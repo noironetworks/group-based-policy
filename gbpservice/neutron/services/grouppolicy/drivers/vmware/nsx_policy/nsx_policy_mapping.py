@@ -67,7 +67,7 @@ class ProxyGroupsNotSupported(gpexc.GroupPolicyBadRequest):
     message = ("Proxy groups are not supported with %s." % DRIVER_NAME)
 
 
-#TODO(annak): remove when ipv6 is supported + add support for ICMPv6 service
+# TODO(annak): remove when ipv6 is supported + add support for ICMPv6 service
 class Ipv6NotSupported(gpexc.GroupPolicyBadRequest):
     message = ("Ipv6 not supported with %s" % DRIVER_NAME)
 

@@ -10,15 +10,15 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import logging
+import os
+import sys
+
 from oslo_config import cfg as oslo_config
 from oslo_log import log as oslo_logging
 from oslo_utils import importutils
 
 from gbpservice.nfp.core import context
-
-import logging
-import os
-import sys
 
 EVENT = 50
 logging.addLevelName(EVENT, "EVENT")

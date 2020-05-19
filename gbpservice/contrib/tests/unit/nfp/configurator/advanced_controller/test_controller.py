@@ -11,8 +11,10 @@
 #    under the License.
 
 
-import mock
 import os
+import zlib
+
+import mock
 import oslo_serialization.jsonutils as jsonutils
 import pecan
 import pika
@@ -22,7 +24,6 @@ PECAN_CONFIG_FILE = (os.getcwd() +
 pecan.set_config(PECAN_CONFIG_FILE, overwrite=True)
 
 import webtest
-import zlib
 
 from neutron.tests import base
 from pecan import rest
@@ -46,10 +47,7 @@ class ControllerTestCase(base.BaseTestCase, rest.RestController):
     This class contains all the unittest cases for REST server of configurator.
 
     This class tests success and failure cases for all the HTTP requests which
-    are implemented in REST server. run_tests.sh file is used for running all
-    the tests in this class. All the methods of this class started with test
-    prefix called and on success it will print ok and on failure it will
-    print the error trace.
+    are implemented in REST server.
 
     """
     @classmethod

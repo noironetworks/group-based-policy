@@ -13,7 +13,6 @@
 
 import copy
 import itertools
-import six
 
 from keystonemiddleware import auth_token  # noqa
 import mock
@@ -31,6 +30,7 @@ from neutron_lib import context as nctx
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_utils import uuidutils
+import six
 import unittest2
 import webob.exc
 
@@ -1252,11 +1252,11 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                    'remote_ip_prefix': [subnet['cidr']]}
 
         sg_rule = self._get_sg_rule(**filters)
-        self.assertTrue(len(sg_rule) == 1)
+        self.assertEqual(len(sg_rule), 1)
         del filters['remote_ip_prefix']
         filters['ethertype'] = [ip_v[4]]
         sg_rule = self._get_sg_rule(**filters)
-        self.assertTrue(len(sg_rule) == 4)
+        self.assertEqual(len(sg_rule), 4)
         filters['port_range_min'] = [53]
         filters['port_range_max'] = [53]
         for ether_type in ip_v:
@@ -1264,7 +1264,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                 filters['ethertype'] = [ip_v[ether_type]]
                 filters['protocol'] = [proto]
                 sg_rule = self._get_sg_rule(**filters)
-                self.assertTrue(len(sg_rule) == 1)
+                self.assertEqual(len(sg_rule), 1)
 
     def test_default_security_group_allows_intra_ptg(self):
         # Create PTG and retrieve subnet
@@ -1273,7 +1273,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         req = self.new_show_request('subnets', subnets[0], fmt=self.fmt)
         subnet = self.deserialize(self.fmt,
                                   req.get_response(self.api))['subnet']
-        #Create PT and retrieve port
+        # Create PT and retrieve port
         pt = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
         req = self.new_show_request('ports', pt['port_id'], fmt=self.fmt)
@@ -1285,7 +1285,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
         # Allow all ingress traffic from same ptg subnet
         def verify_rule(filters):
             sg_rule = self._get_sg_rule(**filters)
-            self.assertTrue(len(sg_rule) == 1)
+            self.assertEqual(len(sg_rule), 1)
             self.assertIsNone(sg_rule[0]['protocol'])
             self.assertIsNone(sg_rule[0]['port_range_max'])
             self.assertIsNone(sg_rule[0]['port_range_min'])
@@ -1303,7 +1303,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                    'remote_ip_prefix': ['0.0.0.0/0']}
         # No wide rule applied
         sg_rule = self._get_sg_rule(**filters)
-        self.assertTrue(len(sg_rule) == 0)
+        self.assertEqual(len(sg_rule), 0)
 
     def test_default_security_group_allows_intra_ptg_update(self):
         # Create ptg and retrieve subnet and network
@@ -1336,7 +1336,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
             ptg = self.deserialize(
                 self.fmt, req.get_response(
                     self.ext_api))['policy_target_group']
-            #Create PT and retrieve port
+            # Create PT and retrieve port
             pt = self.create_policy_target(
                 policy_target_group_id=ptg['id'])['policy_target']
             req = self.new_show_request('ports', pt['port_id'], fmt=self.fmt)
@@ -1351,7 +1351,7 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
                            'remote_ip_prefix': [subnet['cidr']],
                            'direction': ['ingress']}
                 sg_rule = self._get_sg_rule(**filters)
-                self.assertTrue(len(sg_rule) == 1)
+                self.assertEqual(len(sg_rule), 1)
                 self.assertIsNone(sg_rule[0]['protocol'])
                 self.assertIsNone(sg_rule[0]['port_range_max'])
                 self.assertIsNone(sg_rule[0]['port_range_min'])
@@ -1593,11 +1593,11 @@ class TestL2Policy(ResourceMappingTestCase):
     def test_create_l2p_using_different_tenant_network_rejected(self):
         with self.network(tenant_id='tenant1') as net1:
             network_id = net1['network']['id']
-            res = self.create_l2_policy(name="l2p1",
-                                        network_id=network_id,
-                                        tenant_id='tenant2',
-                                        expected_res_status=
-                                        webob.exc.HTTPBadRequest.code)
+            res = self.create_l2_policy(
+                name="l2p1",
+                network_id=network_id,
+                tenant_id='tenant2',
+                expected_res_status=webob.exc.HTTPBadRequest.code)
             self.assertEqual('InvalidNetworkAccess',
                              res['NeutronError']['type'])
 
@@ -1707,10 +1707,10 @@ class TestL3Policy(ResourceMappingTestCase,
             with self.router() as router2:
                 router1_id = router1['router']['id']
                 router2_id = router2['router']['id']
-                data = self.create_l3_policy(name="l3p1",
-                                             routers=[router1_id, router2_id],
-                                             expected_res_status=
-                                             webob.exc.HTTPBadRequest.code)
+                data = self.create_l3_policy(
+                    name="l3p1",
+                    routers=[router1_id, router2_id],
+                    expected_res_status=webob.exc.HTTPBadRequest.code)
                 self.assertEqual('L3PolicyMultipleRoutersNotSupported',
                                  data['NeutronError']['type'])
 
@@ -2704,7 +2704,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
                 # Remove all the rules, verify that none exist any more
                 self.update_policy_rule_set(
                     prs['id'], expected_res_status=200, policy_rules=[])
-                self.assertTrue(len(current_rules) > 0)
+                self.assertGreater(len(current_rules), 0)
                 for rule in current_rules:
                     self.assertFalse(self._get_sg_rule(**rule))
 
@@ -3831,7 +3831,7 @@ class TestServiceChain(ResourceMappingTestCase):
         policy_rule_set_id = policy_rule_set['policy_rule_set']['id']
         self._verify_prs_rules(policy_rule_set_id)
 
-        #Create 2 provider and 2 consumer PTGs
+        # Create 2 provider and 2 consumer PTGs
         provider_ptg1_id, consumer_ptg1_id = (
                 self._create_provider_consumer_ptgs(policy_rule_set_id))
         provider_ptg2_id, consumer_ptg2_id = (
@@ -4328,7 +4328,7 @@ class TestExternalPolicy(ResourceMappingTestCase):
 
                     expected_cidrs = self._calculate_expected_external_cidrs(
                         es1, [])
-                    self.assertTrue(len(expected_cidrs) > 0)
+                    self.assertGreater(len(expected_cidrs), 0)
                     current_ssh_rules = self._verify_prs_rules(prs_ssh['id'])
                     self._verify_prs_rules(prs_http['id'])
 
@@ -4341,8 +4341,8 @@ class TestExternalPolicy(ResourceMappingTestCase):
 
                     # SSH rules removed
                     for rule in current_ssh_rules:
-                        if not (rule['direction'] == ['egress']
-                                and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
+                        if not (rule['direction'] == ['egress'] and
+                                rule['remote_ip_prefix'] == ['0.0.0.0/0']):
                             self.assertFalse(self._get_sg_rule(**rule))
 
                     # HTTP Added
@@ -4353,8 +4353,8 @@ class TestExternalPolicy(ResourceMappingTestCase):
                         ep['id'], provided_policy_rule_sets={},
                         consumed_policy_rule_sets={}, expected_res_status=200)
                     for rule in current_http_rules:
-                        if not (rule['direction'] == ['egress']
-                                and rule['remote_ip_prefix'] == ['0.0.0.0/0']):
+                        if not (rule['direction'] == ['egress'] and
+                                rule['remote_ip_prefix'] == ['0.0.0.0/0']):
                             self.assertFalse(self._get_sg_rule(**rule))
 
 
@@ -4947,8 +4947,8 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
         self.update_policy_target_group(
             ptg['id'],
-            network_service_policy_id = nsp['id'],
-            expected_res_status = webob.exc.HTTPOk.code)
+            network_service_policy_id=nsp['id'],
+            expected_res_status=webob.exc.HTTPOk.code)
 
         port1 = self._get_object('ports', pt1['port_id'],
                                  self.api)['port']
