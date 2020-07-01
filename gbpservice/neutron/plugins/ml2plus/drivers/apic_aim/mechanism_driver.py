@@ -113,6 +113,7 @@ ROUTER_SUBJECT_NAME = 'route'
 DEFAULT_SG_NAME = 'DefaultSecurityGroup'
 L3OUT_NODE_PROFILE_NAME = 'NodeProfile'
 L3OUT_IF_PROFILE_NAME = 'IfProfile'
+L3OUT_IF_PROFILE_NAME6 = 'IfProfile6'
 L3OUT_EXT_EPG = 'ExtEpg'
 SYNC_STATE_TMP = 'synchronization_state_tmp'
 AIM_RESOURCES_CNT = 'aim_resources_cnt'
@@ -702,11 +703,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     tenant_name=l3out.tenant_name, l3out_name=l3out.name,
                     name=L3OUT_NODE_PROFILE_NAME)
                 self.aim.create(aim_ctx, aim_l3out_np, overwrite=True)
-                aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
-                    tenant_name=l3out.tenant_name, l3out_name=l3out.name,
-                    node_profile_name=L3OUT_NODE_PROFILE_NAME,
-                    name=L3OUT_IF_PROFILE_NAME)
-                self.aim.create(aim_ctx, aim_l3out_ip, overwrite=True)
             # This means no DN is being provided. Then we should try to create
             # the l3out automatically
             else:
@@ -728,11 +724,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     tenant_name=tenant_aname, l3out_name=aname,
                     name=L3OUT_NODE_PROFILE_NAME)
                 self.aim.create(aim_ctx, aim_l3out_np)
-                aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
-                    tenant_name=tenant_aname, l3out_name=aname,
-                    node_profile_name=L3OUT_NODE_PROFILE_NAME,
-                    name=L3OUT_IF_PROFILE_NAME)
-                self.aim.create(aim_ctx, aim_l3out_ip)
 
                 aim_ext_net = aim_resource.ExternalNetwork(
                     tenant_name=tenant_aname,
@@ -1201,18 +1192,37 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._notify_existing_vm_ports(context._plugin_context,
                                                network_id)
 
-        # Limit 1 subnet per SVI network as each SVI interface
-        # in ACI can only have 1 primary addr
+        # Limit 1 subnet of each address family per SVI network as each
+        # SVI interface in ACI can only have 1 primary addr
         if self._is_svi_db(network_db):
+            ip_version = netaddr.IPNetwork(current['cidr']).version
             query = BAKERY(lambda s: s.query(
                 models_v2.Subnet))
             query += lambda q: q.filter(
-                models_v2.Subnet.network_id == sa.bindparam('network_id'))
+                models_v2.Subnet.network_id == sa.bindparam('network_id'),
+                models_v2.Subnet.ip_version == sa.bindparam('ip_version'))
             subnets_size = query(session).params(
-                network_id=network_id).count()
+                network_id=network_id, ip_version=ip_version).count()
 
+            # Supports one subnet of each address family
             if subnets_size > 1:
-                raise exceptions.OnlyOneSubnetInSVINetwork()
+                raise exceptions.OnlyOneSubnetPerAddressFamilyInSVINetwork()
+
+            if self._is_preexisting_svi_db(network_db):
+                # pre-existing L3Out
+                l3out, _, _ = self._get_aim_external_objects_db(session,
+                    network_db)
+            else:
+                l3out = self.aim.get(aim_ctx,
+                    self._get_network_l3out(network_db.aim_mapping))
+
+            # Create Interface Profile for AF of subnet
+            aim_l3out_ip = aim_resource.L3OutInterfaceProfile(
+                tenant_name=l3out.tenant_name, l3out_name=l3out.name,
+                node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                name=L3OUT_IF_PROFILE_NAME if ip_version == 4 else (
+                    L3OUT_IF_PROFILE_NAME6))
+            self.aim.create(aim_ctx, aim_l3out_ip, overwrite=True)
 
         if network_db.aim_mapping:
             # Provide VRF notifications if creating subnets in
@@ -4643,8 +4653,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                          'name': 'apic-svi-port:node-%s' % node,
                          'network_id': network['id'],
                          'mac_address': n_constants.ATTR_NOT_SPECIFIED,
-                         'fixed_ips': [{'subnet_id':
-                                        network['subnets'][0]}],
+                         'fixed_ips': [{'subnet_id': subnet}
+                            for subnet in network['subnets']],
                          'admin_state_up': False}
                 try:
                     port = self.plugin.create_port(context, {'port': attrs})
@@ -4692,18 +4702,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if not network['subnets']:
                 return
 
-            # REVISIT: This only supports 1 subnet on a network, and should
-            #          be fixed to handle additional ones.
             query = BAKERY(lambda s: s.query(
                 models_v2.Subnet))
             query += lambda q: q.filter(
-                models_v2.Subnet.id == sa.bindparam('subnet_id'))
-            subnet = query(session).params(
-                subnet_id=network['subnets'][0]).one()
+                models_v2.Subnet.network_id == sa.bindparam('net_id'),
+                models_v2.Subnet.ip_version == sa.bindparam('ip_vers'))
+            subnets_dict = {}
+            for ip_vers in [4, 6]:
+                subnet = query(session).params(
+                    net_id=network['id'], ip_vers=ip_vers).one_or_none()
+                if subnet is not None:
+                    subnets_dict[ip_vers] = {
+                        'subnet': subnet,
+                        'mask': str(netaddr.IPNetwork(
+                            subnet['cidr']).prefixlen),
+                        'primary_ips': []}
 
-            mask = subnet['cidr'].split('/')[1]
-
-            primary_ips = []
             for node in nodes:
                 # Get the IP of the SVI port for this node on this network.
                 #
@@ -4714,8 +4728,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                            'name': ['apic-svi-port:node-%s' % node]}
                 svi_ports = self.plugin.get_ports(plugin_context, filters)
                 if svi_ports and svi_ports[0]['fixed_ips']:
-                    ip = svi_ports[0]['fixed_ips'][0]['ip_address']
-                    primary_ips.append(ip + '/' + mask)
+                    for fixed_ip in svi_ports[0]['fixed_ips']:
+                        ip_vers = netaddr.IPAddress(
+                            fixed_ip['ip_address']).version
+
+                        subnets_dict[ip_vers]['primary_ips'].append(
+                            fixed_ip['ip_address'] + '/' + (
+                                subnets_dict[ip_vers]['mask']))
                 else:
                     # No SVI port was found. This may mean
                     # _ensure_svi_ips_for_static_ports could not
@@ -4735,44 +4754,55 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     return
 
             # We only need one interface profile, even if it's a VPC.
-            secondary_ip = subnet['gateway_ip'] + '/' + mask
-            aim_l3out_if = aim_resource.L3OutInterface(
-                tenant_name=l3out.tenant_name,
-                l3out_name=l3out.name,
-                node_profile_name=L3OUT_NODE_PROFILE_NAME,
-                interface_profile_name=L3OUT_IF_PROFILE_NAME,
-                interface_path=path, encap=static_port.encap,
-                host=static_port.link.host_name,
-                primary_addr_a=primary_ips[0],
-                secondary_addr_a_list=[{'addr': secondary_ip}],
-                primary_addr_b=primary_ips[1] if is_vpc else '',
-                secondary_addr_b_list=[{'addr':
-                                        secondary_ip}] if is_vpc else [])
-            self.aim.create(aim_ctx, aim_l3out_if, overwrite=True)
             network_db = self.plugin._get_network(plugin_context,
-                                                  network['id'])
-            if (network_db.aim_extension_mapping.bgp_enable and
-                network_db.aim_extension_mapping.bgp_type ==
-                'default_export'):
-                aim_bgp_peer_prefix = aim_resource.L3OutInterfaceBgpPeerP(
+                network['id'])
+
+            for ip_vers, subnet_dict in subnets_dict.items():
+                secondary_ip = subnet_dict['subnet']['gateway_ip'] + '/' + (
+                    subnet_dict['mask'])
+                aim_l3out_if = aim_resource.L3OutInterface(
                     tenant_name=l3out.tenant_name,
                     l3out_name=l3out.name,
                     node_profile_name=L3OUT_NODE_PROFILE_NAME,
-                    interface_profile_name=L3OUT_IF_PROFILE_NAME,
-                    interface_path=path,
-                    addr=subnet['cidr'],
-                    asn=network_db.aim_extension_mapping.bgp_asn)
-                self.aim.create(aim_ctx, aim_bgp_peer_prefix, overwrite=True)
+                    interface_profile_name=(L3OUT_IF_PROFILE_NAME
+                        if ip_vers == 4 else L3OUT_IF_PROFILE_NAME6),
+                    interface_path=path, encap=static_port.encap,
+                    host=static_port.link.host_name,
+                    primary_addr_a=subnet_dict['primary_ips'][0],
+                    secondary_addr_a_list=[{'addr': secondary_ip}],
+                    primary_addr_b=(subnet_dict['primary_ips'][1]
+                        if is_vpc else ''),
+                    secondary_addr_b_list=[{'addr':
+                                            secondary_ip}] if is_vpc else [])
+                self.aim.create(aim_ctx, aim_l3out_if, overwrite=True)
+
+                if (network_db.aim_extension_mapping.bgp_enable and
+                        network_db.aim_extension_mapping.bgp_type == (
+                            'default_export')):
+                    aim_bgp_peer_prefix = aim_resource.L3OutInterfaceBgpPeerP(
+                        tenant_name=l3out.tenant_name,
+                        l3out_name=l3out.name,
+                        node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=(L3OUT_IF_PROFILE_NAME
+                        if ip_vers == 4 else L3OUT_IF_PROFILE_NAME6),
+                        interface_path=path,
+                        addr=subnet_dict['subnet']['cidr'],
+                        asn=network_db.aim_extension_mapping.bgp_asn)
+                    self.aim.create(aim_ctx, aim_bgp_peer_prefix,
+                        overwrite=True)
+
         if remove:
             # REVISIT: Should we also delete the node profiles if there aren't
             # any more instances on this host?
-            aim_l3out_if = aim_resource.L3OutInterface(
-                tenant_name=l3out.tenant_name,
-                l3out_name=l3out.name,
-                node_profile_name=L3OUT_NODE_PROFILE_NAME,
-                interface_profile_name=L3OUT_IF_PROFILE_NAME,
-                interface_path=path)
-            self.aim.delete(aim_ctx, aim_l3out_if, cascade=True)
+            for if_profile in [L3OUT_IF_PROFILE_NAME, L3OUT_IF_PROFILE_NAME6]:
+                aim_l3out_if = aim_resource.L3OutInterface(
+                    tenant_name=l3out.tenant_name,
+                    l3out_name=l3out.name,
+                    node_profile_name=L3OUT_NODE_PROFILE_NAME,
+                    interface_profile_name=if_profile,
+                    interface_path=path)
+                if self.aim.get(aim_ctx, aim_l3out_if):
+                    self.aim.delete(aim_ctx, aim_l3out_if, cascade=True)
 
     def _update_static_path_for_network(self, session, network,
                                         static_port, remove=False):
