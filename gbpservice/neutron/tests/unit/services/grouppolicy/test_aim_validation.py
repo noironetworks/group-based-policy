@@ -431,7 +431,11 @@ class TestNeutronMapping(AimValidationTestCase):
     def test_unrouted_network(self):
         # Create network.
         kwargs = {'apic:extra_provided_contracts': ['ep1', 'ep2'],
-                  'apic:extra_consumed_contracts': ['ec1', 'ec2']}
+                  'apic:extra_consumed_contracts': ['ec1', 'ec2'],
+                  'apic:epg_contract_masters': [{'app_profile_name': 'ap1',
+                                                 'name': 'ec3'},
+                                                {'app_profile_name': 'ap2',
+                                                 'name': 'ec4'}]}
         net_resp = self._make_network(
             self.fmt, 'net1', True, arg_list=tuple(kwargs.keys()), **kwargs)
         net = net_resp['network']
