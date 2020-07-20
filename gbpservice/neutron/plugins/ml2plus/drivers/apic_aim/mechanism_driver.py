@@ -668,6 +668,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             (is_ext or is_svi)):
             raise exceptions.InvalidNetworkForExtraContracts()
 
+        if (current[cisco_apic.EPG_CONTRACT_MASTERS] and (is_ext or is_svi)):
+            raise exceptions.InvalidNetworkForEpgContractMaster()
+
         if is_ext:
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
             if not ext_net:
@@ -784,6 +787,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 cisco_apic.EXTRA_PROVIDED_CONTRACTS]
             epg.consumed_contract_names = current[
                 cisco_apic.EXTRA_CONSUMED_CONTRACTS]
+            epg.epg_contract_masters = current[
+                cisco_apic.EPG_CONTRACT_MASTERS]
             self.aim.create(aim_ctx, epg)
 
         self._add_network_mapping_and_notify(
@@ -849,6 +854,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                              removed_cons)
                 self.aim.update(
                     aim_ctx, epg, consumed_contract_names=contracts)
+
+        # Update EPG contract masters if changed.
+        curr_masters = current[cisco_apic.EPG_CONTRACT_MASTERS]
+        orig_masters = original[cisco_apic.EPG_CONTRACT_MASTERS]
+        if curr_masters != orig_masters:
+            if is_ext or is_svi:
+                raise exceptions.InvalidNetworkForEpgContractMaster()
+
+            epg = self.aim.get(aim_ctx, self._get_network_epg(mapping))
+            self.aim.update(
+                aim_ctx, epg, epg_contract_masters=curr_masters)
 
         if is_ext:
             _, ext_net, ns = self._get_aim_nat_strategy(current)
@@ -1120,7 +1136,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     net_db.aim_extension_mapping,
                     net_db.aim_extension_cidr_mapping,
                     net_db.aim_extension_domain_mapping,
-                    net_db.aim_extension_extra_contract_mapping)
+                    net_db.aim_extension_extra_contract_mapping,
+                    net_db.aim_extension_epg_contract_masters)
             if cisco_apic.EXTERNAL_NETWORK in ext_dict:
                 dn = ext_dict.pop(cisco_apic.EXTERNAL_NETWORK)
                 a_ext_net = aim_resource.ExternalNetwork.from_dn(dn)
@@ -6244,6 +6261,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             set([x.contract_name for x in
                  net_db.aim_extension_extra_contract_mapping
                  if not x.provides]))
+        epg_contract_masters = [{key: x[key]
+                                for key in ('app_profile_name', 'name')}
+                                for x in
+                                net_db.aim_extension_epg_contract_masters]
 
         # REVISIT: Refactor to share code.
         dname = aim_utils.sanitize_display_name(net_db.name)
@@ -6268,7 +6289,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         epg.vmm_domains = []
         epg.physical_domains = []
         epg.static_paths = []
-        epg.epg_contract_masters = []
+        epg.epg_contract_masters = epg_contract_masters
         epg.monitored = False
         mgr.expect_aim_resource(epg)
 

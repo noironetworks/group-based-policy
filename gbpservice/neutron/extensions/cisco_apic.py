@@ -45,6 +45,7 @@ NESTED_DOMAIN_SERVICE_VLAN = 'apic:nested_domain_service_vlan'
 NESTED_DOMAIN_NODE_NETWORK_VLAN = 'apic:nested_domain_node_network_vlan'
 EXTRA_PROVIDED_CONTRACTS = 'apic:extra_provided_contracts'
 EXTRA_CONSUMED_CONTRACTS = 'apic:extra_consumed_contracts'
+EPG_CONTRACT_MASTERS = 'apic:epg_contract_masters'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -160,6 +161,14 @@ APIC_ATTRIBUTES = {
     SYNC_STATE: {'allow_post': False, 'allow_put': False, 'is_visible': True}
 }
 
+EPG_CONTRACT_MASTER_KEY_SPECS = [
+    # key spec for opt_name in _VALID_BLANK_EXTRA_DHCP_OPTS
+    {'app_profile_name': {'type:not_empty_string': None,
+                          'required': True},
+     'name': {'type:not_empty_string': None,
+              'required': True}},
+]
+
 NET_ATTRIBUTES = {
     SVI: {
         'allow_post': True, 'allow_put': False,
@@ -231,6 +240,13 @@ NET_ATTRIBUTES = {
         'is_visible': True, 'default': None,
         'convert_to': conv.convert_none_to_empty_list,
         'validate': {'type:list_of_unique_strings': None},
+    },
+    EPG_CONTRACT_MASTERS: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'convert_to': conv.convert_none_to_empty_list,
+        'validate': {'type:list_of_any_key_specs_or_none':
+                     EPG_CONTRACT_MASTER_KEY_SPECS},
     },
 }
 

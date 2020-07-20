@@ -108,3 +108,8 @@ class InvalidNetworkForExtraContracts(exceptions.BadRequest):
     message = _("Cannot specify apic:extra_provided_contracts or "
                 "apic:extra_consumed_consumed contracts for an external or "
                 "SVI network.")
+
+
+class InvalidNetworkForEpgContractMaster(exceptions.BadRequest):
+    message = _("Cannot specify apic:epg_contract_masters for "
+                "an external or SVI network.")
