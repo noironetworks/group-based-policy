@@ -20,6 +20,9 @@
 # corresponding to the newest neutron branch supported by this
 # repository.
 
+from sqlalchemy import inspect
+
+import neutron.objects.base as n_base
 from neutron_lib.db import api
 
 get_context_manager = api.get_context_manager
@@ -30,3 +33,14 @@ retry_db_errors = api.retry_db_errors
 retry_if_session_inactive = api.retry_if_session_inactive
 CONTEXT_READER = api.CONTEXT_READER
 CONTEXT_WRITER = api.CONTEXT_WRITER
+
+
+def get_session_from_obj(db_obj):
+    # Support OVOs
+    if isinstance(db_obj, n_base.NeutronObject):
+        db_obj = db_obj.db_obj
+    try:
+        instance = inspect(db_obj)
+        return instance.session
+    except Exception:
+        return None
