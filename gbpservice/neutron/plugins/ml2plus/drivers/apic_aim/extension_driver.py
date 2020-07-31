@@ -154,6 +154,21 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     cisco_apic.EXTERNAL_NETWORK] = res_dict.pop(
                         cisco_apic.EXTERNAL_NETWORK)
             result.update(res_dict)
+        if (data.get(cisco_apic.DIST_NAMES) and
+            data[cisco_apic.DIST_NAMES].get(cisco_apic.BD)):
+            dn = data[cisco_apic.DIST_NAMES][cisco_apic.BD]
+            try:
+                aim_res.BridgeDomain.from_dn(dn)
+            except aim_exc.InvalidDNForAciResource:
+                raise n_exc.InvalidInput(
+                    error_message=('%s is not valid BridgeDomain DN' % dn))
+            res_dict = {cisco_apic.BD: dn}
+            self.set_network_extn_db(plugin_context.session, result['id'],
+                                     res_dict)
+            result.setdefault(cisco_apic.DIST_NAMES, {})[
+                    cisco_apic.BD] = res_dict.pop(
+                        cisco_apic.BD)
+            result.update(res_dict)
 
     def process_update_network(self, plugin_context, data, result):
         # Extension attributes that could be updated.

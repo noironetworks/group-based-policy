@@ -51,6 +51,7 @@ from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from opflexagent import constants as ofcst
 from oslo_config import cfg
+from oslo_utils import uuidutils
 import six
 from sqlalchemy.orm import exc as sql_exc
 import testtools
@@ -75,6 +76,7 @@ from gbpservice.neutron.services.grouppolicy import (
 from gbpservice.neutron.services.grouppolicy.drivers.cisco.apic import (
     aim_validation as av)
 
+_uuid = uuidutils.generate_uuid
 PLUGIN_NAME = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
 
 AGENT_CONF_OPFLEX = {'alive': True, 'binary': 'somebinary',
@@ -886,11 +888,14 @@ class TestAimMapping(ApicAimTestCase):
         vrfs = self.aim_mgr.find(aim_ctx, aim_resource.VRF, name=vrf_name)
         self.assertEqual([], vrfs)
 
-    def _get_bd(self, bd_name, tenant_name):
+    def _get_bd(self, bd_name, tenant_name, bd_dn=None):
         session = db_api.get_reader_session()
         aim_ctx = aim_context.AimContext(session)
-        bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
-                                       name=bd_name)
+        if bd_dn:
+            bd = aim_resource.BridgeDomain.from_dn(bd_dn)
+        else:
+            bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
+                                           name=bd_name)
         bd = self.aim_mgr.get(aim_ctx, bd)
         self.assertIsNotNone(bd)
         return bd
@@ -995,7 +1000,7 @@ class TestAimMapping(ApicAimTestCase):
         return aim_ext_net
 
     def _check_network(self, net, routers=None, scope=None, project=None,
-                       vrf=None):
+                       vrf=None, preexisting_bd=None):
         dns = copy.copy(net.get(DN))
 
         project = project or net['tenant_id']
@@ -1058,9 +1063,11 @@ class TestAimMapping(ApicAimTestCase):
             self.assertEqual(vrf_aname, l3out.vrf_name)
             self._check_dn_is_resource(dns, 'ExternalNetwork', ext_net)
         else:
-            aim_bd = self._get_bd(aname, tenant_aname)
+            bd_dn = preexisting_bd.dn if preexisting_bd else None
+            bd_name = preexisting_bd.name if preexisting_bd else aname
+            aim_bd = self._get_bd(bd_name, tenant_aname, bd_dn=bd_dn)
             self.assertEqual(tenant_aname, aim_bd.tenant_name)
-            self.assertEqual(aname, aim_bd.name)
+            self.assertEqual(bd_name, aim_bd.name)
             self.assertEqual(net['name'], aim_bd.display_name)
             self.assertEqual(vrf_aname, aim_bd.vrf_name)
             self.assertTrue(aim_bd.enable_arp_flood)
@@ -1079,7 +1086,7 @@ class TestAimMapping(ApicAimTestCase):
             self.assertEqual(self._app_profile_name, aim_epg.app_profile_name)
             self.assertEqual(aname, aim_epg.name)
             self.assertEqual(net['name'], aim_epg.display_name)
-            self.assertEqual(aname, aim_epg.bd_name)
+            self.assertEqual(bd_name, aim_epg.bd_name)
             self.assertItemsEqual(provided_contract_names,
                                   aim_epg.provided_contract_names)
             self.assertItemsEqual(consumed_contract_names,
@@ -1416,6 +1423,83 @@ class TestAimMapping(ApicAimTestCase):
         # Test delete.
         self._delete('networks', net_id)
         self._check_network_deleted(net)
+
+    def test_network_preexisting_bd(self):
+        # Test create with non-existing BD.
+        bd_dn = 'uni/tn-%s/BD-net_%s' % (self.t1_aname, _uuid())
+        kwargs = {'apic:distinguished_names': {
+                      'BridgeDomain': bd_dn}}
+        resp = self._create_network(
+            self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
+            **kwargs)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidPreexistingBdForNetwork',
+            result['NeutronError']['type'])
+
+        # Test create with pre-existing BD, which belongs to another
+        # network created by our mechanism driver.
+        net = self._make_network(
+            self.fmt, 'net1', True)['network']
+        bd_dn = net['apic:distinguished_names']['BridgeDomain']
+        net_id = net['id']
+        kwargs = {'apic:distinguished_names': {
+                      'BridgeDomain': bd_dn}}
+        resp = self._create_network(
+            self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
+            **kwargs)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidPreexistingBdForNetwork',
+            result['NeutronError']['type'])
+
+        self._delete('networks', net_id)
+
+        # Test create with valid pre-existing BD.
+        aim_ctx = aim_context.AimContext(self.db_session)
+        tenant_name = self.name_mapper.project(None, net['tenant_id'])
+        bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
+                                       name='some_bd_name')
+        bd.monitored = True
+        bd = self.aim_mgr.create(aim_ctx, bd)
+        kwargs = {'apic:distinguished_names': {
+                      'BridgeDomain': bd.dn}}
+        resp = self._create_network(
+            self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
+            **kwargs)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(bd.dn,
+            result['network']['apic:distinguished_names']['BridgeDomain'])
+        net_id = result['network']['id']
+        # Test show.
+        net = self._show('networks', net_id)['network']
+        self._check_network(net, preexisting_bd=bd)
+
+        # Test invalid update - can't change the BD DN
+        data = {'network':
+                {'apic:distinguished_names': {
+                 'BridgeDomain': 'someotherbd'}}}
+        result = self._update('networks', net_id, data,
+                              expected_code=webob.exc.HTTPBadRequest.code)
+        err_msg = 'Cannot update read-only attribute apic:distinguished_names'
+        self.assertEqual('HTTPBadRequest', result['NeutronError']['type'])
+        self.assertEqual(err_msg, result['NeutronError']['message'])
+
+        # Test valid update.
+        data = {'network':
+                {'name': 'newnamefornet',
+                 'apic:extra_provided_contracts': ['ep2', 'ep3'],
+                 'apic:extra_consumed_contracts': ['ec2', 'ec3']}}
+        net = self._update('networks', net_id, data)['network']
+        self._check_network(net, preexisting_bd=bd)
+
+        # Test delete.
+        self._delete('networks', net_id)
+        self._check_network_deleted(net)
+
+        # The BD should be deleted from AIM
+        bd_deleted = self.aim_mgr.get(aim_ctx, bd)
+        self.assertIsNone(bd_deleted)
 
     def test_svi_network_lifecycle(self):
         session = db_api.get_writer_session()
