@@ -429,6 +429,18 @@ class TestNeutronMapping(AimValidationTestCase):
         return net
 
     def test_unrouted_network(self):
+        self._test_unrouted_network()
+
+    def test_unrouted_network_preexisting_bd(self):
+        tenant_name = self.name_mapper.project(None, self._tenant_id)
+        bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
+                                       name='some_bd_name')
+        bd.monitored = True
+        bd = self.aim_mgr.create(self.aim_ctx, bd)
+
+        self._test_unrouted_network(preexisting_bd=bd)
+
+    def _test_unrouted_network(self, preexisting_bd=None):
         # Create network.
         kwargs = {'apic:extra_provided_contracts': ['ep1', 'ep2'],
                   'apic:extra_consumed_contracts': ['ec1', 'ec2'],
@@ -436,6 +448,10 @@ class TestNeutronMapping(AimValidationTestCase):
                                                  'name': 'ec3'},
                                                 {'app_profile_name': 'ap2',
                                                  'name': 'ec4'}]}
+        if preexisting_bd:
+            kwargs.update(
+                {'apic:distinguished_names':
+                    {'BridgeDomain': preexisting_bd.dn}})
         net_resp = self._make_network(
             self.fmt, 'net1', True, arg_list=tuple(kwargs.keys()), **kwargs)
         net = net_resp['network']
@@ -446,11 +462,14 @@ class TestNeutronMapping(AimValidationTestCase):
         net = self._test_network_resources(net_resp)
 
         # Delete network extension data and test migration use case.
-        (self.db_session.query(ext_db.NetworkExtensionDb).
-         filter_by(network_id=net_id).
-         delete())
-        self._validate_repair_validate()
-        self._test_network_attrs(net)
+        # REVISIT: We should consider supporting configuration file
+        # mappings of pre-existing BDs.
+        if not preexisting_bd:
+            (self.db_session.query(ext_db.NetworkExtensionDb).
+             filter_by(network_id=net_id).
+             delete())
+            self._validate_repair_validate()
+            self._test_network_attrs(net)
 
     def _test_external_network(self, vrf_name='openstack_EXT-l1'):
         # Create AIM HostDomainMappingV2.

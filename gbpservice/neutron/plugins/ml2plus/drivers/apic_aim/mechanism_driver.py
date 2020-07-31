@@ -653,6 +653,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 domains, _ = self.get_aim_domains(aim_ctx)
         return domains
 
+    def _check_valid_preexisting_bd(self, aim_ctx, bd_dn):
+        bd = aim_resource.BridgeDomain.from_dn(bd_dn)
+        aim_bd = self.aim.get(aim_ctx, bd)
+        # We should only use pre-existing BDs that weren't
+        # created by this OpenStack installation
+        if not aim_bd or aim_bd and not aim_bd.monitored:
+            raise exceptions.InvalidPreexistingBdForNetwork()
+        return aim_bd
+
     def create_network_precommit(self, context):
         current = context.current
         LOG.debug("APIC AIM MD creating network: %s", current)
@@ -766,6 +775,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                           vrf, aim_ext_net)
             return
         else:
+            # See if the BD is pre-existing
+            bd_dn = (current.get(cisco_apic.DIST_NAMES, {})
+                     .get(cisco_apic.BD))
+            preexisting_bd = (None if not bd_dn else
+                self._check_valid_preexisting_bd(aim_ctx, bd_dn))
             bd, epg = self._map_network(session, current)
 
             dname = aim_utils.sanitize_display_name(current['name'])
@@ -779,10 +793,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # REVISIT(rkukura): When AIM changes default
             # ep_move_detect_mode value to 'garp', remove it here.
             bd.ep_move_detect_mode = 'garp'
-            self.aim.create(aim_ctx, bd)
+            if preexisting_bd:
+                bd = self.aim.update(aim_ctx, preexisting_bd,
+                    display_name=bd.display_name, vrf_name=bd.vrf_name,
+                    enable_arp_flood=bd.enable_arp_flood,
+                    enable_routing=bd.enable_routing,
+                    limit_ip_learn_to_subnets=bd.limit_ip_learn_to_subnets,
+                    ep_move_detect_mode=bd.ep_move_detect_mode,
+                    monitored=False)
+                epg.bd_name = preexisting_bd.name
+            else:
+                bd = self.aim.create(aim_ctx, bd)
+                epg.bd_name = bd.name
 
             epg.display_name = dname
-            epg.bd_name = bd.name
             epg.provided_contract_names = current[
                 cisco_apic.EXTRA_PROVIDED_CONTRACTS]
             epg.consumed_contract_names = current[
@@ -1145,6 +1169,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     cisco_apic.EXTERNAL_NETWORK] = dn
                 aim_resources.append(a_ext_net)
                 res_dict_by_aim_res_dn[a_ext_net.dn] = (
+                    res_dict_and_aim_status_track)
+            if cisco_apic.BD in ext_dict:
+                dn = ext_dict.pop(cisco_apic.BD)
+                aim_bd = aim_resource.BridgeDomain.from_dn(dn)
+                res_dict.setdefault(cisco_apic.DIST_NAMES, {})[
+                    cisco_apic.BD] = dn
+                aim_resources.append(aim_bd)
+                res_dict_by_aim_res_dn[aim_bd.dn] = (
                     res_dict_and_aim_status_track)
 
             res_dict.update(ext_dict)
@@ -3851,15 +3883,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return query(session).params(
             scope_id=scope_id).one_or_none()
 
-    def _map_network(self, session, network, vrf=None):
+    def _map_network(self, session, network, vrf=None, preexisting_bd_dn=None):
         tenant_aname = (vrf.tenant_name if vrf and vrf.tenant_name != 'common'
                         else self.name_mapper.project(
                                 session, network['tenant_id']))
         id = network['id']
         aname = self.name_mapper.network(session, id)
 
-        bd = aim_resource.BridgeDomain(tenant_name=tenant_aname,
-                                       name=aname)
+        if preexisting_bd_dn:
+            bd = aim_resource.BridgeDomain.from_dn(preexisting_bd_dn)
+        else:
+            bd = aim_resource.BridgeDomain(tenant_name=tenant_aname,
+                                           name=aname)
         epg = aim_resource.EndpointGroup(tenant_name=tenant_aname,
                                          app_profile_name=self.ap_name,
                                          name=aname)
@@ -6198,6 +6233,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             cisco_apic.NESTED_DOMAIN_SERVICE_VLAN: None,
             cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN: None,
         }
+        if net_db.aim_mapping and net_db.aim_mapping.get(cisco_apic.BD):
+            res_dict.update({cisco_apic.BD: net_db.aim_mapping[cisco_apic.BD]})
         if net_db.external:
             # REVISIT: These are typical values, but the ability to
             # specify them per-network via config could be useful in
@@ -6231,7 +6268,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                  routed_nets):
         routed_vrf = network_vrfs.get(net_db.id)
         vrf = routed_vrf or self._map_unrouted_vrf()
-        bd, epg = self._map_network(mgr.expected_session, net_db, vrf)
+        # Check for preexisting BDs
+        preexisting_bd_dn = (net_db.aim_extension_mapping.bridge_domain_dn if
+                             net_db.aim_extension_mapping and
+                             net_db.aim_extension_mapping.bridge_domain_dn
+                             else None)
+        bd, epg = self._map_network(mgr.expected_session, net_db, vrf,
+                                    preexisting_bd_dn)
 
         router_contract_names = set()
         for intf in routed_nets.get(net_db.id, []):
