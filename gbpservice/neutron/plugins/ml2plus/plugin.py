@@ -17,6 +17,7 @@
 # that the patches are applied before any of the
 # modules save a reference to the functions being patched
 from gbpservice.neutron.extensions import patch  # noqa
+from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 from neutron.common import constants as n_const
 from neutron.common import utils as n_utils
@@ -163,15 +164,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @resource_extend.extends([net_def.COLLECTION_NAME])
     def _ml2_md_extend_network_dict(result, netdb):
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(netdb)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         # REVISIT: Check if transaction begin is still
         # required here, and if so, if reader pattern
         # can be used instead (will require getting the
-        # current context, which should be available in
-        # the session.info's dictionary, with a key of
-        # 'using_context').
+        # current context)
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_network_dict(
                     session, netdb, result)
@@ -179,11 +176,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @staticmethod
     @resource_extend.extends([net_def.COLLECTION_NAME + '_BULK'])
     def _ml2_md_extend_network_dict_bulk(results, _):
-        netdb = results[0][1] if results else None
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(netdb)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_network_dict_bulk(session, results)
 
@@ -191,15 +185,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @resource_extend.extends([port_def.COLLECTION_NAME])
     def _ml2_md_extend_port_dict(result, portdb):
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(portdb)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         # REVISIT: Check if transaction begin is still
         # required here, and if so, if reader pattern
         # can be used instead (will require getting the
-        # current context, which should be available in
-        # the session.info's dictionary, with a key of
-        # 'using_context').
+        # current context)
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_port_dict(
                     session, portdb, result)
@@ -207,11 +197,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @staticmethod
     @resource_extend.extends([port_def.COLLECTION_NAME + '_BULK'])
     def _ml2_md_extend_port_dict_bulk(results, _):
-        portdb = results[0][1] if results else None
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(portdb)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_port_dict_bulk(session, results)
 
@@ -219,15 +206,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @resource_extend.extends([subnet_def.COLLECTION_NAME])
     def _ml2_md_extend_subnet_dict(result, subnetdb):
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(subnetdb)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         # REVISIT: Check if transaction begin is still
         # required here, and if so, if reader pattern
         # can be used instead (will require getting the
-        # current context, which should be available in
-        # the session.info's dictionary, with a key of
-        # 'using_context').
+        # current context)
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_subnet_dict(
                     session, subnetdb, result)
@@ -235,11 +218,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @staticmethod
     @resource_extend.extends([subnet_def.COLLECTION_NAME + '_BULK'])
     def _ml2_md_extend_subnet_dict_bulk(results, _):
-        subnetdb = results[0][1] if results else None
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(subnetdb)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_subnet_dict_bulk(session, results)
 
@@ -247,15 +227,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @resource_extend.extends([subnetpool_def.COLLECTION_NAME])
     def _ml2_md_extend_subnetpool_dict(result, subnetpooldb):
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(subnetpooldb)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         # REVISIT: Check if transaction begin is still
         # required here, and if so, if reader pattern
         # can be used instead (will require getting the
-        # current context, which should be available in
-        # the session.info's dictionary, with a key of
-        # 'using_context').
+        # current context)
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_subnetpool_dict(
                     session, subnetpooldb, result)
@@ -263,11 +239,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @staticmethod
     @resource_extend.extends([subnetpool_def.COLLECTION_NAME + '_BULK'])
     def _ml2_md_extend_subnetpool_dict_bulk(results, _):
-        subnetpooldb = results[0][1] if results else None
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(subnetpooldb)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_subnetpool_dict_bulk(session,
                                                                  results)
@@ -276,15 +249,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @resource_extend.extends([as_def.COLLECTION_NAME])
     def _ml2_md_extend_address_scope_dict(result, address_scope):
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(address_scope)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         # REVISIT: Check if transaction begin is still
         # required here, and if so, if reader pattern
         # can be used instead (will require getting the
-        # current context, which should be available in
-        # the session.info's dictionary, with a key of
-        # 'using_context').
+        # current context)
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_address_scope_dict(
                     session, address_scope, result)
@@ -292,11 +261,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @staticmethod
     @resource_extend.extends([as_def.COLLECTION_NAME + '_BULK'])
     def _ml2_md_extend_address_scope_dict_bulk(results, _):
-        address_scope = results[0][1] if results else None
         plugin = directory.get_plugin()
-        session = db_api.get_session_from_obj(address_scope)
-        if not session:
-            session = db_api.get_writer_session()
+        session = patch_neutron.get_current_session()
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_address_scope_dict_bulk(session,
                                                                     results)

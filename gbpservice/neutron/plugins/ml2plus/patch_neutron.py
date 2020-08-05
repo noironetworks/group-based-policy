@@ -36,6 +36,10 @@ extensions.get_extensions_path = get_extensions_path
 from gbpservice.common import utils as gbp_utils
 
 
+def get_current_session():
+    return gbp_utils.get_current_session()
+
+
 from neutron_lib import context as nlib_ctx
 
 
