@@ -31,7 +31,6 @@ from neutron_lib.plugins import constants
 from neutron_lib.plugins import directory
 from oslo_log import log as logging
 from oslo_utils import excutils
-from sqlalchemy import inspect
 
 from gbpservice._i18n import _
 from gbpservice.neutron.db import api as db_api
@@ -42,7 +41,6 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
-from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 
 LOG = logging.getLogger(__name__)
@@ -92,7 +90,9 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
 
         LOG.debug("APIC AIM L3 Plugin extending router dict: %s", router_res)
         plugin = directory.get_plugin(constants.L3)
-        session = inspect(router_db).session
+        session = db_api.get_session_from_obj(router_db)
+        if not session:
+            session = db_api.get_writer_session()
         try:
             plugin._md.extend_router_dict(session, router_db, router_res)
             plugin._include_router_extn_attr(session, router_res)
@@ -107,8 +107,11 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                   routers)
         if not routers:
             return
+        router_db = routers[0]
         plugin = directory.get_plugin(constants.L3)
-        session = patch_neutron.get_current_session()
+        session = db_api.get_session_from_obj(router_db)
+        if not session:
+            session = db_api.get_writer_session()
         try:
             plugin._md.extend_router_dict_bulk(session, routers)
             plugin._include_router_extn_attr_bulk(session, routers)
