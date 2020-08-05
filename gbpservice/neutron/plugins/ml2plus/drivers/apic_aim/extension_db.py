@@ -103,6 +103,21 @@ class NetworkExtExtraContractDb(model_base.BASEV2):
                                    lazy='joined', cascade='delete'))
 
 
+class NetworkExtEpgContractMasterDb(model_base.BASEV2):
+
+    __tablename__ = 'apic_aim_network_epg_contract_masters'
+
+    network_id = sa.Column(
+        sa.String(36), sa.ForeignKey('networks.id', ondelete="CASCADE"))
+    app_profile_name = sa.Column(sa.String(64), primary_key=True)
+    name = sa.Column(sa.String(64), primary_key=True)
+    network = orm.relationship(models_v2.Network,
+                               backref=orm.backref(
+                                   'aim_extension_epg_contract_masters',
+                                   uselist=True,
+                                   lazy='joined', cascade='delete'))
+
+
 class SubnetExtensionDb(model_base.BASEV2):
 
     __tablename__ = 'apic_aim_subnet_extensions'
@@ -175,9 +190,18 @@ class ExtensionDbMixin(object):
         db_contracts = query(session).params(
             network_ids=network_ids).all()
 
+        query = BAKERY(lambda s: s.query(
+            NetworkExtEpgContractMasterDb))
+        query += lambda q: q.filter(
+            NetworkExtEpgContractMasterDb.network_id.in_(
+                sa.bindparam('network_ids', expanding=True)))
+        db_masters = query(session).params(
+            network_ids=network_ids).all()
+
         cidrs_by_net_id = {}
         vlans_by_net_id = {}
         contracts_by_net_id = {}
+        masters_by_net_id = {}
         for db_cidr in db_cidrs:
             cidrs_by_net_id.setdefault(db_cidr.network_id, []).append(
                 db_cidr)
@@ -187,6 +211,9 @@ class ExtensionDbMixin(object):
         for db_contract in db_contracts:
             contracts_by_net_id.setdefault(db_contract.network_id, []).append(
                 db_contract)
+        for db_master in db_masters:
+            masters_by_net_id.setdefault(db_master.network_id, []).append(
+                db_master)
 
         result = {}
         for db_obj in db_objs:
@@ -194,11 +221,12 @@ class ExtensionDbMixin(object):
             result.setdefault(net_id, self.make_network_extn_db_conf_dict(
                 db_obj, cidrs_by_net_id.get(net_id, []),
                 vlans_by_net_id.get(net_id, []),
-                contracts_by_net_id.get(net_id, [])))
+                contracts_by_net_id.get(net_id, []),
+                masters_by_net_id.get(net_id, [])))
         return result
 
     def make_network_extn_db_conf_dict(self, ext_db, db_cidrs, db_vlans,
-                                       db_contracts):
+                                       db_contracts, db_masters):
         net_res = {}
         db_obj = ext_db
         if db_obj:
@@ -226,6 +254,9 @@ class ExtensionDbMixin(object):
                 c.contract_name for c in db_contracts if c.provides]
             net_res[cisco_apic.EXTRA_CONSUMED_CONTRACTS] = [
                 c.contract_name for c in db_contracts if not c.provides]
+            net_res[cisco_apic.EPG_CONTRACT_MASTERS] = [
+                {'app_profile_name': m.app_profile_name,
+                 'name': m.name} for m in db_masters]
         if net_res.get(cisco_apic.EXTERNAL_NETWORK):
             net_res[cisco_apic.EXTERNAL_CIDRS] = [c.cidr for c in db_cidrs]
         return net_res
@@ -292,6 +323,13 @@ class ExtensionDbMixin(object):
                         session, NetworkExtExtraContractDb, 'contract_name',
                         res_dict[cisco_apic.EXTRA_CONSUMED_CONTRACTS],
                         network_id=network_id, provides=False)
+
+            if cisco_apic.EPG_CONTRACT_MASTERS in res_dict:
+                self._update_dict_attr(
+                        session, NetworkExtEpgContractMasterDb,
+                        ('app_profile_name', 'name'),
+                        res_dict[cisco_apic.EPG_CONTRACT_MASTERS],
+                        network_id=network_id)
 
     def get_network_ids_by_ext_net_dn(self, session, dn, lock_update=False):
         query = BAKERY(lambda s: s.query(
@@ -437,6 +475,27 @@ class ExtensionDbMixin(object):
             attr = {column: v}
             attr.update(filters)
             db_obj = db_model(**attr)
+            session.add(db_obj)
+
+    def _update_dict_attr(self, session, db_model, keys,
+                          new_values, **filters):
+        if new_values is None:
+            return
+
+        # REVISIT: Can this query be baked?
+        rows = session.query(db_model).filter_by(**filters).all()
+
+        # remove duplicates, may change order
+        new_values = [dict(t) for t in {tuple(d.items()) for d in new_values}]
+        for r in rows:
+            curr_obj = {key: r[key] for key in keys}
+            if curr_obj in new_values:
+                new_values.discard(curr_obj)
+            else:
+                session.delete(r)
+        for v in new_values:
+            v.update(filters)
+            db_obj = db_model(**v)
             session.add(db_obj)
 
     def set_router_extn_db(self, session, router_id, res_dict):

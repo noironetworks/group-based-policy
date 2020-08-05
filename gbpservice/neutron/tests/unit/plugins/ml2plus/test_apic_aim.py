@@ -1009,6 +1009,7 @@ class TestAimMapping(ApicAimTestCase):
             router_anames + net['apic:extra_provided_contracts'])
         consumed_contract_names = set(
             router_anames + net['apic:extra_consumed_contracts'])
+        epg_contract_masters = net['apic:epg_contract_masters']
 
         if routers:
             if vrf:
@@ -1083,6 +1084,8 @@ class TestAimMapping(ApicAimTestCase):
                                   aim_epg.provided_contract_names)
             self.assertItemsEqual(consumed_contract_names,
                                   aim_epg.consumed_contract_names)
+            self.assertItemsEqual(epg_contract_masters,
+                                  aim_epg.epg_contract_masters)
             # REVISIT(rkukura): Check openstack_vmm_domain_names and
             # physical_domain_names?
             self._check_dn_is_resource(dns, 'EndpointGroup', aim_epg)
@@ -1383,7 +1386,11 @@ class TestAimMapping(ApicAimTestCase):
     def test_network_lifecycle(self):
         # Test create.
         kwargs = {'apic:extra_provided_contracts': ['ep1', 'ep2'],
-                  'apic:extra_consumed_contracts': ['ec1', 'ec2']}
+                  'apic:extra_consumed_contracts': ['ec1', 'ec2'],
+                  'apic:epg_contract_masters': [{'app_profile_name': 'ap1',
+                                                 'name': 'epg1'},
+                                                {'app_profile_name': 'ap2',
+                                                 'name': 'epg2'}]}
         net = self._make_network(
             self.fmt, 'net1', True, arg_list=tuple(list(kwargs.keys())),
             **kwargs)['network']
@@ -1398,7 +1405,11 @@ class TestAimMapping(ApicAimTestCase):
         data = {'network':
                 {'name': 'newnamefornet',
                  'apic:extra_provided_contracts': ['ep2', 'ep3'],
-                 'apic:extra_consumed_contracts': ['ec2', 'ec3']}}
+                 'apic:extra_consumed_contracts': ['ec2', 'ec3'],
+                 'apic:epg_contract_masters': [{'app_profile_name': 'ap1',
+                                                'name': 'epg2'},
+                                               {'app_profile_name': 'ap3',
+                                                'name': 'epg2'}]}}
         net = self._update('networks', net_id, data)['network']
         self._check_network(net)
 
@@ -1463,6 +1474,19 @@ class TestAimMapping(ApicAimTestCase):
             result['NeutronError']['type'])
         del kwargs['apic:extra_consumed_contracts']
 
+        # Verify creating network with EPG contract master fails.
+        kwargs['apic:epg_contract_masters'] = [{'app_profile_name': 'ap1',
+                                                'name': 'epg2'}]
+
+        resp = self._create_network(
+            self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
+            **kwargs)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidNetworkForEpgContractMaster',
+            result['NeutronError']['type'])
+        del kwargs['apic:epg_contract_masters']
+
         # Create network without extra provided or consumed contracts.
         net_id = self._make_network(
             self.fmt, 'net', True,
@@ -1484,6 +1508,17 @@ class TestAimMapping(ApicAimTestCase):
             webob.exc.HTTPBadRequest.code)
         self.assertEqual(
             'InvalidNetworkForExtraContracts',
+            result['NeutronError']['type'])
+
+        # Verify setting EPG contract master on network fails.
+        result = self._update(
+            'networks', net_id,
+            {'network': {'apic:epg_contract_masters': [
+                          {'app_profile_name': 'ap1',
+                           'name': 'epg2'}]}},
+            webob.exc.HTTPBadRequest.code)
+        self.assertEqual(
+            'InvalidNetworkForEpgContractMaster',
             result['NeutronError']['type'])
 
     def test_external_network_exceptions(self):
@@ -6039,6 +6074,54 @@ class TestExtensionAttributes(ApicAimTestCase):
             extn_db.NetworkExtExtraContractDb).filter_by(
                 network_id=net_id).all())
         self.assertEqual([], db_contracts)
+
+    def test_network_with_epg_contract_masters_lifecycle(self):
+        session = db_api.get_reader_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # Create network with EPG contract masters
+        masters = [{'app_profile_name': 'ap1',
+                    'name': 'epg1'},
+                   {'app_profile_name': 'ap2',
+                    'name': 'epg2'}]
+        kwargs = {'apic:epg_contract_masters': masters}
+        net = self._make_network(
+            self.fmt, 'net1', True, arg_list=tuple(kwargs.keys()),
+            **kwargs)['network']
+        net_id = net['id']
+        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+
+        # Test show.
+        net = self._show('networks', net_id)['network']
+        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+
+        # Test list.
+        net = self._list(
+            'networks', query_params=('id=%s' % net_id))['networks'][0]
+        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+
+        # Test update with EPG contract masters
+        masters = [{'name': 'epg3',
+                    'app_profile_name': 'ap1'},
+                   {'app_profile_name': 'ap4',
+                    'name': 'epg2'}]
+        net = self._update(
+            'networks', net_id,
+            {'network':
+             {'apic:epg_contract_masters': masters}})['network']
+        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+
+        # Test show after update.
+        net = self._show('networks', net_id)['network']
+        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+
+        # Test delete.
+        self._delete('networks', net_id)
+        self.assertFalse(extn.get_network_extn_db(session, net_id))
+        db_masters = (session.query(
+            extn_db.NetworkExtEpgContractMasterDb).filter_by(
+                network_id=net_id).all())
+        self.assertEqual([], db_masters)
 
     def test_external_network_lifecycle(self):
         session = db_api.get_reader_session()
