@@ -50,12 +50,6 @@ def get_current_context():
     return get_obj_from_stack(n_context.Context)
 
 
-def get_current_session():
-    ctx = get_current_context()
-    if ctx:
-        return ctx.session
-
-
 def get_resource_plural(resource):
     if resource.endswith('y'):
         resource_plural = resource.replace('y', 'ies')
