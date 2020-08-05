@@ -17,7 +17,6 @@
 # that the patches are applied before any of the
 # modules save a reference to the functions being patched
 from gbpservice.neutron.extensions import patch  # noqa
-from gbpservice.neutron.plugins.ml2plus import patch_neutron  # noqa
 
 from neutron.common import constants as n_const
 from neutron.common import utils as n_utils
@@ -222,12 +221,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(subnetdb)
         if not session:
-            # REVISIT: For GBP workflows, getting a
-            # new writer session causes rollbacks in
-            # outer sessions to fail. This seems to
-            # be okay for other resources, as well
-            # as post-queens.
-            session = patch_neutron.get_current_session()
+            session = db_api.get_writer_session()
         # REVISIT: Check if transaction begin is still
         # required here, and if so, if reader pattern
         # can be used instead (will require getting the
@@ -245,12 +239,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(subnetdb)
         if not session:
-            # REVISIT: For GBP workflows, getting a
-            # new writer session causes rollbacks in
-            # outer sessions to fail. This seems to
-            # be okay for other resources, as well
-            # as post-queens.
-            session = patch_neutron.get_current_session()
+            session = db_api.get_writer_session()
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_subnet_dict_bulk(session, results)
 
