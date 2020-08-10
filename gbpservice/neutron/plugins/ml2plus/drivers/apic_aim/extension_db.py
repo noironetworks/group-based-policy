@@ -40,6 +40,7 @@ class NetworkExtensionDb(model_base.BASEV2):
         sa.String(36), sa.ForeignKey('networks.id', ondelete="CASCADE"),
         primary_key=True)
     external_network_dn = sa.Column(sa.String(1024))
+    bridge_domain_dn = sa.Column(sa.String(1024))
     nat_type = sa.Column(sa.Enum('distributed', 'edge', ''))
     svi = sa.Column(sa.Boolean)
     bgp_enable = sa.Column(sa.Boolean, default=False, nullable=False)
@@ -232,6 +233,8 @@ class ExtensionDbMixin(object):
         if db_obj:
             self._set_if_not_none(net_res, cisco_apic.EXTERNAL_NETWORK,
                                   db_obj['external_network_dn'])
+            self._set_if_not_none(net_res, cisco_apic.BD,
+                                  db_obj['bridge_domain_dn'])
             self._set_if_not_none(net_res, cisco_apic.NAT_TYPE,
                                   db_obj['nat_type'])
             self._set_if_not_none(net_res, cisco_apic.SVI, db_obj['svi'])
@@ -274,6 +277,9 @@ class ExtensionDbMixin(object):
             if cisco_apic.EXTERNAL_NETWORK in res_dict:
                 db_obj['external_network_dn'] = (
                     res_dict[cisco_apic.EXTERNAL_NETWORK])
+            if cisco_apic.BD in res_dict:
+                db_obj['bridge_domain_dn'] = (
+                    res_dict[cisco_apic.BD])
             if cisco_apic.NAT_TYPE in res_dict:
                 db_obj['nat_type'] = res_dict[cisco_apic.NAT_TYPE]
             if cisco_apic.SVI in res_dict:

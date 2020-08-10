@@ -248,12 +248,9 @@ NET_ATTRIBUTES = {
         'validate': {'type:list_of_any_key_specs_or_none':
                      EPG_CONTRACT_MASTER_KEY_SPECS},
     },
-}
-
-EXT_NET_ATTRIBUTES = {
     DIST_NAMES: {
-        # DN of corresponding APIC L3Out external network; can be
-        # specified only on create.
+        # DN of corresponding APIC L3Out external network or BD.
+        # It can be specified only on create.
         # Change 'allow_put' if updates on other DNs is allowed later,
         # and validate that ExternalNetwork DN may not be updated.
         'allow_post': True, 'allow_put': False,
@@ -262,10 +259,15 @@ EXT_NET_ATTRIBUTES = {
         'validate': {
             'type:dict_or_none': {
                 EXTERNAL_NETWORK: {'type:string': None,
-                                   'required': True}
-            }
+                                   'required': False},
+                BD: {'type:string': None,
+                     'required': False}
+            },
         }
     },
+}
+
+EXT_NET_ATTRIBUTES = {
     NAT_TYPE: {
         # whether NAT is enabled, and if so its type
         'allow_post': True, 'allow_put': False,
