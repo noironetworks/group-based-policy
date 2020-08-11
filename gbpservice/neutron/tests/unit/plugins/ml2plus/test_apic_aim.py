@@ -1913,6 +1913,12 @@ class TestAimMapping(ApicAimTestCase):
         self._check_subnet(subnet, net, [], [gw1_ip])
         mock_notif.assert_has_calls(port_calls, any_order=True)
 
+        # The update to dns_nameservers should trigger the port updates
+        data = {'subnet': {'dns_nameservers': ['9.8.7.6']}}
+        subnet = self._update('subnets', subnet1_id, data)['subnet']
+        self._check_subnet(subnet, net, [], [gw1_ip])
+        mock_notif.assert_has_calls(port_calls, any_order=True)
+
         # Create subnet2.
         if not is_svi:
             gw2_ip = '10.0.2.1'
@@ -8113,7 +8119,14 @@ class TestPortVlanNetwork(ApicAimTestCase):
                                    [{'nexthop': '1.1.1.1',
                                     'destination': '1.1.1.0/24'}]}}
                 self._update('subnets', sub1['subnet']['id'],
-                             data)['subnet']
+                             data)
+                mock_notif.assert_has_calls(port_calls, any_order=True)
+
+                # The update to dns_nameservers should trigger the port updates
+                port_calls = [mock.call(mock.ANY, p1['port'])]
+                data = {'subnet': {'dns_nameservers': ['9.8.7.6']}}
+                self._update('subnets', sub1['subnet']['id'],
+                             data)
                 mock_notif.assert_has_calls(port_calls, any_order=True)
 
                 # move port to host h2
