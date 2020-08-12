@@ -161,7 +161,9 @@ class ValidationManager(object):
         for attr_name, attr_type in resource.other_attributes.items():
             attr_type_type = attr_type['type']
             if attr_type_type == 'string':
-                setattr(resource, attr_name, str(getattr(resource, attr_name)))
+                value = getattr(resource, attr_name)
+                setattr(resource, attr_name,
+                        str(value) if value else value)
             elif (attr_type_type == 'array' and
                 attr_type['items']['type'] == 'string'):
                 # REVISIT: May also need to dedup arrays of types

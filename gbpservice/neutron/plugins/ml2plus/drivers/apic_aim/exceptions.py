@@ -115,6 +115,11 @@ class InvalidNetworkForEpgContractMaster(exceptions.BadRequest):
                 "an external or SVI network.")
 
 
+class InvalidNetworkForQos(exceptions.BadRequest):
+    message = _("Cannot specify qos policy for "
+                "an external or SVI network.")
+
+
 class InvalidPreexistingBdForNetwork(exceptions.BadRequest):
     message = _("The Bridge Domain specified in apic:distinguished_names "
                 "either does not exist in ACI or belongs to another network "

@@ -63,6 +63,7 @@ from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from neutron_lib.plugins.ml2 import api
+from neutron_lib.services.qos import constants as qos_consts
 from neutron_lib.utils import net
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
@@ -92,6 +93,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import nova_client
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import rpc
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
+
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import qos_driver
 
 # REVISIT: We need the aim_mapping policy driver's config until
 # advertise_mtu and nested_host_vlan are moved to the mechanism
@@ -278,6 +281,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
         self.apic_router_id_pool = cfg.CONF.ml2_apic_aim.apic_router_id_pool
         self.apic_router_id_subnet = netaddr.IPSet([self.apic_router_id_pool])
+        self.qos_driver = qos_driver.register(self)
 
     def start_rpc_listeners(self):
         LOG.info("APIC AIM MD starting RPC listeners")
@@ -661,6 +665,98 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             raise exceptions.InvalidPreexistingBdForNetwork()
         return aim_bd
 
+    def _handle_qos_policy(self, context, policy):
+        session = context.session
+        aim_ctx = aim_context.AimContext(session)
+        tenant_aname = self.name_mapper.project(session, context.tenant_id)
+        aim_qos_db = aim_resource.QosRequirement(
+                        tenant_name=tenant_aname, name=policy['id'])
+        aim_qos_db = self.aim.get(aim_ctx, aim_qos_db)
+        bw_rules = []
+        dscp = None
+        egress_dpp_pol = None
+        ingress_dpp_pol = None
+        for rule in policy['rules']:
+            if rule.rule_type == qos_consts.RULE_TYPE_DSCP_MARKING:
+                dscp = rule.dscp_mark
+            elif rule.rule_type == qos_consts.RULE_TYPE_BANDWIDTH_LIMIT:
+                if rule.direction == 'egress':
+                    egress_dpp_pol = rule.id
+                    bw_rules.append({
+                        'egress': True,
+                        'burst': str(rule.max_burst_kbps),
+                        'tenant_name': tenant_aname,
+                        'name': rule.id, 'burst_unit': 'kilo',
+                        'display_name': policy['name'] + '_egress',
+                        'rate_unit': 'kilo',
+                        'rate': rule.max_kbps})
+                elif rule.direction == 'ingress':
+                    ingress_dpp_pol = rule.id
+                    bw_rules.append({
+                        'egress': False,
+                        'burst': str(rule.max_burst_kbps),
+                        'tenant_name': tenant_aname,
+                        'name': rule.id, 'burst_unit': 'kilo',
+                        'display_name': policy['name'] + '_ingress',
+                        'rate_unit': 'kilo', 'rate': rule.max_kbps})
+
+        if aim_qos_db and aim_qos_db.egress_dpp_pol and \
+           aim_qos_db.egress_dpp_pol != egress_dpp_pol:
+            aim_bw = aim_resource.QosDppPol(tenant_name=tenant_aname,
+                                            name=aim_qos_db.egress_dpp_pol)
+            self.aim.delete(aim_ctx, aim_bw)
+        if aim_qos_db and aim_qos_db.ingress_dpp_pol and \
+           aim_qos_db.ingress_dpp_pol != ingress_dpp_pol:
+            aim_bw = aim_resource.QosDppPol(tenant_name=tenant_aname,
+                                            name=aim_qos_db.ingress_dpp_pol)
+            self.aim.delete(aim_ctx, aim_bw)
+        aim_qos = aim_resource.QosRequirement(
+                    tenant_name=tenant_aname, name=policy['id'],
+                    display_name=policy['name'],
+                    dscp=dscp, egress_dpp_pol=egress_dpp_pol,
+                    ingress_dpp_pol=ingress_dpp_pol)
+        self.aim.create(aim_ctx, aim_qos, overwrite=True)
+        for i in bw_rules:
+            res = aim_resource.QosDppPol(**i)
+            self.aim.create(aim_ctx, res, overwrite=True)
+
+    def create_qos_policy_precommit(self, context, policy):
+        """Create a QoS policy.
+        :param context: neutron api request context
+        :type context: neutron_lib.context.Context
+        :param policy: policy data to be applied
+        :type policy: dict
+        :returns: a QosPolicy object
+        """
+        self._handle_qos_policy(context, policy)
+
+    def update_qos_policy_precommit(self, context, policy):
+        """Create a QoS policy.
+        :param context: neutron api request context
+        :type context: neutron_lib.context.Context
+        :param policy: policy data to be applied
+        :type policy: dict
+        :returns: a QosPolicy object
+        """
+        self._handle_qos_policy(context, policy)
+
+    def delete_qos_policy_precommit(self, context, policy):
+        session = context.session
+        aim_ctx = aim_context.AimContext(session)
+        tenant_aname = self.name_mapper.project(session, context.tenant_id)
+        qos_aim = aim_resource.QosRequirement(
+                    tenant_name=tenant_aname, name=policy['id'])
+        aim_qos_db = self.aim.get(aim_ctx, qos_aim)
+        if aim_qos_db and aim_qos_db.egress_dpp_pol:
+            aim_bw = aim_resource.QosDppPol(tenant_name=tenant_aname,
+                                            name=aim_qos_db.egress_dpp_pol)
+            self.aim.delete(aim_ctx, aim_bw)
+        if aim_qos_db and aim_qos_db.ingress_dpp_pol:
+            aim_bw = aim_resource.QosDppPol(tenant_name=tenant_aname,
+                                            name=aim_qos_db.ingress_dpp_pol)
+            self.aim.delete(aim_ctx, aim_bw)
+        self.aim.delete(aim_ctx, qos_aim, cascade=True)
+
     def create_network_precommit(self, context):
         current = context.current
         LOG.debug("APIC AIM MD creating network: %s", current)
@@ -678,6 +774,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         if (current[cisco_apic.EPG_CONTRACT_MASTERS] and (is_ext or is_svi)):
             raise exceptions.InvalidNetworkForEpgContractMaster()
+
+        if (current.get(qos_consts.QOS_POLICY_ID) and (is_ext or is_svi)):
+            raise exceptions.InvalidNetworkForQos()
 
         if is_ext:
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
@@ -812,6 +911,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 cisco_apic.EXTRA_CONSUMED_CONTRACTS]
             epg.epg_contract_masters = current[
                 cisco_apic.EPG_CONTRACT_MASTERS]
+            epg.qos_name = current.get(qos_consts.QOS_POLICY_ID, None)
             self.aim.create(aim_ctx, epg)
 
         self._add_network_mapping_and_notify(
@@ -832,6 +932,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         is_ext = self._is_external(current)
         is_svi = self._is_svi(current)
 
+        if (current.get(qos_consts.QOS_POLICY_ID) and (is_ext or is_svi)):
+            raise exceptions.InvalidNetworkForQos()
+
         # Update name if changed. REVISIT: Remove is_ext from
         # condition and add UT for updating external network name.
         if (not is_ext and
@@ -846,6 +949,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 l3out = self._get_network_l3out(mapping)
                 if l3out:
                     self.aim.update(aim_ctx, l3out, display_name=dname)
+
+        if (current.get(qos_consts.QOS_POLICY_ID) !=
+            original.get(qos_consts.QOS_POLICY_ID)):
+            epg = self._get_network_epg(mapping)
+            self.aim.update(
+                aim_ctx, epg,
+                qos_name=current.get(qos_consts.QOS_POLICY_ID))
 
         # Update extra provided/consumed contracts if changed.
         curr_prov = set(current[cisco_apic.EXTRA_PROVIDED_CONTRACTS])
@@ -5949,6 +6059,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         if d['type'] == 'OpenStack']
                     expected_epg.physical_domain_names = [
                         d['name'] for d in expected_epg.physical_domains]
+                    expected_epg.qos_name = actual_epg.qos_name
                 else:
                     # REVISIT: Force rebinding of ports using this
                     # EPG?
@@ -6274,6 +6385,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         epg.static_paths = []
         epg.epg_contract_masters = epg_contract_masters
         epg.monitored = False
+        qos_policy_binding = net_db.get('qos_policy_binding')
+        epg.qos_name = (
+            qos_policy_binding.policy_id if qos_policy_binding else None)
         mgr.expect_aim_resource(epg)
 
         return bd, epg, vrf
