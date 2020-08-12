@@ -63,6 +63,7 @@ from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from neutron_lib.plugins.ml2 import api
+from neutron_lib.services.qos import constants as qos_consts
 from neutron_lib.utils import net
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
@@ -92,6 +93,9 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import nova_client
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import rpc
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import trunk_driver
+
+from gbpservice.neutron.services.qos.drivers.ml2plus import (
+    driver as aci_qos_driver)
 
 # REVISIT: We need the aim_mapping policy driver's config until
 # advertise_mtu and nested_host_vlan are moved to the mechanism
@@ -279,6 +283,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
         self.apic_router_id_pool = cfg.CONF.ml2_apic_aim.apic_router_id_pool
         self.apic_router_id_subnet = netaddr.IPSet([self.apic_router_id_pool])
+
+        self.qos_driver = aci_qos_driver.ACIQosDriver.create(self)
 
     def start_rpc_listeners(self):
         LOG.info("APIC AIM MD starting RPC listeners")
@@ -662,6 +668,100 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             raise exceptions.InvalidPreexistingBdForNetwork()
         return aim_bd
 
+    def _handle_qos_policy(self, context, policy):
+        session = context.session
+        aim_ctx = aim_context.AimContext(session)
+        tenant_aname = self.name_mapper.project(session, context.tenant_id)
+        aim_qos_db = aim_resource.QosRequirement(
+                        tenant_name=tenant_aname, name=policy['id'])
+        aim_qos_db = self.aim.get(aim_ctx, aim_qos_db)
+        bw_rules = []
+        dscp = None
+        egress_bw_limit = None
+        ingress_bw_limit = None
+        for rule in policy['rules']:
+
+            if rule.rule_type == qos_consts.RULE_TYPE_DSCP_MARKING:
+                dscp = rule.dscp_mark
+            elif rule.rule_type == qos_consts.RULE_TYPE_BANDWIDTH_LIMIT:
+                if rule.direction == 'egress':
+                    egress_bw_limit = rule.id
+                    bw_rules.append({
+                        'egress': True,
+                        'burst': rule.max_burst_kbps,
+                        'tenant_name': tenant_aname,
+                        'name': rule.id,
+                        'display_name': policy['name'] + '_egress',
+                        'rate': rule.max_kbps})
+                if rule.direction == 'ingress':
+                    ingress_bw_limit = rule.id
+                    bw_rules.append({
+                        'egress': False,
+                        'burst': rule.max_burst_kbps,
+                        'tenant_name': tenant_aname,
+                        'name': rule.id,
+                        'display_name': policy['name'] + '_ingress',
+                        'rate': rule.max_kbps})
+
+        # delete existing rules if they are modified
+        if aim_qos_db and aim_qos_db.egress_bw_limit and \
+           aim_qos_db.egress_bw_limit != egress_bw_limit:
+            aim_bw = aim_resource.QosBandwidthLimit(
+                tenant_name=tenant_aname, name=aim_qos_db.egress_bw_limit)
+            self.aim.delete(aim_ctx, aim_bw)
+        if aim_qos_db and aim_qos_db.ingress_bw_limit and \
+           aim_qos_db.ingress_bw_limit != ingress_bw_limit:
+            aim_bw = aim_resource.QosBandwidthLimit(
+                tenant_name=tenant_aname, name=aim_qos_db.ingress_bw_limit)
+            self.aim.delete(aim_ctx, aim_bw)
+
+        aim_qos = aim_resource.QosRequirement(
+                    tenant_name=tenant_aname, name=policy['id'],
+                    display_name=policy['name'],
+                    dscp=dscp, egress_bw_limit=egress_bw_limit,
+                    ingress_bw_limit=ingress_bw_limit)
+        self.aim.create(aim_ctx, aim_qos, overwrite=True)
+        for i in bw_rules:
+            res = aim_resource.QosBandwidthLimit(**i)
+            self.aim.create(aim_ctx, res, overwrite=True)
+
+    def create_qos_policy_precommit(self, context, policy):
+        """Create a QoS policy.
+        :param context: neutron api request context
+        :type context: neutron_lib.context.Context
+        :param policy: policy data to be applied
+        :type policy: dict
+        :returns: a QosPolicy object
+        """
+        self._handle_qos_policy(context, policy)
+
+    def update_qos_policy_precommit(self, context, policy):
+        """Create a QoS policy.
+        :param context: neutron api request context
+        :type context: neutron_lib.context.Context
+        :param policy: policy data to be applied
+        :type policy: dict
+        :returns: a QosPolicy object
+        """
+        self._handle_qos_policy(context, policy)
+
+    def delete_qos_policy_precommit(self, context, policy):
+        session = context.session
+        aim_ctx = aim_context.AimContext(session)
+        tenant_aname = self.name_mapper.project(session, context.tenant_id)
+        qos_aim = aim_resource.QosRequirement(
+                    tenant_name=tenant_aname, name=policy['id'])
+        aim_qos_db = self.aim.get(aim_ctx, qos_aim)
+        if aim_qos_db and aim_qos_db.egress_bw_limit:
+            aim_bw = aim_resource.QosBandwidthLimit(
+                tenant_name=tenant_aname, name=aim_qos_db.egress_bw_limit)
+            self.aim.delete(aim_ctx, aim_bw)
+        if aim_qos_db and aim_qos_db.ingress_bw_limit:
+            aim_bw = aim_resource.QosBandwidthLimit(
+                tenant_name=tenant_aname, name=aim_qos_db.ingress_bw_limit)
+            self.aim.delete(aim_ctx, aim_bw)
+        self.aim.delete(aim_ctx, qos_aim, cascade=True)
+
     def create_network_precommit(self, context):
         current = context.current
         LOG.debug("APIC AIM MD creating network: %s", current)
@@ -813,6 +913,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 cisco_apic.EXTRA_CONSUMED_CONTRACTS]
             epg.epg_contract_masters = current[
                 cisco_apic.EPG_CONTRACT_MASTERS]
+            epg.qos_name = current.get(qos_consts.QOS_POLICY_ID, None)
             self.aim.create(aim_ctx, epg)
 
         self._add_network_mapping_and_notify(
@@ -848,6 +949,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if l3out:
                     self.aim.update(aim_ctx, l3out, display_name=dname)
 
+        if (not is_ext and
+            current.get(qos_consts.QOS_POLICY_ID, None) !=
+            original.get(qos_consts.QOS_POLICY_ID, None)):
+            if not self._is_svi(current):
+                epg = self._get_network_epg(mapping)
+                self.aim.update(
+                    aim_ctx, epg,
+                    qos_name=current.get(qos_consts.QOS_POLICY_ID, None))
         # Update extra provided/consumed contracts if changed.
         curr_prov = set(current[cisco_apic.EXTRA_PROVIDED_CONTRACTS])
         curr_cons = set(current[cisco_apic.EXTRA_CONSUMED_CONTRACTS])

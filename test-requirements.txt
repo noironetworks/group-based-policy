@@ -37,4 +37,4 @@ python-keystoneclient
 # working commit. Also, specific branches in indirect dependencies
 # seem to be ignored, so we list them here too.
 -e git+https://github.com/noironetworks/acitoolkit.git@noiro-lite#egg=acitoolkit
--e git+https://github.com/noironetworks/aci-integration-module.git@master#egg=aci-integration-module
+-e git+https://github.com/noironetworks/aci-integration-module.git@qos#egg=aci-integration-module
