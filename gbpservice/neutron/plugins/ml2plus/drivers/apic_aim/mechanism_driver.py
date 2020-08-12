@@ -1311,7 +1311,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                               network_id)
 
         # This should apply to both external and internal networks
-        if current['host_routes'] != original['host_routes']:
+        if (current['host_routes'] != original['host_routes'] or
+            current['dns_nameservers'] != original['dns_nameservers']):
             affected_port_ids = self._get_compute_dhcp_ports_in_subnets(
                                         session, [current['id']])
             self._add_postcommit_port_notifications(
