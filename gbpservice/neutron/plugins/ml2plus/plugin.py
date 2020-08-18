@@ -212,7 +212,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @resource_extend.extends([port_def.COLLECTION_NAME])
     def _ml2_md_extend_port_dict(result, portdb):
         plugin = directory.get_plugin()
-        session = patch_neutron.get_current_session()
+        session = db_api.get_session()
         # REVISIT: Check if transaction begin is still
         # required here, and if so, if reader pattern
         # can be used instead (will require getting the
@@ -225,7 +225,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     @resource_extend.extends([port_def.COLLECTION_NAME + '_BULK'])
     def _ml2_md_extend_port_dict_bulk(results, _):
         plugin = directory.get_plugin()
-        session = patch_neutron.get_current_session()
+        session = db_api.get_session()
         with session.begin(subtransactions=True):
             plugin.extension_manager.extend_port_dict_bulk(session, results)
 
