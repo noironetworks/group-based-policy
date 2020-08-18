@@ -306,14 +306,14 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             self.extension_manager.extend_network_dict_bulk(session, results)
 
     def _ml2_md_extend_port_dict(self, result, portdb):
-        session = patch_neutron.get_current_session()
+        session = db_api.get_session()
         with session.begin(subtransactions=True):
             if self.refresh_port_db_obj:
                 session.refresh(portdb)
             self.extension_manager.extend_port_dict(session, portdb, result)
 
     def _ml2_md_extend_port_dict_bulk(self, results, _):
-        session = patch_neutron.get_current_session()
+        session = db_api.get_session()
         with session.begin(subtransactions=True):
             if self.refresh_port_db_obj:
                 for _, portdb in results:
