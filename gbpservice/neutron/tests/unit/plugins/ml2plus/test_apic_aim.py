@@ -5109,6 +5109,163 @@ class TestPortBinding(ApicAimTestCase):
                     bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
                     self.assertIsNone(bgp_peer)
 
+    def test_dualstack_svi_opflex_agent_add_subnet(self):
+        aim_ctx = aim_context.AimContext(self.db_session)
+
+        hlink1 = aim_infra.HostLink(
+            host_name='h1',
+            interface_name='eth1',
+            path='topology/pod-1/paths-102/pathep-[eth1/8]')
+        self.aim_mgr.create(aim_ctx, hlink1)
+
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+
+        net1 = self._make_network(self.fmt, 'net1', True,
+                                arg_list=self.extension_attributes,
+                                **{'apic:svi': 'True',
+                                'provider:network_type': u'vlan',
+                                'apic:bgp_enable': 'True',
+                                'apic:bgp_asn': '2'})['network']
+
+        with self.subnet(network={'network': net1}) as sub1:
+            with self.port(subnet=sub1) as p1:
+                # bind p1 to host h1
+                p1 = self._bind_port_to_host(p1['port']['id'], 'h1')
+                vlan_p1 = self._check_binding(p1['port']['id'],
+                    expected_binding_info=[('apic_aim', 'vlan')])
+                ext_net = aim_resource.ExternalNetwork.from_dn(
+                    net1[DN]['ExternalNetwork'])
+
+                l3out_np = aim_resource.L3OutNodeProfile(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    name=md.L3OUT_NODE_PROFILE_NAME)
+                l3out_np = self.aim_mgr.get(aim_ctx, l3out_np)
+                self.assertEqual(l3out_np.name, md.L3OUT_NODE_PROFILE_NAME)
+
+                l3out_node = aim_resource.L3OutNode(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                    node_path='topology/pod-1/node-102')
+                l3out_node = self.aim_mgr.get(aim_ctx, l3out_node)
+                self.assertIsNotNone(l3out_node)
+
+                l3out_ifs = []
+                bgp_peers = []
+                for if_profile in [md.L3OUT_IF_PROFILE_NAME,
+                    md.L3OUT_IF_PROFILE_NAME6]:
+                    l3out_ip = aim_resource.L3OutInterfaceProfile(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        name=if_profile)
+                    l3out_ip = self.aim_mgr.get(aim_ctx, l3out_ip)
+
+                    l3out_if = aim_resource.L3OutInterface(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=if_profile,
+                        interface_path=hlink1.path)
+                    l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
+                    if if_profile == md.L3OUT_IF_PROFILE_NAME:
+                        self.assertEqual(l3out_ip.name, if_profile)
+                        self.assertEqual(l3out_if.encap, 'vlan-%s' % vlan_p1)
+                        self.assertEqual(l3out_if.secondary_addr_a_list,
+                                         [{'addr': '10.0.0.1/24'}])
+
+                        primary = netaddr.IPNetwork(l3out_if.primary_addr_a)
+                        subnet = str(primary.cidr)
+                        bgp_peer = aim_resource.L3OutInterfaceBgpPeerP(
+                            tenant_name=ext_net.tenant_name,
+                            l3out_name=ext_net.l3out_name,
+                            node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                            interface_profile_name=if_profile,
+                            interface_path=hlink1.path,
+                            addr=subnet)
+                        bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
+                        self.assertEqual(bgp_peer.asn, '2')
+                    else:
+                        self.assertIsNone(l3out_ip)
+                        self.assertIsNone(l3out_if)
+
+                sub2 = self._make_subnet(self.fmt,
+                    {'network': net1}, '2001:db8::1',
+                    '2001:db8::0/64', ip_version=6)['subnet']
+
+                p1['port']['fixed_ips'].append({'subnet_id': sub2['id']})
+                port_info = {'port': {'fixed_ips': p1['port']['fixed_ips']}}
+                p1 = self._update('ports', p1['port']['id'], port_info)
+
+                # The bound port now has the newly created v6 subnet,
+                # now we should have the v6 Interface Profile
+                for if_profile in [md.L3OUT_IF_PROFILE_NAME,
+                    md.L3OUT_IF_PROFILE_NAME6]:
+                    l3out_ip = aim_resource.L3OutInterfaceProfile(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        name=if_profile)
+                    l3out_ip = self.aim_mgr.get(aim_ctx, l3out_ip)
+                    self.assertEqual(l3out_ip.name, if_profile)
+
+                    l3out_if = aim_resource.L3OutInterface(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=if_profile,
+                        interface_path=hlink1.path)
+                    l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
+                    self.assertEqual(l3out_if.encap, 'vlan-%s' % vlan_p1)
+                    if if_profile == md.L3OUT_IF_PROFILE_NAME:
+                        self.assertEqual(l3out_if.secondary_addr_a_list,
+                                         [{'addr': '10.0.0.1/24'}])
+                    else:
+                        self.assertEqual(l3out_if.secondary_addr_a_list,
+                                         [{'addr': '2001:db8::1/64'}])
+                    l3out_ifs.append(l3out_if)
+
+                    primary = netaddr.IPNetwork(l3out_if.primary_addr_a)
+                    subnet = str(primary.cidr)
+                    bgp_peer = aim_resource.L3OutInterfaceBgpPeerP(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        interface_profile_name=if_profile,
+                        interface_path=hlink1.path,
+                        addr=subnet)
+                    bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
+                    self.assertEqual(bgp_peer.asn, '2')
+                    bgp_peers.append(bgp_peer)
+
+                # Remove the v6 subnet from the port and verify that
+                # the v6 Profile is deleted.
+                v4_only = [d for d in p1['port']['fixed_ips']
+                    if not (d['subnet_id'] == sub2['id'])]
+                port_info = {'port': {'fixed_ips': v4_only}}
+                p1 = self._update('ports', p1['port']['id'], port_info)
+
+                for l3out_if in l3out_ifs:
+                    l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
+                    if l3out_if and l3out_if.interface_profile_name == (
+                        md.L3OUT_IF_PROFILE_NAME):
+                        self.assertEqual(l3out_if.secondary_addr_a_list,
+                                         [{'addr': '10.0.0.1/24'}])
+                    else:
+                        self.assertIsNone(l3out_if)
+
+                self._delete('ports', p1['port']['id'])
+                self._check_no_dynamic_segment(net1['id'])
+
+                for l3out_if in l3out_ifs:
+                    l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
+                    self.assertIsNone(l3out_if)
+
+                for bgp_peer in bgp_peers:
+                    bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
+                    self.assertIsNone(bgp_peer)
+
     def test_bind_opflex_agent_svi(self):
         self._register_agent('host1', AGENT_CONF_OPFLEX)
         aim_ctx = aim_context.AimContext(self.db_session)
