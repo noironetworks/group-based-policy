@@ -3512,7 +3512,7 @@ class TestPolicyTarget(AIMBaseTestCase,
                 mapping = self.mech_driver.get_gbp_details(
                     self._neutron_admin_context, device='tap%s' % port_id,
                     host='h1')
-                self.assertEqual('mydomain.', mapping['dns_domain'])
+                self.assertEqual('mydomain', mapping['dns_domain'])
                 req_mapping = self.mech_driver.request_endpoint_details(
                     nctx.get_admin_context(),
                     request={'device': 'tap%s' % port_id,

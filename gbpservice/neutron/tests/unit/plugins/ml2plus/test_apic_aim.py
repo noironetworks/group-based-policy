@@ -10706,7 +10706,8 @@ class TestOpflexRpc(ApicAimTestCase):
                              gbp_details['dhcp_lease_time'])
         else:
             self.assertNotIn('dhcp_lease_time', gbp_details)
-        self.assertEqual(net['dns_domain'], gbp_details['dns_domain'])
+        self.assertEqual(net['dns_domain'].rstrip('.'),
+                         gbp_details['dns_domain'])
         self.assertEqual(self.driver.enable_dhcp_opt,
                          gbp_details['enable_dhcp_optimization'])
         self.assertEqual(self.driver.enable_metadata_opt,

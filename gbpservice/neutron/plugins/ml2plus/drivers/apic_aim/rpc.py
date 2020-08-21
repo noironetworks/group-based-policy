@@ -900,6 +900,7 @@ class ApicRpcHandlerMixin(object):
         if self.apic_optimized_dhcp_lease_time > 0:
             details['dhcp_lease_time'] = self.apic_optimized_dhcp_lease_time
         details['dns_domain'] = port_info.net_dns_domain or ''
+        details['dns_domain'] = details['dns_domain'].rstrip('.')
         details['enable_dhcp_optimization'] = self.enable_dhcp_opt
         details['enable_metadata_optimization'] = self.enable_metadata_opt
         if port_info.svi:
