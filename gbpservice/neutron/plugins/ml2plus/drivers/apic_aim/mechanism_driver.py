@@ -2704,7 +2704,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             self.delete_port_id_for_ha_ipaddress(
                                 port['id'], ip, session=session)
 
-    def _update_svi_ports_for_added_subnet(self, ctx, new_subnets, network_id):
+    def _update_svi_ports_for_added_subnet(self, ctx, new_subnets,
+                                           original_port):
         """ Subnet added to bound port on SVI net, add to SVI ports if needed.
 
             We have to ensure that the SVI ports are updated with the added
@@ -2714,10 +2715,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             is no race condition.
 
         """
-        # Get the SVI ports
-        filters = {'network_id': [network_id],
-                   'device_owner': [aim_cst.DEVICE_OWNER_SVI_PORT]}
+        # Find the SVI ports corresponding to the host in the bound
+        # port. Then update with new subnet.
+        session = ctx.session
+        aim_ctx = aim_context.AimContext(db_session=session)
+        host_links = self.aim.find(aim_ctx, aim_infra.HostLink,
+            host_name=original_port['binding:host_id'])
+        allnodes = set()
+        for host_link in host_links:
+            _, _, nodes, _, _, _ = self._get_topology_from_path(host_link.path)
+            allnodes.update(nodes)
+
+        filters = {'network_id': [original_port['network_id']],
+                   'name': ['apic-svi-port:node-%s' % node
+                        for node in allnodes]}
         svi_ports = self.plugin.get_ports(ctx, filters)
+
         for svi_port in svi_ports:
             subnet_added = False
             svi_port_subnets = [s['subnet_id']
@@ -2763,7 +2776,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             net_db = self.plugin._get_network(ctx, original_port['network_id'])
             if self._is_svi_db(net_db):
                 self._update_svi_ports_for_added_subnet(ctx, new_subnets,
-                    original_port['network_id'])
+                    original_port)
 
         # We are only interested in port update callbacks from
         # _commit_port_binding, in which the port is about to become
@@ -4857,9 +4870,23 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 filters = {'network_id': [network['id']],
                            'name': ['apic-svi-port:node-%s' % node]}
                 svi_ports = self.plugin.get_ports(context, filters)
-                if svi_ports and svi_ports[0]['fixed_ips']:
-                    # We already have an IP for this node.
-                    break
+                if svi_ports:
+                    # We have some SVI ports already for the corresponding
+                    # node - if the relevant subnets are not present,
+                    # update and get out.
+                    svi_subnets = [s['subnet_id']
+                        for s in svi_ports[0]['fixed_ips']]
+                    new_subnets = list(set(network['subnets']) - set(
+                        svi_subnets))
+                    if new_subnets:
+                        fixed_ips = svi_ports[0].setdefault('fixed_ips', [])
+                        for s in new_subnets:
+                            fixed_ips.append({'subnet_id': s})
+                        port_info = {
+                            'port': {'fixed_ips': fixed_ips}}
+                        self.plugin.update_port(context, svi_ports[0]['id'],
+                            port_info)
+                    continue
                 # We don't have an IP for this node, so create a port.
                 #
                 # REVISIT: The node identifier should be in device_id
