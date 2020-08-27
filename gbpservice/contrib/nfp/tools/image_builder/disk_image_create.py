@@ -140,14 +140,14 @@ def dib():
         if not os.path.isfile(wily_SHA256SUMS):
             ret = subprocess.call(["wget", "http://cloud-images-archive.ubuntu.com/releases/wily/release-20160715/SHA1SUMS", "-r", "-O", wily_SHA256SUMS])
             if ret:
-                print "ERROR: failed to download ubuntu wily image SHA256SUMS"
+                print("ERROR: failed to download ubuntu wily image SHA256SUMS")
                 return
         if ((not os.path.isfile(dib['cache_dir'] + '/wily-server-cloudimg-amd64-root.tar.gz')) or (not dib['offline'])):
             # wget the tar file and SHASUM file and save to dib['cache_dir']
             wily_image = "%s/wily-server-cloudimg-amd64-root.tar.gz" % dib['cache_dir']
             ret = subprocess.call(["wget", "http://cloud-images-archive.ubuntu.com/releases/wily/release-20160715/ubuntu-15.10-server-cloudimg-amd64-root.tar.gz", "-r", "-O", wily_image])
             if ret:
-                print "ERROR: failed to download ubuntu wily image"
+                print("ERROR: failed to download ubuntu wily image")
                 return
 
     os.chdir(cur_dir)
