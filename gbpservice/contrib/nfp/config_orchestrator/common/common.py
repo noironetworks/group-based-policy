@@ -17,8 +17,8 @@ from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
 
 from neutron.common import constants as n_constants
-from neutron.common import rpc as n_rpc
 from neutron_lib.agent import topics as n_topics
+from neutron_lib import rpc as n_rpc
 
 import oslo_messaging as messaging
 

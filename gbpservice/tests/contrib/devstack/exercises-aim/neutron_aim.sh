@@ -18,15 +18,15 @@ EXERCISE_DIR=$(cd $(dirname "$0") && pwd)
 TOP_DIR=$(cd $EXERCISE_DIR/..; pwd)
 
 # Import common functions
-source $TOP_DIR/functions
+source $TOP_DIR/devstack/functions
 
 # Import configuration
-source $TOP_DIR/openrc
+source $TOP_DIR/devstack/openrc
 
 # Import exercise configuration
-source $TOP_DIR/exerciserc
+#source $TOP_DIR/exerciserc
 
-source $TOP_DIR/openrc demo demo
+source $TOP_DIR/devstack/openrc demo demo
 
 VALIDATE_OPTS=${VALIDATE_OPTS:-"--config-file /etc/neutron/neutron.conf --config-file /etc/neutron/plugins/ml2/ml2_conf.ini"}
 

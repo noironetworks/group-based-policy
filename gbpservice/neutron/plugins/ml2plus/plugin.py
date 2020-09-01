@@ -20,7 +20,6 @@ from gbpservice.neutron.extensions import patch  # noqa
 
 from neutron.common import constants as n_const
 from neutron.common import utils as n_utils
-from neutron.db import _resource_extend as resource_extend
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
 from neutron.plugins.ml2.common import exceptions as ml2_exc
@@ -36,6 +35,7 @@ from neutron_lib.api import validators
 from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib.callbacks import resources
+from neutron_lib.db import resource_extend
 from neutron_lib.db import utils as db_utils
 from neutron_lib.plugins import directory
 from oslo_log import log
@@ -308,9 +308,9 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                'tenant_id': address_scope['tenant_id'],
                'shared': address_scope['shared'],
                'ip_version': address_scope['ip_version']}
-        self._apply_dict_extend_functions(as_def.COLLECTION_NAME, res,
-                                          address_scope)
-        return self._fields(res, fields)
+        resource_extend.apply_funcs(
+            as_def.COLLECTION_NAME, res, address_scope)
+        return db_utils.resource_fields(res, fields)
 
     @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()

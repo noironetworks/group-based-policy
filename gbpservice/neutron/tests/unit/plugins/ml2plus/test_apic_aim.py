@@ -49,6 +49,7 @@ from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
+from neutron_lib import rpc
 from opflexagent import constants as ofcst
 from oslo_config import cfg
 from oslo_utils import uuidutils
@@ -703,11 +704,12 @@ class TestRpcListeners(ApicAimTestCase):
 
     # REVISIT: Remove new_rpc option with old RPC cleanup.
     def test_start_rpc_listeners(self):
-        # Override mock from
-        # neutron.tests.base.BaseTestCase.setup_rpc_mocks(), so that
-        # it returns servers, but still avoids starting them.
-        with mock.patch('neutron.common.rpc.Connection.consume_in_threads',
-                        TestRpcListeners._consume_in_threads):
+        # Override mock from neutron_lib.fixture.RPCFixture installed
+        # by neutron.tests.base.BaseTestCase.setUp(), so that it
+        # returns servers, but still avoids starting them.
+        with mock.patch.object(
+                rpc.Connection, 'consume_in_threads',
+                TestRpcListeners._consume_in_threads):
             # Call plugin method and verify that the apic_aim MD's
             # RPC servers are returned.
             servers = self.plugin.start_rpc_listeners()
@@ -10764,7 +10766,7 @@ class TestOpflexRpc(ApicAimTestCase):
             for route in host_routes:
                 if route['destination'] == '0.0.0.0/0':
                     default_routes.append(route)
-                elif route['destination'] == '169.254.169.254/16':
+                elif route['destination'] == '169.254.0.0/16':
                     metadata_routes.append(route)
             if not default_routes and gateway_ip:
                 host_routes.append(
@@ -10779,7 +10781,7 @@ class TestOpflexRpc(ApicAimTestCase):
                 # multiple DHCP ports.
                 for ip in list(dhcp_server_ports.values())[0]:
                     host_routes.append(
-                        {'destination': '169.254.169.254/16',
+                        {'destination': '169.254.0.0/16',
                          'nexthop': ip})
 
             self.assertEqual(subnet['cidr'], details['cidr'])
@@ -10831,7 +10833,7 @@ class TestOpflexRpc(ApicAimTestCase):
         subnet1_id = subnet1['id']
 
         host_routes2 = [
-            {'destination': '169.254.169.254/16', 'nexthop': '10.0.1.2'},
+            {'destination': '169.254.0.0/16', 'nexthop': '10.0.1.2'},
         ]
         if active_active_aap:
             subnet2 = self._create_subnet_with_extension(

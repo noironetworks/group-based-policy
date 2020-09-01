@@ -13,19 +13,19 @@
 import socket
 import time
 
-from gbpservice.contrib.nfp.config_orchestrator.common import topics
-from gbpservice.nfp.core import log as nfp_logging
-from neutron.common import rpc as n_rpc
 from neutron.db import agents_db
 from neutron.db import agentschedulers_db
 from neutron_lib import exceptions
 from neutron_lib.plugins import directory
+from neutron_lib import rpc as n_rpc
 from neutron_vpnaas.db.vpn import vpn_validator
 from neutron_vpnaas.services.vpn.plugin import VPNDriverPlugin
 from neutron_vpnaas.services.vpn.plugin import VPNPlugin
 from neutron_vpnaas.services.vpn.service_drivers import base_ipsec
-
 import oslo_messaging
+
+from gbpservice.contrib.nfp.config_orchestrator.common import topics
+from gbpservice.nfp.core import log as nfp_logging
 
 LOG = nfp_logging.getLogger(__name__)
 BASE_VPN_VERSION = '1.0'

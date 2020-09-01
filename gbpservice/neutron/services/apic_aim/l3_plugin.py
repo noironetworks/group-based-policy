@@ -15,8 +15,6 @@
 
 from neutron.api import extensions
 from neutron.common import utils as n_utils
-from neutron.db import _model_query as model_query
-from neutron.db import _resource_extend as resource_extend
 from neutron.db import common_db_mixin
 from neutron.db import dns_db
 from neutron.db import extraroute_db
@@ -25,6 +23,8 @@ from neutron.db.models import l3 as l3_db
 from neutron.quota import resource_registry
 from neutron_lib.api.definitions import l3 as l3_def
 from neutron_lib.api.definitions import portbindings
+from neutron_lib.db import model_query
+from neutron_lib.db import resource_extend
 from neutron_lib.db import utils as db_utils
 from neutron_lib import exceptions
 from neutron_lib.plugins import constants

@@ -10,12 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import oslo_serialization.jsonutils as jsonutils
-
-from neutron.common import rpc as n_rpc
+from neutron_lib import rpc as n_rpc
 from oslo_config import cfg
 from oslo_log import log as logging
 import oslo_messaging
+import oslo_serialization.jsonutils as jsonutils
 import pecan
 import pika
 

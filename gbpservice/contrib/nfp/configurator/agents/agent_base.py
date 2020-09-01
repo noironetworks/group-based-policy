@@ -10,14 +10,13 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+from neutron_lib import rpc as n_rpc
+from oslo_config import cfg
+import oslo_messaging as messaging
 
 from gbpservice.contrib.nfp.configurator.lib import constants as const
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import module as nfp_api
-
-from neutron.common import rpc as n_rpc
-from oslo_config import cfg
-import oslo_messaging as messaging
 
 n_rpc.init(cfg.CONF)
 

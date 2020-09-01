@@ -13,21 +13,19 @@
 
 import exceptions
 
-from gbpservice._i18n import _
-from gbpservice.nfp.common import constants as nfp_constants
-from gbpservice.nfp.core import log as nfp_logging
-from gbpservice.nfp.lib import rest_client_over_unix as unix_rc
-
-from neutron.common import rpc as n_rpc
 from neutron_lib import context as n_context
-
+from neutron_lib import rpc as n_rpc
 from oslo_config import cfg
 from oslo_config import cfg as oslo_config
 import oslo_messaging as messaging
 from oslo_serialization import jsonutils
-
 import requests
 import six
+
+from gbpservice._i18n import _
+from gbpservice.nfp.common import constants as nfp_constants
+from gbpservice.nfp.core import log as nfp_logging
+from gbpservice.nfp.lib import rest_client_over_unix as unix_rc
 
 LOG = nfp_logging.getLogger(__name__)
 Version = 'v1'  # v1/v2/v3#

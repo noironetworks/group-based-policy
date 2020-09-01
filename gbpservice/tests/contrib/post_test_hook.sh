@@ -20,7 +20,7 @@ sudo /bin/systemctl restart memcached
 sudo chown -R stack:stack $TOP_DIR
 
 # Run exercise scripts
-$TOP_DIR/exercise.sh
+run_exercises
 exercises_exit_code=$?
 
 # Check if exercises left any resources undeleted

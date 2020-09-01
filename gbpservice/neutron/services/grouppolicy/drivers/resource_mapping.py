@@ -15,7 +15,6 @@ import operator
 from keystoneclient import exceptions as k_exceptions
 from keystoneclient.v2_0 import client as k_client
 import netaddr
-from neutron.common import exceptions as neutron_exc
 from neutron.db import models_v2
 from neutron.extensions import securitygroup as ext_sg
 from neutron_lib.api.definitions import port as port_def
@@ -1842,7 +1841,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                     subnets = self._use_implicit_subnet_from_subnetpool(
                         context, subnet_specifics)
                     context.add_subnets([sub['id'] for sub in subnets])
-                except neutron_exc.SubnetAllocationError:
+                except n_exc.SubnetAllocationError:
                     # Translate to GBP exception
                     raise exc.NoSubnetAvailable()
 

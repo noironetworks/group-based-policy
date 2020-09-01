@@ -13,8 +13,8 @@
 import sys
 import traceback
 
-from neutron.common import rpc as n_rpc
 from neutron_lib import context as n_context
+from neutron_lib import rpc as n_rpc
 from oslo_log import helpers as log_helpers
 import oslo_messaging
 

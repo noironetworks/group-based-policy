@@ -48,8 +48,8 @@ class GroupPolicyMappingExtTestCase(tgp.GroupPolicyExtensionTestCase):
                            'network_service_policies',
                            'external_policy':
                            'external_policies'}
-        self._setUpExtension(
-            tgp.GP_PLUGIN_BASE_NAME, constants.GROUP_POLICY, attr_map,
+        self.setup_extension(
+            tgp.GP_PLUGIN_BASE_NAME, constants.GROUP_POLICY,
             gp.Group_policy, tgp.GROUPPOLICY_URI,
             plural_mappings=plural_mappings)
         self.instance = self.plugin.return_value
