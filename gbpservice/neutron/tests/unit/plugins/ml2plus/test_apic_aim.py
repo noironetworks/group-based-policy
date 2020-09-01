@@ -43,10 +43,10 @@ from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron.tests.unit.plugins.ml2 import test_tracked_resources as tr_res
-from neutron.tests.unit import testlib_api
 from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
+from neutron_lib import fixture
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from neutron_lib import rpc
@@ -209,7 +209,7 @@ class AimSqlFixture(fixtures.Fixture):
 
     def _setUp(self):
         # Ensure Neutron has done its setup first.
-        self.useFixture(testlib_api.StaticSqlFixture())
+        self.useFixture(fixture.StaticSqlFixture())
 
         # Register all data models.
         engine = db_api.CONTEXT_WRITER.get_engine()

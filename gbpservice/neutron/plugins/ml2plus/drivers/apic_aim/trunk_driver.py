@@ -12,9 +12,9 @@
 from oslo_config import cfg
 from oslo_log import log as logging
 
-from neutron.services.trunk import constants as trunk_consts
 from neutron.services.trunk.drivers import base
 from neutron_lib.api.definitions import portbindings
+from neutron_lib.services.trunk import constants as trunk_consts
 
 from opflexagent import constants as ofcst
 
@@ -29,7 +29,7 @@ SUPPORTED_INTERFACES = (
 )
 
 SUPPORTED_SEGMENTATION_TYPES = (
-    trunk_consts.VLAN,
+    trunk_consts.SEGMENTATION_TYPE_VLAN,
 )
 
 DRIVER = None

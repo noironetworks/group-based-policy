@@ -12,21 +12,30 @@
     check:
       jobs:
         - openstack-tox-pep8:
+            nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/stein
+                override-checkout: stable/train
         - openstack-tox-py27:
+            nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/stein
+                override-checkout: stable/train
         - openstack-tox-py35:
+            nodeset: ubuntu-xenial
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/stein
+                override-checkout: stable/train
         - openstack-tox-py36:
+            nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/stein
+                override-checkout: stable/train
+        - openstack-tox-py37:
+            nodeset: ubuntu-bionic
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/train
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -36,18 +45,27 @@
     gate:
       jobs:
         - openstack-tox-pep8:
+            nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/stein
+                override-checkout: stable/train
         - openstack-tox-py27:
+            nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/stein
+                override-checkout: stable/train
         - openstack-tox-py35:
+            nodeset: ubuntu-xenial
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/stein
+                override-checkout: stable/train
         - openstack-tox-py36:
+            nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/stein
+                override-checkout: stable/train
+        - openstack-tox-py37:
+            nodeset: ubuntu-bionic
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/train

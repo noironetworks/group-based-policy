@@ -51,9 +51,6 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
                                                      sc_plugin=sc_plugin,
                                                      qos_plugin=qos_plugin,
                                                      trunk_plugin=trunk_plugin)
-        res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
-                         '_check_router_needs_rescheduling').start()
-        res.return_value = None
         self._plugin = directory.get_plugin()
         self._plugin.remove_networks_from_down_agents = mock.Mock()
         self._plugin.is_agent_down = mock.Mock(return_value=False)

@@ -15,9 +15,6 @@
 # getting loaded without these explicit imports.
 import sys
 
-from neutron_lbaas.db.loadbalancer import loadbalancer_dbv2  # noqa
-from neutron_lbaas.db.loadbalancer import models  # noqa
-
 from neutron.agent import securitygroups_rpc
 from neutron.api import extensions
 from neutron.quota import resource

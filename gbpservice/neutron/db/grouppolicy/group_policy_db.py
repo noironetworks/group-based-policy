@@ -12,11 +12,11 @@
 
 import netaddr
 
-from neutron.db import common_db_mixin
 from neutron_lib.api import validators
 from neutron_lib import constants
 from neutron_lib import context
 from neutron_lib.db import model_base
+from neutron_lib import exceptions
 from neutron_lib.plugins import directory
 from oslo_log import helpers as log
 from oslo_utils import uuidutils
@@ -380,8 +380,7 @@ class ExternalPolicy(model_base.BASEV2, BaseSharedGbpResource):
         cascade='all, delete-orphan')
 
 
-class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
-                          common_db_mixin.CommonDbMixin):
+class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
     """GroupPolicy plugin interface implementation using SQLAlchemy models."""
 
     # TODO(Sumit): native bulk support
@@ -391,6 +390,20 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def __init__(self, *args, **kwargs):
         super(GroupPolicyDbPlugin, self).__init__(*args, **kwargs)
+
+    # REVISIT: This is temporary, the correct fix is to use
+    # the 'project_id' directly from the context rather than
+    # calling this method.
+    def _get_tenant_id_for_create(self, context, resource):
+        if context.is_admin and 'tenant_id' in resource:
+            tenant_id = resource['tenant_id']
+        elif ('tenant_id' in resource and
+              resource['tenant_id'] != context.project_id):
+            reason = _('Cannot create resource for another tenant')
+            raise exceptions.AdminRequired(reason=reason)
+        else:
+            tenant_id = context.project_id
+        return tenant_id
 
     def _find_gbp_resource(self, context, type, id, on_fail=None):
         try:

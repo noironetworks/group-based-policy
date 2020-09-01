@@ -14,7 +14,6 @@ import copy
 
 from neutron.api import extensions
 from neutron.api.v2 import resource as neutron_resource
-from neutron.db import common_db_mixin
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
@@ -127,26 +126,6 @@ def get_port_from_device_mac(context, device_mac):
 
 
 ml2_db.get_port_from_device_mac = get_port_from_device_mac
-
-
-# REVISIT: This is temporary, the correct fix is to use
-# the 'project_id' directly from the context rather than
-# calling this method.
-def _get_tenant_id_for_create(self, context, resource):
-    if context.is_admin and 'tenant_id' in resource:
-        tenant_id = resource['tenant_id']
-    elif ('tenant_id' in resource and
-          resource['tenant_id'] != context.project_id):
-        reason = _('Cannot create resource for another tenant')
-        raise exceptions.AdminRequired(reason=reason)
-    else:
-        tenant_id = context.project_id
-
-    return tenant_id
-
-
-common_db_mixin.CommonDbMixin._get_tenant_id_for_create = (
-    _get_tenant_id_for_create)
 
 
 def extend_resources(self, version, attr_map):
@@ -297,7 +276,7 @@ try:
     from networking_sfc.services.sfc.common import exceptions as sfc_exc
     from networking_sfc.services.sfc import driver_manager as sfc_mgr
     from networking_sfc.services.sfc import plugin as sfc_plugin
-    from neutron.services.trunk import constants
+    from neutron_lib.services.trunk import constants
     from oslo_utils import uuidutils
 
     from gbpservice.neutron.services.sfc.aim import constants as sfc_cts
@@ -511,4 +490,4 @@ try:
 
 except ImportError as e:
     LOG.warning("Import error while patching networking-sfc: %s",
-                e.message)
+                str(e))

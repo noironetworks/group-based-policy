@@ -35,9 +35,6 @@ class TrafficStitchingPlumberTestCase(base.NodeCompositionPluginTestCase):
         super(TrafficStitchingPlumberTestCase, self).setUp(
             node_drivers=['node_dummy'], node_plumber='stitching_plumber',
             core_plugin=test_gp_driver.CORE_PLUGIN)
-        res = mock.patch('neutron.db.l3_db.L3_NAT_dbonly_mixin.'
-                         '_check_router_needs_rescheduling').start()
-        res.return_value = None
         self.driver = self.sc_plugin.driver_manager.ordered_drivers[0].obj
         self.driver.get_plumbing_info = mock.Mock()
         self.driver.get_plumbing_info.return_value = {}

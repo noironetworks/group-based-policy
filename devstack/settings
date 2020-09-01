@@ -25,13 +25,13 @@ GIT_BASE=${GIT_BASE:-https://opendev.org}
 GBPSERVICE_REPO=${GBPSERVICE_REPO:-${GIT_BASE}/x/group-based-policy.git}
 GBPSERVICE_BRANCH=${GBPSERVICE_BRANCH:-master}
 GBPCLIENT_REPO=${GBPCLIENT_REPO:-${GIT_BASE}/x/python-group-based-policy-client.git}
-GBPCLIENT_BRANCH=${GBPCLIENT_BRANCH:-stable/stein}
+GBPCLIENT_BRANCH=${GBPCLIENT_BRANCH:-stable/train}
 GBPUI_REPO=${GBPUI_REPO:-${GIT_BASE}/x/group-based-policy-ui.git}
 GBPUI_BRANCH=${GBPUI_BRANCH:-master}
 GBPHEAT_REPO=${GBPHEAT_REPO:-${GIT_BASE}/x/group-based-policy-automation.git}
 GBPHEAT_BRANCH=${GBPHEAT_BRANCH:-master}
 AIM_BRANCH=${AIM_BRANCH:-master}
-OPFLEX_BRANCH=${OPFLEX_BRANCH:-stable/stein}
+OPFLEX_BRANCH=${OPFLEX_BRANCH:-stable/train}
 APICAPI_BRANCH=${APICAPI_BRANCH:-master}
 ACITOOLKIT_BRANCH=${ACITOOLKIT_BRANCH:-noiro-lite}
 

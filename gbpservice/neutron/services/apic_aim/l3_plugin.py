@@ -15,7 +15,6 @@
 
 from neutron.api import extensions
 from neutron.common import utils as n_utils
-from neutron.db import common_db_mixin
 from neutron.db import dns_db
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
@@ -47,8 +46,7 @@ LOG = logging.getLogger(__name__)
 
 
 @resource_extend.has_resource_extenders
-class ApicL3Plugin(common_db_mixin.CommonDbMixin,
-                   extraroute_db.ExtraRoute_db_mixin,
+class ApicL3Plugin(extraroute_db.ExtraRoute_db_mixin,
                    l3_gwmode_db.L3_NAT_db_mixin,
                    extn_db.ExtensionDbMixin,
                    dns_db.DNSDbMixin):

@@ -46,7 +46,6 @@ from neutron.plugins.ml2 import driver_context as ml2_context
 from neutron.plugins.ml2.drivers.openvswitch.agent.common import (
     constants as a_const)
 from neutron.plugins.ml2 import models
-from neutron.services.trunk import constants as trunk_consts
 from neutron.services.trunk import exceptions as trunk_exc
 from neutron_lib.agent import topics as n_topics
 from neutron_lib.api.definitions import external_net
@@ -64,6 +63,7 @@ from neutron_lib.plugins import directory
 from neutron_lib.plugins.ml2 import api
 from neutron_lib import rpc as n_rpc
 from neutron_lib.services.qos import constants as qos_consts
+from neutron_lib.services.trunk import constants as trunk_consts
 from neutron_lib.utils import net
 from opflexagent import constants as ofcst
 from opflexagent import rpc as ofrpc
@@ -5166,7 +5166,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return port
 
     # Set up listener for adding or removing subports from a trunk.
-    @registry.receives(trunk_consts.SUBPORTS,
+    @registry.receives(resources.SUBPORTS,
                        [events.AFTER_CREATE, events.AFTER_DELETE])
     def _after_subport_event(self, resource, event, trunk_plugin, payload):
         context = payload.context
@@ -5199,7 +5199,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                           binding_profile=None):
         # Set to BUILD status to indicate there's a change.
         self._safe_update_trunk_status(
-            context, trunk_id, trunk_consts.BUILD_STATUS)
+            context, trunk_id, trunk_consts.TRUNK_BUILD_STATUS)
         updated_ports = []
         op = 'bind' if trunk_host else 'unbind'
         for subport_id in subport_ids:
@@ -5261,13 +5261,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                    for subport in subports])
         if self._is_port_bound(parent_port):
             if all(subports_bound_state):
-                status = trunk_consts.ACTIVE_STATUS
+                status = trunk_consts.TRUNK_ACTIVE_STATUS
             elif True not in subports_bound_state:
-                status = trunk_consts.ERROR_STATUS
+                status = trunk_consts.TRUNK_ERROR_STATUS
             elif any(subports_bound_state):
-                status = trunk_consts.DEGRADED_STATUS
+                status = trunk_consts.TRUNK_DEGRADED_STATUS
         else:
-            status = trunk_consts.DOWN_STATUS
+            status = trunk_consts.TRUNK_DOWN_STATUS
         self._safe_update_trunk_status(
             plugin_context, trunk_id, status)
 

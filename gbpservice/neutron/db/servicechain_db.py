@@ -12,7 +12,6 @@
 
 import ast
 
-from neutron.db import common_db_mixin
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as n_exc
 from neutron_lib.plugins import constants as pconst
@@ -135,8 +134,7 @@ class ServiceProfile(model_base.BASEV2, BaseSharedSCResource):
     nodes = orm.relationship(ServiceChainNode, backref="service_profile")
 
 
-class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
-                           common_db_mixin.CommonDbMixin):
+class ServiceChainDbPlugin(schain.ServiceChainPluginBase):
     """ServiceChain plugin interface implementation using SQLAlchemy models."""
 
     # TODO(osms69): native bulk support

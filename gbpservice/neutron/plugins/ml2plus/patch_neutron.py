@@ -59,8 +59,8 @@ from oslo_db.sqlalchemy import exc_filters
 exc_filters.LOG.exception = exc_filters.LOG.debug
 
 
-from neutron.db import db_base_plugin_v2
+from neutron.common import _constants
 
 
 DEVICE_OWNER_SVI_PORT = 'apic:svi'
-db_base_plugin_v2.AUTO_DELETE_PORT_OWNERS.append(DEVICE_OWNER_SVI_PORT)
+_constants.AUTO_DELETE_PORT_OWNERS.append(DEVICE_OWNER_SVI_PORT)

@@ -18,7 +18,6 @@
 # modules save a reference to the functions being patched
 from gbpservice.neutron.extensions import patch  # noqa
 
-from neutron.common import constants as n_const
 from neutron.common import utils as n_utils
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
@@ -35,6 +34,7 @@ from neutron_lib.api import validators
 from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib.callbacks import resources
+from neutron_lib import constants as n_const
 from neutron_lib.db import resource_extend
 from neutron_lib.db import utils as db_utils
 from neutron_lib.plugins import directory
