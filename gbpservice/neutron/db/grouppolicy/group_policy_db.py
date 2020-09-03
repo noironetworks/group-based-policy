@@ -17,6 +17,7 @@ from neutron_lib.api import validators
 from neutron_lib import constants
 from neutron_lib import context
 from neutron_lib.db import model_base
+from neutron_lib.plugins import directory
 from oslo_log import helpers as log
 from oslo_utils import uuidutils
 import sqlalchemy as sa
@@ -393,21 +394,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def _find_gbp_resource(self, context, type, id, on_fail=None):
         try:
-            return self._get_by_id(context, type, id)
+            return db_api.get_by_id(context, type, id)
         except exc.NoResultFound:
             if on_fail:
                 raise on_fail(id=id)
 
     def _get_policy_target(self, context, policy_target_id):
         try:
-            return self._get_by_id(context, PolicyTarget, policy_target_id)
+            return db_api.get_by_id(context, PolicyTarget, policy_target_id)
         except exc.NoResultFound:
             raise gpolicy.PolicyTargetNotFound(
                 policy_target_id=policy_target_id)
 
     def _get_policy_target_group(self, context, policy_target_group_id):
         try:
-            return self._get_by_id(
+            return db_api.get_by_id(
                 context, PolicyTargetGroup, policy_target_group_id)
         except exc.NoResultFound:
             raise gpolicy.PolicyTargetGroupNotFound(
@@ -416,7 +417,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def _get_application_policy_group(self, context,
                                       application_policy_group_id):
         try:
-            return self._get_by_id(
+            return db_api.get_by_id(
                 context, ApplicationPolicyGroup, application_policy_group_id)
         except exc.NoResultFound:
             raise gpolicy.ApplicationPolicyGroupNotFound(
@@ -424,19 +425,19 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def _get_l2_policy(self, context, l2_policy_id):
         try:
-            return self._get_by_id(context, L2Policy, l2_policy_id)
+            return db_api.get_by_id(context, L2Policy, l2_policy_id)
         except exc.NoResultFound:
             raise gpolicy.L2PolicyNotFound(l2_policy_id=l2_policy_id)
 
     def _get_l3_policy(self, context, l3_policy_id):
         try:
-            return self._get_by_id(context, L3Policy, l3_policy_id)
+            return db_api.get_by_id(context, L3Policy, l3_policy_id)
         except exc.NoResultFound:
             raise gpolicy.L3PolicyNotFound(l3_policy_id=l3_policy_id)
 
     def _get_network_service_policy(self, context, network_service_policy_id):
         try:
-            return self._get_by_id(context, NetworkServicePolicy,
+            return db_api.get_by_id(context, NetworkServicePolicy,
                                    network_service_policy_id)
         except exc.NoResultFound:
             raise gpolicy.NetworkServicePolicyNotFound(
@@ -444,7 +445,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def _get_policy_classifier(self, context, policy_classifier_id):
         try:
-            return self._get_by_id(context, PolicyClassifier,
+            return db_api.get_by_id(context, PolicyClassifier,
                                    policy_classifier_id)
         except exc.NoResultFound:
             raise gpolicy.PolicyClassifierNotFound(
@@ -452,7 +453,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def _get_policy_action(self, context, policy_action_id):
         try:
-            policy_action = self._get_by_id(context, PolicyAction,
+            policy_action = db_api.get_by_id(context, PolicyAction,
                                             policy_action_id)
         except exc.NoResultFound:
             raise gpolicy.PolicyActionNotFound(
@@ -461,7 +462,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def _get_policy_rule(self, context, policy_rule_id):
         try:
-            policy_rule = self._get_by_id(context, PolicyRule,
+            policy_rule = db_api.get_by_id(context, PolicyRule,
                                           policy_rule_id)
         except exc.NoResultFound:
             raise gpolicy.PolicyRuleNotFound(
@@ -470,7 +471,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
     def _get_policy_rule_set(self, context, policy_rule_set_id):
         try:
-            policy_rule_set = self._get_by_id(
+            policy_rule_set = db_api.get_by_id(
                 context, PolicyRuleSet, policy_rule_set_id)
         except exc.NoResultFound:
             raise gpolicy.PolicyRuleSetNotFound(
@@ -517,8 +518,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         with context.session.begin(subtransactions=True):
             # We will first check if the new list of actions is valid
             filters = {'id': [a_id for a_id in action_id_list]}
-            actions_in_db = self._get_collection_query(context, PolicyAction,
-                                                       filters=filters)
+            actions_in_db = db_api.get_collection_query(context, PolicyAction,
+                                                        filters=filters)
             actions_set = set(a_db['id'] for a_db in actions_in_db)
             for action_id in action_id_list:
                 if action_id not in actions_set:
@@ -544,7 +545,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                        policy_rule_sets_id_list):
         with context.session.begin(subtransactions=True):
             filters = {'id': [c_id for c_id in policy_rule_sets_id_list]}
-            policy_rule_sets_in_db = self._get_collection_query(
+            policy_rule_sets_in_db = db_api.get_collection_query(
                 context, PolicyRuleSet, filters=filters)
             existing_policy_rule_set_ids = set(
                 c_db['id'] for c_db in policy_rule_sets_in_db)
@@ -645,8 +646,8 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         with context.session.begin(subtransactions=True):
             # We will first check if the new list of rules is valid
             filters = {'id': [r_id for r_id in rule_id_list]}
-            rules_in_db = self._get_collection_query(context, PolicyRule,
-                                                     filters=filters)
+            rules_in_db = db_api.get_collection_query(context, PolicyRule,
+                                                      filters=filters)
             rule_ids = set(r_db['id'] for r_db in rules_in_db)
             for rule_id in rule_id_list:
                 if rule_id not in rule_ids:
@@ -731,7 +732,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             return
         with context.session.begin(subtransactions=True):
             filters = {'id': es_id_list}
-            eps_in_db = self._get_collection_query(
+            eps_in_db = db_api.get_collection_query(
                 context, ExternalSegment, filters=filters)
             not_found = set(es_id_list) - set(ep['id'] for ep in eps_in_db)
             if not_found:
@@ -765,7 +766,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
             # Validate ESs exist
             es_set = set(es_dict.keys())
             filters = {'id': es_set}
-            es_in_db = self._get_collection_query(
+            es_in_db = db_api.get_collection_query(
                 context, ExternalSegment, filters=filters)
             not_found = es_set - set(es['id'] for es in es_in_db)
             if not_found:
@@ -815,7 +816,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                'status_details': pt['status_details'],
                'policy_target_group_id': pt['policy_target_group_id'],
                'cluster_id': pt['cluster_id']}
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_policy_target_group_dict(self, ptg, fields=None):
         res = self._populate_common_fields_in_dict(ptg)
@@ -832,13 +833,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['consumed_policy_rule_sets'] = (
             [cprs['policy_rule_set_id'] for cprs in ptg[
                 'consumed_policy_rule_sets']])
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_application_policy_group_dict(self, apg, fields=None):
         res = self._populate_common_fields_in_dict(apg)
         res['policy_target_groups'] = [
             ptg['id'] for ptg in apg['policy_target_groups']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_l2_policy_dict(self, l2p, fields=None):
         res = self._populate_common_fields_in_dict(l2p)
@@ -846,7 +847,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['inject_default_route'] = l2p.get('inject_default_route', True)
         res['policy_target_groups'] = [
             ptg['id'] for ptg in l2p['policy_target_groups']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_l3_policy_dict(self, l3p, fields=None):
         res = self._populate_common_fields_in_dict(l3p)
@@ -862,7 +863,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 es_dict[es_id] = []
             es_dict[es_id].append(es['allocated_address'])
         res['external_segments'] = es_dict
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_network_service_policy_dict(self, nsp, fields=None):
         res = self._populate_common_fields_in_dict(nsp)
@@ -875,7 +876,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                 gp_constants.GP_NETWORK_SVC_PARAM_NAME: param['param_name'],
                 gp_constants.GP_NETWORK_SVC_PARAM_VALUE: param['param_value']})
         res['network_service_params'] = params
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_policy_classifier_dict(self, pc, fields=None):
         res = self._populate_common_fields_in_dict(pc)
@@ -887,7 +888,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['direction'] = pc['direction']
         res['policy_rules'] = [pr['id']
                                for pr in pc['policy_rules']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_policy_action_dict(self, pa, fields=None):
         res = self._populate_common_fields_in_dict(pa)
@@ -895,7 +896,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['action_value'] = pa['action_value']
         res['policy_rules'] = [pr['policy_rule_id'] for
                                pr in pa['policy_rules']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_policy_rule_dict(self, pr, fields=None):
         res = self._populate_common_fields_in_dict(pr)
@@ -905,7 +906,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
                                  for pa in pr['policy_actions']]
         res['policy_rule_sets'] = [prs['policy_rule_set_id'] for prs in
                                    pr['policy_rule_sets']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_policy_rule_set_dict(self, prs, fields=None):
         res = self._populate_common_fields_in_dict(prs)
@@ -921,7 +922,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         else:
             with ctx.session.begin(subtransactions=True):
                 filters = {'parent_id': [prs['id']]}
-                child_prs_in_db = self._get_collection_query(
+                child_prs_in_db = db_api.get_collection_query(
                     ctx, PolicyRuleSet, filters=filters)
                 res['child_policy_rule_sets'] = [child_prs['id']
                                                  for child_prs
@@ -944,7 +945,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['consuming_external_policies'] = [
             ptg['external_policy_id']
             for ptg in prs['consuming_external_policies']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_external_segment_dict(self, es, fields=None):
         res = self._populate_common_fields_in_dict(es)
@@ -961,7 +962,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
 
         res['l3_policies'] = [
             l3p['l3_policy_id'] for l3p in es['l3_policies']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_external_policy_dict(self, ep, fields=None):
         res = self._populate_common_fields_in_dict(ep)
@@ -974,14 +975,14 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
         res['consumed_policy_rule_sets'] = [
             cprs['policy_rule_set_id'] for cprs in
             ep['consumed_policy_rule_sets']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_nat_pool_dict(self, np, fields=None):
         res = self._populate_common_fields_in_dict(np)
         res['ip_version'] = np['ip_version']
         res['ip_pool'] = np['ip_pool']
         res['external_segment_id'] = np['external_segment_id']
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _get_ptgs_for_providing_policy_rule_set(self, context,
                                                 policy_rule_set_id):
@@ -1133,19 +1134,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_policy_targets(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'policy_target', limit,
-                                          marker)
-        return self._get_collection(context, PolicyTarget,
-                                    self._make_policy_target_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'policy_target', limit,
+                                           marker)
+        return db_api.get_collection(context, PolicyTarget,
+                                     self._make_policy_target_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_policy_targets_count(self, context, filters=None):
-        return self._get_collection_count(context, PolicyTarget,
-                                          filters=filters)
+        return db_api.get_collection_count(context, PolicyTarget,
+                                           filters=filters)
 
     @log.log_method_call
     def create_policy_target_group(self, context, policy_target_group):
@@ -1208,19 +1211,20 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_policy_target_groups(self, context, filters=None, fields=None,
                                  sorts=None, limit=None, marker=None,
                                  page_reverse=False):
-        marker_obj = self._get_marker_obj(
-            context, 'policy_target_group', limit, marker)
-        return self._get_collection(context, PolicyTargetGroup,
-                                    self._make_policy_target_group_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(
+            plugin, context, 'policy_target_group', limit, marker)
+        return db_api.get_collection(context, PolicyTargetGroup,
+                                     self._make_policy_target_group_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_policy_target_groups_count(self, context, filters=None):
-        return self._get_collection_count(context, PolicyTargetGroup,
-                                          filters=filters)
+        return db_api.get_collection_count(context, PolicyTargetGroup,
+                                           filters=filters)
 
     @log.log_method_call
     def create_application_policy_group(self, context,
@@ -1267,19 +1271,20 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_application_policy_groups(self, context, filters=None,
                                       fields=None, sorts=None, limit=None,
                                       marker=None, page_reverse=False):
-        marker_obj = self._get_marker_obj(
-            context, 'application_policy_group', limit, marker)
-        return self._get_collection(context, ApplicationPolicyGroup,
-                                    self._make_application_policy_group_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(
+            plugin, context, 'application_policy_group', limit, marker)
+        return db_api.get_collection(context, ApplicationPolicyGroup,
+                                     self._make_application_policy_group_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_application_policy_groups_count(self, context, filters=None):
-        return self._get_collection_count(context, ApplicationPolicyGroup,
-                                          filters=filters)
+        return db_api.get_collection_count(context, ApplicationPolicyGroup,
+                                           filters=filters)
 
     @log.log_method_call
     def create_l2_policy(self, context, l2_policy):
@@ -1329,19 +1334,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_l2_policies(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'l2_policy', limit,
-                                          marker)
-        return self._get_collection(context, L2Policy,
-                                    self._make_l2_policy_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'l2_policy', limit,
+                                           marker)
+        return db_api.get_collection(context, L2Policy,
+                                     self._make_l2_policy_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_l2_policies_count(self, context, filters=None):
-        return self._get_collection_count(context, L2Policy,
-                                          filters=filters)
+        return db_api.get_collection_count(context, L2Policy,
+                                           filters=filters)
 
     @log.log_method_call
     def create_l3_policy(self, context, l3_policy):
@@ -1401,19 +1408,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_l3_policies(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'l2_policy', limit,
-                                          marker)
-        return self._get_collection(context, L3Policy,
-                                    self._make_l3_policy_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'l2_policy', limit,
+                                           marker)
+        return db_api.get_collection(context, L3Policy,
+                                     self._make_l3_policy_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_l3_policies_count(self, context, filters=None):
-        return self._get_collection_count(context, L3Policy,
-                                          filters=filters)
+        return db_api.get_collection_count(context, L3Policy,
+                                           filters=filters)
 
     @log.log_method_call
     def create_network_service_policy(self, context, network_service_policy):
@@ -1468,19 +1477,20 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_network_service_policies(
             self, context, filters=None, fields=None, sorts=None, limit=None,
             marker=None, page_reverse=False):
-        marker_obj = self._get_marker_obj(
-            context, 'network_service_policy', limit, marker)
-        return self._get_collection(context, NetworkServicePolicy,
-                                    self._make_network_service_policy_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(
+            plugin, context, 'network_service_policy', limit, marker)
+        return db_api.get_collection(context, NetworkServicePolicy,
+                                     self._make_network_service_policy_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_network_service_policies_count(self, context, filters=None):
-        return self._get_collection_count(context, NetworkServicePolicy,
-                                          filters=filters)
+        return db_api.get_collection_count(context, NetworkServicePolicy,
+                                           filters=filters)
 
     @log.log_method_call
     def create_policy_classifier(self, context, policy_classifier):
@@ -1541,19 +1551,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_policy_classifiers(self, context, filters=None, fields=None,
                                sorts=None, limit=None, marker=None,
                                page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'policy_classifier', limit,
-                                          marker)
-        return self._get_collection(context, PolicyClassifier,
-                                    self._make_policy_classifier_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'policy_classifier', limit,
+                                           marker)
+        return db_api.get_collection(context, PolicyClassifier,
+                                     self._make_policy_classifier_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_policy_classifiers_count(self, context, filters=None):
-        return self._get_collection_count(context, PolicyClassifier,
-                                          filters=filters)
+        return db_api.get_collection_count(context, PolicyClassifier,
+                                           filters=filters)
 
     @log.log_method_call
     def create_policy_action(self, context, policy_action):
@@ -1600,19 +1612,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_policy_actions(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'policy_action', limit,
-                                          marker)
-        return self._get_collection(context, PolicyAction,
-                                    self._make_policy_action_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'policy_action', limit,
+                                           marker)
+        return db_api.get_collection(context, PolicyAction,
+                                     self._make_policy_action_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_policy_actions_count(self, context, filters=None):
-        return self._get_collection_count(context, PolicyAction,
-                                          filters=filters)
+        return db_api.get_collection_count(context, PolicyAction,
+                                           filters=filters)
 
     @log.log_method_call
     def create_policy_rule(self, context, policy_rule):
@@ -1663,19 +1677,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_policy_rules(self, context, filters=None, fields=None,
                          sorts=None, limit=None, marker=None,
                          page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'policy_rule', limit,
-                                          marker)
-        return self._get_collection(context, PolicyRule,
-                                    self._make_policy_rule_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'policy_rule', limit,
+                                           marker)
+        return db_api.get_collection(context, PolicyRule,
+                                     self._make_policy_rule_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_policy_rules_count(self, context, filters=None):
-        return self._get_collection_count(context, PolicyRule,
-                                          filters=filters)
+        return db_api.get_collection_count(context, PolicyRule,
+                                           filters=filters)
 
     @log.log_method_call
     def create_policy_rule_set(self, context, policy_rule_set):
@@ -1741,19 +1757,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_policy_rule_sets(self, context, filters=None, fields=None,
                              sorts=None, limit=None, marker=None,
                              page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'policy_rule_set', limit,
-                                          marker)
-        return self._get_collection(context, PolicyRuleSet,
-                                    self._make_policy_rule_set_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'policy_rule_set', limit,
+                                           marker)
+        return db_api.get_collection(context, PolicyRuleSet,
+                                     self._make_policy_rule_set_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_policy_rule_sets_count(self, context, filters=None):
-        return self._get_collection_count(context, PolicyRuleSet,
-                                          filters=filters)
+        return db_api.get_collection_count(context, PolicyRuleSet,
+                                           filters=filters)
 
     @log.log_method_call
     def create_external_policy(self, context, external_policy):
@@ -1792,19 +1810,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_external_policies(self, context, filters=None, fields=None,
                               sorts=None, limit=None, marker=None,
                               page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'external_policy', limit,
-                                          marker)
-        return self._get_collection(context, ExternalPolicy,
-                                    self._make_external_policy_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'external_policy', limit,
+                                           marker)
+        return db_api.get_collection(context, ExternalPolicy,
+                                     self._make_external_policy_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_external_policies_count(self, context, filters=None):
-        return self._get_collection_count(context, ExternalPolicy,
-                                          filters=filters)
+        return db_api.get_collection_count(context, ExternalPolicy,
+                                           filters=filters)
 
     @log.log_method_call
     def get_external_policy(self, context, external_policy_id, fields=None):
@@ -1854,19 +1874,21 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_external_segments(self, context, filters=None, fields=None,
                               sorts=None, limit=None, marker=None,
                               page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'external_segment', limit,
-                                          marker)
-        return self._get_collection(context, ExternalSegment,
-                                    self._make_external_segment_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'external_segment', limit,
+                                           marker)
+        return db_api.get_collection(context, ExternalSegment,
+                                     self._make_external_segment_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_external_segments_count(self, context, filters=None):
-        return self._get_collection_count(context, ExternalSegment,
-                                          filters=filters)
+        return db_api.get_collection_count(context, ExternalSegment,
+                                           filters=filters)
 
     @log.log_method_call
     def get_external_segment(self, context, external_segment_id, fields=None):
@@ -1910,18 +1932,20 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase,
     def get_nat_pools(self, context, filters=None, fields=None,
                       sorts=None, limit=None, marker=None,
                       page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'nat_pool', limit,
-                                          marker)
-        return self._get_collection(context, NATPool,
-                                    self._make_nat_pool_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'nat_pool', limit,
+                                           marker)
+        return db_api.get_collection(context, NATPool,
+                                     self._make_nat_pool_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_nat_pools_count(self, context, filters=None):
-        return self._get_collection_count(context, NATPool, filters=filters)
+        return db_api.get_collection_count(context, NATPool, filters=filters)
 
     @log.log_method_call
     def get_nat_pool(self, context, nat_pool_id, fields=None):
