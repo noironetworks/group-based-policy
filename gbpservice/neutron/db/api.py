@@ -24,11 +24,19 @@ from sqlalchemy import inspect
 
 import neutron.objects.base as n_base
 from neutron_lib.db import api
+from neutron_lib.db import model_query
+from neutron_lib.db import utils as db_utils
 
+get_by_id = model_query.get_by_id
+get_collection = model_query.get_collection
+get_collection_count = model_query.get_collection_count
+get_collection_query = model_query.get_collection_query
 get_context_manager = api.get_context_manager
+get_marker_obj = db_utils.get_marker_obj
 get_reader_session = api.get_reader_session
 get_writer_session = api.get_writer_session
 is_retriable = api.is_retriable
+resource_fields = db_utils.resource_fields
 retry_db_errors = api.retry_db_errors
 retry_if_session_inactive = api.retry_if_session_inactive
 CONTEXT_READER = api.CONTEXT_READER

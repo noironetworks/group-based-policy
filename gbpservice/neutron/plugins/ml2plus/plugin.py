@@ -608,20 +608,22 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                     page_reverse=False):
 
         with db_api.CONTEXT_WRITER.using(context):
-            marker_obj = self._get_marker_obj(context, 'subnet', limit, marker)
+            plugin = directory.get_plugin()
+            marker_obj = db_api.get_marker_obj(plugin, context,
+                                               'subnet', limit, marker)
 
             # REVIST(sridar): We need to rethink if we want to support
             # OVO. For now we put our head in the sand but this needs a
             # revisit.
             # Also, older branches are a slight variation, in line with
             # upstream code.
-            subnets_db = self._get_collection(context, models_v2.Subnet,
-                                              filters=filters,
-                                              dict_func=None,
-                                              sorts=sorts,
-                                              limit=limit,
-                                              marker_obj=marker_obj,
-                                              page_reverse=page_reverse)
+            subnets_db = db_api.get_collection(context, models_v2.Subnet,
+                                               filters=filters,
+                                               dict_func=None,
+                                               sorts=sorts,
+                                               limit=limit,
+                                               marker_obj=marker_obj,
+                                               page_reverse=page_reverse)
 
             subnets = self._make_subnets_dict(subnets_db, fields, context)
-        return [self._fields(subnet, fields) for subnet in subnets]
+        return [db_api.resource_fields(subnet, fields) for subnet in subnets]
