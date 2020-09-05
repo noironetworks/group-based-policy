@@ -512,7 +512,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                              context, resource['id'], new_status)
                     resource['status'] = updated_status
                     resource['status_details'] = updated_status_details
-        return self._fields(resource, fields)
+        return db_api.resource_fields(resource, fields)
 
     def _get_resource_status(self, context, resource_name, deployers=None):
         """

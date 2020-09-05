@@ -389,7 +389,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                 result = self._get_status_from_drivers(
                     context, gbp_context_name, resource_name, resource_id,
                     result)
-            return self._fields(result, fields)
+            return db_api.resource_fields(result, fields)
 
     def _get_resources(self, context, resource_name, gbp_context_name,
                        filters=None, fields=None, sorts=None, limit=None,
@@ -421,7 +421,7 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
                     result)
                 new_filtered_results.append(result)
         new_filtered_results = new_filtered_results or filtered_results
-        return [self._fields(nfresult, fields) for nfresult in
+        return [db_api.resource_fields(nfresult, fields) for nfresult in
                 new_filtered_results]
 
     @resource_registry.tracked_resources(

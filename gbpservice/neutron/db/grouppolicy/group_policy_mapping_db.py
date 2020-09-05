@@ -13,6 +13,7 @@
 from neutron.db import models_v2
 from neutron_lib.db import model_base
 from neutron_lib import exceptions as nexc
+from neutron_lib.plugins import directory
 from oslo_log import helpers as log
 from oslo_utils import uuidutils
 import sqlalchemy as sa
@@ -142,26 +143,26 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                     self)._make_policy_target_dict(pt)
         res['port_id'] = pt.port_id
         res.update(kwargs)
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_policy_target_group_dict(self, ptg, fields=None):
         res = super(GroupPolicyMappingDbPlugin,
                     self)._make_policy_target_group_dict(ptg)
         res['subnets'] = [subnet.subnet_id for subnet in ptg.subnets]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _get_subnetpools(self, id_list):
         context = get_current_context().elevated()
         with context.session.begin(subtransactions=True):
             filters = {'id': id_list}
-            return self._get_collection_query(
+            return db_api.get_collection_query(
                 context, models_v2.SubnetPool, filters=filters).all()
 
     def _make_l2_policy_dict(self, l2p, fields=None):
         res = super(GroupPolicyMappingDbPlugin,
                     self)._make_l2_policy_dict(l2p)
         res['network_id'] = l2p.network_id
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_l3_policy_dict(self, l3p, fields=None, ip_pool=None):
         res = super(GroupPolicyMappingDbPlugin,
@@ -180,19 +181,19 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         if pool_list:
             res['ip_pool'] = utils.convert_ip_pool_list_to_string(
                 pool_list)
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_external_segment_dict(self, es, fields=None):
         res = super(GroupPolicyMappingDbPlugin,
                     self)._make_external_segment_dict(es)
         res['subnet_id'] = es.subnet_id
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_nat_pool_dict(self, np, fields=None):
         res = super(GroupPolicyMappingDbPlugin,
                     self)._make_nat_pool_dict(np)
         res['subnet_id'] = np.subnet_id
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _set_port_for_policy_target(self, context, pt_id, port_id):
         with context.session.begin(subtransactions=True):
@@ -445,21 +446,23 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
 
     @log.log_method_call
     def get_policy_targets_count(self, context, filters=None):
-        return self._get_collection_count(context, PolicyTargetMapping,
-                                          filters=filters)
+        return db_api.get_collection_count(context, PolicyTargetMapping,
+                                           filters=filters)
 
     @log.log_method_call
     def get_policy_targets(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'policy_target', limit,
-                                          marker)
-        return self._get_collection(context, PolicyTargetMapping,
-                                    self._make_policy_target_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'policy_target', limit,
+                                           marker)
+        return db_api.get_collection(context, PolicyTargetMapping,
+                                     self._make_policy_target_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def create_policy_target_group(self, context, policy_target_group):
@@ -524,20 +527,22 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
 
     @log.log_method_call
     def get_policy_target_groups_count(self, context, filters=None):
-        return self._get_collection_count(context, PolicyTargetGroupMapping,
-                                          filters=filters)
+        return db_api.get_collection_count(context, PolicyTargetGroupMapping,
+                                           filters=filters)
 
     def _get_policy_target_groups(self, context, filters=None, fields=None,
                            sorts=None, limit=None, marker=None,
                            page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'policy_target_group',
-                                          limit, marker)
-        return self._get_collection(context, PolicyTargetGroupMapping,
-                                    self._make_policy_target_group_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'policy_target_group',
+                                           limit, marker)
+        return db_api.get_collection(context, PolicyTargetGroupMapping,
+                                     self._make_policy_target_group_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_policy_target_groups(self, context, filters=None, fields=None,
@@ -567,19 +572,21 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def get_l2_policies(self, context, filters=None, fields=None,
                         sorts=None, limit=None, marker=None,
                         page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'l2_policy', limit,
-                                          marker)
-        return self._get_collection(context, L2PolicyMapping,
-                                    self._make_l2_policy_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'l2_policy', limit,
+                                           marker)
+        return db_api.get_collection(context, L2PolicyMapping,
+                                     self._make_l2_policy_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_l2_policies_count(self, context, filters=None):
-        return self._get_collection_count(context, L2PolicyMapping,
-                                          filters=filters)
+        return db_api.get_collection_count(context, L2PolicyMapping,
+                                           filters=filters)
 
     @log.log_method_call
     def create_l3_policy(self, context, l3_policy):
@@ -696,18 +703,20 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def get_external_segments(self, context, filters=None, fields=None,
                               sorts=None, limit=None, marker=None,
                               page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'external_segment', limit,
-                                          marker)
-        return self._get_collection(context, ExternalSegmentMapping,
-                                    self._make_external_segment_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'external_segment', limit,
+                                           marker)
+        return db_api.get_collection(context, ExternalSegmentMapping,
+                                     self._make_external_segment_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     def get_external_segments_count(self, context, filters=None):
-        return self._get_collection_count(context, ExternalSegmentMapping,
-                                          filters=filters)
+        return db_api.get_collection_count(context, ExternalSegmentMapping,
+                                           filters=filters)
 
     @log.log_method_call
     def create_nat_pool(self, context, nat_pool):
@@ -728,11 +737,13 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def get_nat_pools(self, context, filters=None, fields=None,
                       sorts=None, limit=None, marker=None,
                       page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'nat_pool', limit,
-                                          marker)
-        return self._get_collection(context, NATPoolMapping,
-                                    self._make_nat_pool_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'nat_pool', limit,
+                                           marker)
+        return db_api.get_collection(context, NATPoolMapping,
+                                     self._make_nat_pool_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)

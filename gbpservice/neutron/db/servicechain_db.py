@@ -174,26 +174,26 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
 
     def _get_servicechain_node(self, context, node_id):
         try:
-            return self._get_by_id(context, ServiceChainNode, node_id)
+            return db_api.get_by_id(context, ServiceChainNode, node_id)
         except exc.NoResultFound:
             raise schain.ServiceChainNodeNotFound(sc_node_id=node_id)
 
     def _get_servicechain_spec(self, context, spec_id):
         try:
-            return self._get_by_id(context, ServiceChainSpec, spec_id)
+            return db_api.get_by_id(context, ServiceChainSpec, spec_id)
         except exc.NoResultFound:
             raise schain.ServiceChainSpecNotFound(sc_spec_id=spec_id)
 
     def _get_servicechain_instance(self, context, instance_id):
         try:
-            return self._get_by_id(context, ServiceChainInstance, instance_id)
+            return db_api.get_by_id(context, ServiceChainInstance, instance_id)
         except exc.NoResultFound:
             raise schain.ServiceChainInstanceNotFound(
                 sc_instance_id=instance_id)
 
     def _get_service_profile(self, context, profile_id):
         try:
-            return self._get_by_id(context, ServiceProfile, profile_id)
+            return db_api.get_by_id(context, ServiceProfile, profile_id)
         except exc.NoResultFound:
             raise schain.ServiceProfileNotFound(
                 profile_id=profile_id)
@@ -215,7 +215,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         res['config'] = sc_node['config']
         res['servicechain_specs'] = [sc_spec['servicechain_spec_id']
                                      for sc_spec in sc_node['specs']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_sc_spec_dict(self, spec, fields=None):
         res = self._populate_common_fields_in_dict(spec)
@@ -223,7 +223,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         res['nodes'] = [sc_node['node_id'] for sc_node in spec['nodes']]
         res['instances'] = [x['servicechain_instance_id'] for x in
                             spec['instances']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_sc_instance_dict(self, instance, fields=None):
         res = {'id': instance['id'],
@@ -239,7 +239,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                'status_details': instance['status_details']}
         res['servicechain_specs'] = [sc_spec['servicechain_spec_id']
                                     for sc_spec in instance['specs']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     def _make_service_profile_dict(self, profile, fields=None):
         res = self._populate_common_fields_in_dict(profile)
@@ -248,7 +248,7 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         res['vendor'] = profile['vendor']
         res['insertion_mode'] = profile['insertion_mode']
         res['nodes'] = [node['id'] for node in profile['nodes']]
-        return self._fields(res, fields)
+        return db_api.resource_fields(res, fields)
 
     @staticmethod
     def validate_service_type(service_type):
@@ -309,19 +309,21 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def get_servicechain_nodes(self, context, filters=None, fields=None,
                                sorts=None, limit=None, marker=None,
                                page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'servicechain_node', limit,
-                                          marker)
-        return self._get_collection(context, ServiceChainNode,
-                                    self._make_sc_node_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'servicechain_node', limit,
+                                           marker)
+        return db_api.get_collection(context, ServiceChainNode,
+                                     self._make_sc_node_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_servicechain_nodes_count(self, context, filters=None):
-        return self._get_collection_count(context, ServiceChainNode,
-                                          filters=filters)
+        return db_api.get_collection_count(context, ServiceChainNode,
+                                           filters=filters)
 
     def _process_nodes_for_spec(self, context, spec_db, spec,
                                 set_params=True):
@@ -340,8 +342,9 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
         with context.session.begin(subtransactions=True):
             # We will first check if the new list of nodes is valid
             filters = {'id': [n_id for n_id in nodes_id_list]}
-            nodes_in_db = self._get_collection_query(context, ServiceChainNode,
-                                                     filters=filters)
+            nodes_in_db = db_api.get_collection_query(context,
+                                                      ServiceChainNode,
+                                                      filters=filters)
             nodes_list = [n_db['id'] for n_db in nodes_in_db]
             for node_id in nodes_id_list:
                 if node_id not in nodes_list:
@@ -389,8 +392,9 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
             return
         with context.session.begin(subtransactions=True):
             filters = {'id': spec_id_list}
-            specs_in_db = self._get_collection_query(context, ServiceChainSpec,
-                                                     filters=filters)
+            specs_in_db = db_api.get_collection_query(context,
+                                                      ServiceChainSpec,
+                                                      filters=filters)
             specs_list = set(spec_db['id'] for spec_db in specs_in_db)
             for spec_id in spec_id_list:
                 if spec_id not in specs_list:
@@ -475,19 +479,21 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def get_servicechain_specs(self, context, filters=None, fields=None,
                                sorts=None, limit=None, marker=None,
                                page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'servicechain_spec', limit,
-                                          marker)
-        return self._get_collection(context, ServiceChainSpec,
-                                    self._make_sc_spec_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'servicechain_spec', limit,
+                                           marker)
+        return db_api.get_collection(context, ServiceChainSpec,
+                                     self._make_sc_spec_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_servicechain_specs_count(self, context, filters=None):
-        return self._get_collection_count(context, ServiceChainSpec,
-                                          filters=filters)
+        return db_api.get_collection_count(context, ServiceChainSpec,
+                                           filters=filters)
 
     @log.log_method_call
     def create_servicechain_instance(self, context, servicechain_instance):
@@ -549,24 +555,26 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def get_servicechain_instances(self, context, filters=None, fields=None,
                                    sorts=None, limit=None, marker=None,
                                    page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'servicechain_instance',
-                                          limit, marker)
-        return self._get_collection(context, ServiceChainInstance,
-                                    self._make_sc_instance_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'servicechain_instance',
+                                           limit, marker)
+        return db_api.get_collection(context, ServiceChainInstance,
+                                     self._make_sc_instance_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
 
     @log.log_method_call
     def get_servicechain_instances_count(self, context, filters=None):
-        return self._get_collection_count(context, ServiceChainInstance,
-                                          filters=filters)
+        return db_api.get_collection_count(context, ServiceChainInstance,
+                                           filters=filters)
 
     @log.log_method_call
     def get_service_profiles_count(self, context, filters=None):
-        return self._get_collection_count(context, ServiceProfile,
-                                          filters=filters)
+        return db_api.get_collection_count(context, ServiceProfile,
+                                           filters=filters)
 
     @log.log_method_call
     def create_service_profile(self, context, service_profile):
@@ -616,11 +624,13 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
     def get_service_profiles(self, context, filters=None, fields=None,
                              sorts=None, limit=None, marker=None,
                              page_reverse=False):
-        marker_obj = self._get_marker_obj(context, 'service_profile',
-                                          limit, marker)
-        return self._get_collection(context, ServiceProfile,
-                                    self._make_service_profile_dict,
-                                    filters=filters, fields=fields,
-                                    sorts=sorts, limit=limit,
-                                    marker_obj=marker_obj,
-                                    page_reverse=page_reverse)
+        plugin = directory.get_plugin()
+        marker_obj = db_api.get_marker_obj(plugin, context,
+                                           'service_profile',
+                                           limit, marker)
+        return db_api.get_collection(context, ServiceProfile,
+                                     self._make_service_profile_dict,
+                                     filters=filters, fields=fields,
+                                     sorts=sorts, limit=limit,
+                                     marker_obj=marker_obj,
+                                     page_reverse=page_reverse)
