@@ -64,3 +64,23 @@ from neutron.common import _constants
 
 DEVICE_OWNER_SVI_PORT = 'apic:svi'
 _constants.AUTO_DELETE_PORT_OWNERS.append(DEVICE_OWNER_SVI_PORT)
+
+
+from neutron.db import db_base_plugin_v2 as db_v2
+
+
+patched_create_network_db = db_v2.NeutronDbPluginV2.create_network_db
+
+
+# REVISIT: this is a monkey patch of the upstream DB layer call.
+# https://review.opendev.org/#/c/679399/ set the default value
+# for the network's MTU to the constant defined in neutron-lib, if
+# one wasn't specified. This modifies that behavior by explicitly
+# setting it to 0, if not set already, avoiding this behavior.
+def create_network_db(self, context, network):
+    n = network['network']
+    n.update({'mtu': n.get('mtu', 0)})
+    return patched_create_network_db(self, context, network)
+
+
+db_v2.NeutronDbPluginV2.create_network_db = create_network_db

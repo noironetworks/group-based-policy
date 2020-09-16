@@ -127,7 +127,18 @@ def do_apic_aim_persist_migration(session):
         scope_dbs = (session.query(as_db.AddressScope)
                      .options(lazyload('*')).all())
         for scope_db in scope_dbs:
-            alembic_util.msg("Migrating address scope: %s" % scope_db)
+            # REVISIT: commit eb6104c0ac61216234ea958f2fd322e70b8e4bec
+            # in upstream neutron breaks the __repr__ method of the model
+            # class. We work around this for now by using the dict members.
+            # This should be removed once the model class is fixed upstream.
+            scope_dict = {}
+            for k, v in scope_db.__dict__.items():
+                if k == '_sa_instance_state':
+                    continue
+                if k == 'shared_':
+                    k = 'shared'
+                scope_dict[k] = v
+            alembic_util.msg("Migrating address scope: %s" % scope_dict)
             vrf = None
             ext_db = (session.query(DefunctAddressScopeExtensionDb).
                       filter_by(address_scope_id=scope_db.id).

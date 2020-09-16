@@ -58,7 +58,7 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
         super(TestCiscoApicAimL3Plugin, self).setUp()
         get_sec_group_port_patch = mock.patch(
             'neutron.db.securitygroups_db.SecurityGroupDbMixin.'
-            '_get_security_groups_on_port')
+            '_get_security_groups_on_port', return_value=set())
         get_sec_group_port_patch.start()
 
         # Set up L2 objects for L3 test

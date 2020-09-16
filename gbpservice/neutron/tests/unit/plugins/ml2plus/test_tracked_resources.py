@@ -18,6 +18,7 @@ from neutron.tests.unit.plugins.ml2 import (
     test_tracked_resources as n_tracked)
 from neutron.tests.unit.plugins.ml2 import test_plugin
 
+from gbpservice.neutron.db import all_models  # noqa
 import gbpservice.neutron.extensions
 
 PLUGIN_NAME = 'ml2plus'
@@ -39,7 +40,7 @@ class Ml2PlusTestTrackedResourcesEventHandler(
         super(Ml2PlusTestTrackedResourcesEventHandler, self).setUp()
         get_sec_group_port_patch = mock.patch(
             'neutron.db.securitygroups_db.SecurityGroupDbMixin.'
-            '_get_security_groups_on_port')
+            '_get_security_groups_on_port', return_value=set())
         get_sec_group_port_patch.start()
 
     def setup_parent(self):
@@ -66,7 +67,7 @@ class Ml2PlusTestTrackedResources(n_tracked.TestTrackedResources):
         super(Ml2PlusTestTrackedResources, self).setUp()
         get_sec_group_port_patch = mock.patch(
             'neutron.db.securitygroups_db.SecurityGroupDbMixin.'
-            '_get_security_groups_on_port')
+            '_get_security_groups_on_port', return_value=set())
         get_sec_group_port_patch.start()
 
     def setup_parent(self):

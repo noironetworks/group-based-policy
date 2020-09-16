@@ -17,6 +17,7 @@ from neutron.api.v2 import resource as neutron_resource
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
+from neutron.objects import securitygroup as sg_obj
 from neutron.plugins.ml2 import db as ml2_db
 from neutron.quota import resource as quota_resource
 from neutron_lib.api import attributes
@@ -100,10 +101,8 @@ def _get_security_groups_on_port(self, context, port):
         return
 
     port_sg = p.get(securitygroups_db.ext_sg.SECURITYGROUPS, [])
-    filters = {'id': port_sg}
-    valid_groups = set(g['id'] for g in
-                       self.get_security_groups(context, fields=['id'],
-                                                filters=filters))
+    sg_objs = sg_obj.SecurityGroup.get_objects(context, id=port_sg)
+    valid_groups = set(g['id'] for g in sg_objs)
 
     requested_groups = set(port_sg)
     port_sg_missing = requested_groups - valid_groups
@@ -111,7 +110,7 @@ def _get_security_groups_on_port(self, context, port):
         raise securitygroups_db.ext_sg.SecurityGroupNotFound(
             id=', '.join(port_sg_missing))
 
-    return requested_groups
+    return sg_objs
 
 
 securitygroups_db.SecurityGroupDbMixin._get_security_groups_on_port = (

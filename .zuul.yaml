@@ -1,7 +1,7 @@
 - project:
     name: x/group-based-policy
     templates:
-      - openstack-python-jobs
+      - openstack-python3-ussuri-jobs
       - publish-to-pypi
     # REVISIT: In the jobs below, the required-projects clause is needed on
     # the master branch to select the correct version of the requirements
@@ -15,27 +15,17 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
-        - openstack-tox-py27:
-            nodeset: ubuntu-bionic
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/train
-        - openstack-tox-py35:
-            nodeset: ubuntu-xenial
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: stable/ussuri
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: stable/ussuri
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: stable/ussuri
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -48,24 +38,14 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
-        - openstack-tox-py27:
-            nodeset: ubuntu-bionic
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/train
-        - openstack-tox-py35:
-            nodeset: ubuntu-xenial
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: stable/ussuri
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: stable/ussuri
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: stable/ussuri
