@@ -665,13 +665,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             raise exceptions.InvalidPreexistingBdForNetwork()
         return aim_bd
 
-    def _handle_qos_policy(self, context, policy):
+    def _handle_qos_policy(self, context, policy, is_update=False):
         session = context.session
         aim_ctx = aim_context.AimContext(session)
         tenant_aname = self.name_mapper.project(session, context.tenant_id)
-        aim_qos_db = aim_resource.QosRequirement(
-                        tenant_name=tenant_aname, name=policy['id'])
-        aim_qos_db = self.aim.get(aim_ctx, aim_qos_db)
         bw_rules = []
         dscp = None
         egress_dpp_pol = None
@@ -700,16 +697,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         'display_name': policy['name'] + '_ingress',
                         'rate_unit': 'kilo', 'rate': rule.max_kbps})
 
-        if aim_qos_db and aim_qos_db.egress_dpp_pol and \
-           aim_qos_db.egress_dpp_pol != egress_dpp_pol:
-            aim_bw = aim_resource.QosDppPol(tenant_name=tenant_aname,
-                                            name=aim_qos_db.egress_dpp_pol)
-            self.aim.delete(aim_ctx, aim_bw)
-        if aim_qos_db and aim_qos_db.ingress_dpp_pol and \
-           aim_qos_db.ingress_dpp_pol != ingress_dpp_pol:
-            aim_bw = aim_resource.QosDppPol(tenant_name=tenant_aname,
-                                            name=aim_qos_db.ingress_dpp_pol)
-            self.aim.delete(aim_ctx, aim_bw)
+        # REVIST: Should we just use self.aim.update() for update case then?
+        if is_update:
+            aim_qos_db = aim_resource.QosRequirement(
+                             tenant_name=tenant_aname, name=policy['id'])
+            aim_qos_db = self.aim.get(aim_ctx, aim_qos_db)
+            if (aim_qos_db and aim_qos_db.egress_dpp_pol and
+                    aim_qos_db.egress_dpp_pol != egress_dpp_pol):
+                aim_bw = aim_resource.QosDppPol(tenant_name=tenant_aname,
+                                                name=aim_qos_db.egress_dpp_pol)
+                self.aim.delete(aim_ctx, aim_bw)
+            if (aim_qos_db and aim_qos_db.ingress_dpp_pol and
+                    aim_qos_db.ingress_dpp_pol != ingress_dpp_pol):
+                aim_bw = aim_resource.QosDppPol(
+                    tenant_name=tenant_aname, name=aim_qos_db.ingress_dpp_pol)
+                self.aim.delete(aim_ctx, aim_bw)
+
         aim_qos = aim_resource.QosRequirement(
                     tenant_name=tenant_aname, name=policy['id'],
                     display_name=policy['name'],
@@ -738,7 +741,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         :type policy: dict
         :returns: a QosPolicy object
         """
-        self._handle_qos_policy(context, policy)
+        self._handle_qos_policy(context, policy, is_update=True)
 
     def delete_qos_policy_precommit(self, context, policy):
         session = context.session
