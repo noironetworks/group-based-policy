@@ -73,9 +73,6 @@ class TestAIMQosBase(test_aim_base.AIMBaseTestCase):
             'dscp_marking_rule': {'id': uuidutils.generate_uuid(),
                                   'dscp_mark': 16}, }
 
-        self.policy = policy_object.QosPolicy(
-            self.ctxt, **self.policy_data['policy'])
-
         self.egress_rule = rule_object.QosBandwidthLimitRule(
             self.ctxt, **self.rule_data['egress_bandwidth_limit_rule'])
 
@@ -110,103 +107,60 @@ class TestAIMQosBase(test_aim_base.AIMBaseTestCase):
 
 class TestQosPolicy(TestAIMQosBase):
 
-    def test_create_delete_policy(self):
+    def test_create_delete_update_policy(self):
         _policy = policy_object.QosPolicy(
             self.ctxt, **self.policy_data['policy'])
         _policy.create()
         self.qos_driver.create_policy_precommit(self.ctxt, _policy)
         tenant_name = 'prj_' + self.ctxt.tenant_id
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosRequirement(
-                name=_policy.id,
-                tenant_name=tenant_name))
+        pol = aim_res.QosRequirement(name=_policy.id, tenant_name=tenant_name)
+        pol = self.aim_mgr.get(self._aim_context, pol)
         self.assertIsNotNone(pol)
 
-        self.qos_driver.delete_policy_precommit(self.ctxt, _policy)
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosRequirement(
-                name=_policy.id,
-                tenant_name=tenant_name))
-        self.assertIsNone(pol)
-
-    def test_create_delete_dscp(self):
-        _policy = policy_object.QosPolicy(
-            self.ctxt, **self.policy_data['policy'])
-        _policy.create()
+        # Test dscp rule
         setattr(_policy, "rules", [self.dscp_rule])
-        self.qos_driver.create_policy_precommit(self.ctxt, _policy)
-        tenant_name = 'prj_' + self.ctxt.tenant_id
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosRequirement(
-                name=_policy.id,
-                tenant_name=tenant_name))
+        self.qos_driver.update_policy_precommit(self.ctxt, _policy)
+        pol = self.aim_mgr.get(self._aim_context, pol)
         self.assertIsNotNone(pol)
         self.assertEqual(pol.dscp,
                          self.rule_data['dscp_marking_rule']['dscp_mark'])
-        setattr(_policy, "rules", [])
-        self.qos_driver.update_policy_precommit(self.ctxt, _policy)
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosRequirement(
-                name=_policy.id,
-                tenant_name=tenant_name))
-        self.assertIsNone(pol.dscp)
 
-    def test_create_delete_bandwidth_rules(self):
-        _policy = policy_object.QosPolicy(
-            self.ctxt, **self.policy_data['policy'])
-        _policy.create()
+        # Test bw rules
         setattr(_policy, "rules", [self.egress_rule, self.ingress_rule])
-        self.qos_driver.create_policy_precommit(self.ctxt, _policy)
-        tenant_name = 'prj_' + self.ctxt.tenant_id
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosRequirement(
-                name=_policy.id,
-                tenant_name=tenant_name))
+        self.qos_driver.update_policy_precommit(self.ctxt, _policy)
+        pol = self.aim_mgr.get(self._aim_context, pol)
         self.assertIsNotNone(pol)
         self.assertEqual(pol.ingress_dpp_pol, self.ingress_rule.id)
         self.assertEqual(pol.egress_dpp_pol, self.egress_rule.id)
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosDppPol(
-                name=self.egress_rule.id,
-                tenant_name=tenant_name))
-        self.assertIsNotNone(pol)
-        self.assertEqual(pol.burst, str(self.egress_rule.max_burst_kbps))
-        self.assertEqual(pol.rate, self.egress_rule.max_kbps)
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosDppPol(
-                name=self.ingress_rule.id,
-                tenant_name=tenant_name))
-        self.assertIsNotNone(pol)
-        self.assertEqual(pol.burst, str(self.ingress_rule.max_burst_kbps))
-        self.assertEqual(pol.rate, self.ingress_rule.max_kbps)
+        self.assertIsNone(pol.dscp)
+        egress_bw_rule = aim_res.QosDppPol(
+            name=self.egress_rule.id, tenant_name=tenant_name)
+        egress_bw_rule = self.aim_mgr.get(self._aim_context, egress_bw_rule)
+        self.assertIsNotNone(egress_bw_rule)
+        self.assertEqual(egress_bw_rule.burst,
+                         str(self.egress_rule.max_burst_kbps))
+        self.assertEqual(egress_bw_rule.rate, self.egress_rule.max_kbps)
+        ingress_bw_rule = aim_res.QosDppPol(
+            name=self.ingress_rule.id, tenant_name=tenant_name)
+        ingress_bw_rule = self.aim_mgr.get(self._aim_context, ingress_bw_rule)
+        self.assertIsNotNone(ingress_bw_rule)
+        self.assertEqual(ingress_bw_rule.burst,
+                         str(self.ingress_rule.max_burst_kbps))
+        self.assertEqual(ingress_bw_rule.rate, self.ingress_rule.max_kbps)
 
+        # Clean up the rules
         setattr(_policy, "rules", [])
         self.qos_driver.update_policy_precommit(self.ctxt, _policy)
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosRequirement(
-                name=_policy.id,
-                tenant_name=tenant_name))
+        pol = self.aim_mgr.get(self._aim_context, pol)
         self.assertIsNone(pol.egress_dpp_pol)
         self.assertIsNone(pol.ingress_dpp_pol)
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosDppPol(
-                name=self.egress_rule.id,
-                tenant_name=tenant_name))
-        self.assertIsNone(pol)
-        pol = self.aim_mgr.get(
-            self._aim_context,
-            aim_res.QosDppPol(
-                name=self.ingress_rule.id,
-                tenant_name=tenant_name))
+        egress_bw_rule = self.aim_mgr.get(self._aim_context, egress_bw_rule)
+        self.assertIsNone(egress_bw_rule)
+        ingress_bw_rule = self.aim_mgr.get(self._aim_context, ingress_bw_rule)
+        self.assertIsNone(ingress_bw_rule)
+
+        self.qos_driver.delete_policy_precommit(self.ctxt, _policy)
+        pol = self.aim_mgr.get(self._aim_context, pol)
         self.assertIsNone(pol)
 
     def _make_qos_policy(self):
