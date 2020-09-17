@@ -53,8 +53,7 @@ class TestAIMQosBase(test_aim_base.AIMBaseTestCase):
         self.admin_ctxt = context.get_admin_context()
 
         self.policy_data = {
-            'policy': {'id': uuidutils.generate_uuid(),
-                       'project_id': uuidutils.generate_uuid(),
+            'policy': {'project_id': uuidutils.generate_uuid(),
                        'name': 'test-policy',
                        'description': 'Test policy description',
                        'shared': True,
@@ -114,6 +113,7 @@ class TestQosPolicy(TestAIMQosBase):
     def test_create_delete_policy(self):
         _policy = policy_object.QosPolicy(
             self.ctxt, **self.policy_data['policy'])
+        _policy.create()
         self.qos_driver.create_policy_precommit(self.ctxt, _policy)
         tenant_name = 'prj_' + self.ctxt.tenant_id
         pol = self.aim_mgr.get(
@@ -134,6 +134,7 @@ class TestQosPolicy(TestAIMQosBase):
     def test_create_delete_dscp(self):
         _policy = policy_object.QosPolicy(
             self.ctxt, **self.policy_data['policy'])
+        _policy.create()
         setattr(_policy, "rules", [self.dscp_rule])
         self.qos_driver.create_policy_precommit(self.ctxt, _policy)
         tenant_name = 'prj_' + self.ctxt.tenant_id
@@ -157,6 +158,7 @@ class TestQosPolicy(TestAIMQosBase):
     def test_create_delete_bandwidth_rules(self):
         _policy = policy_object.QosPolicy(
             self.ctxt, **self.policy_data['policy'])
+        _policy.create()
         setattr(_policy, "rules", [self.egress_rule, self.ingress_rule])
         self.qos_driver.create_policy_precommit(self.ctxt, _policy)
         tenant_name = 'prj_' + self.ctxt.tenant_id
