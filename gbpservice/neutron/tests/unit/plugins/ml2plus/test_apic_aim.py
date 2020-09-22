@@ -5110,15 +5110,43 @@ class TestPortBinding(ApicAimTestCase):
                     self.assertIsNone(bgp_peer)
 
     def test_dualstack_svi_opflex_agent_add_subnet(self):
+        self._test_dualstack_svi_opflex_agent_add_subnet()
+
+    def test_dualstack_svi_vpc_opflex_agent_add_subnet(self):
+        self._test_dualstack_svi_opflex_agent_add_subnet(vpc=True)
+
+    def _test_dualstack_svi_opflex_agent_add_subnet(self, vpc=False):
         aim_ctx = aim_context.AimContext(self.db_session)
 
-        hlink1 = aim_infra.HostLink(
-            host_name='h1',
-            interface_name='eth1',
-            path='topology/pod-1/paths-102/pathep-[eth1/8]')
+        if vpc:
+            hlink1 = aim_infra.HostLink(
+                host_name='h1',
+                switch_id='102',
+                module='vpc-1-21',
+                port='vpc_pg_1_21',
+                interface_name='eth1',
+                path='topology/pod-1/protpaths-102-103/pathep-[vpc_pg_1_21]')
+            hlink2 = aim_infra.HostLink(
+                host_name='h1',
+                switch_id='103',
+                module='vpc-1-21',
+                port='vpc_pg_1_21',
+                interface_name='eth2',
+                path='topology/pod-1/protpaths-102-103/pathep-[vpc_pg_1_21]')
+        else:
+            hlink1 = aim_infra.HostLink(
+                host_name='h1',
+                interface_name='eth1',
+                path='topology/pod-1/paths-102/pathep-[eth1/8]')
+            hlink2 = aim_infra.HostLink(
+                host_name='h2',
+                interface_name='eth2',
+                path='topology/pod-1/paths-103/pathep-[eth1/9]')
         self.aim_mgr.create(aim_ctx, hlink1)
+        self.aim_mgr.create(aim_ctx, hlink2)
 
         self._register_agent('h1', AGENT_CONF_OPFLEX)
+        self._register_agent('h2', AGENT_CONF_OPFLEX)
 
         net1 = self._make_network(self.fmt, 'net1', True,
                                 arg_list=self.extension_attributes,
@@ -5150,6 +5178,14 @@ class TestPortBinding(ApicAimTestCase):
                     node_path='topology/pod-1/node-102')
                 l3out_node = self.aim_mgr.get(aim_ctx, l3out_node)
                 self.assertIsNotNone(l3out_node)
+                if vpc:
+                    l3out_node = aim_resource.L3OutNode(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        node_profile_name=md.L3OUT_NODE_PROFILE_NAME,
+                        node_path='topology/pod-1/node-103')
+                    l3out_node = self.aim_mgr.get(aim_ctx, l3out_node)
+                    self.assertIsNotNone(l3out_node)
 
                 l3out_ifs = []
                 bgp_peers = []
@@ -5265,6 +5301,46 @@ class TestPortBinding(ApicAimTestCase):
                 for bgp_peer in bgp_peers:
                     bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
                     self.assertIsNone(bgp_peer)
+
+                if not vpc:
+                    # Force creation of SVI  Port for 'h2'.
+                    p2 = self._make_port(self.fmt, net1['id'])['port']
+                    p2 = self._bind_port_to_host(p2['id'], 'h2')
+                    self._delete('ports', p2['port']['id'])
+
+        self._delete('subnets', sub1['subnet']['id'])
+        self._delete('subnets', sub2['id'])
+
+        # No bound ports and subnets deleted.
+        svi_ports = self._list('ports',
+            query_params=('device_owner=apic:svi&network_id=%s' % net1['id'])
+                )['ports']
+        for svi_port in svi_ports:
+            self.assertEqual([], svi_port['fixed_ips'])
+
+        if not vpc:
+            # Add a subnet and port.
+            sub2 = self._make_subnet(self.fmt,
+                {'network': net1}, '2001:db8::1',
+                 '2001:db8::0/64', ip_version=6)['subnet']
+            p2 = self._make_port(self.fmt, net1['id'])['port']
+            p2 = self._bind_port_to_host(p2['id'], 'h2')
+
+            # Port bound to host 'h2', ensure that both SVI ports are
+            # updated with the subnet.
+            svi_ports = self._list('ports',
+                query_params=('device_owner=apic:svi&network_id=%s'
+                    % net1['id']))['ports']
+            for svi_port in svi_ports:
+                if svi_port['name'] == 'apic-svi-port:node-103':
+                    # Corresponds to host 'h2' with a bound port.
+                    self.assertEqual(sub2['id'],
+                        svi_port['fixed_ips'][0]['subnet_id'])
+                else:
+                    # Corresponds to host 'h1' - no bound port.
+                    self.assertEqual([], svi_port['fixed_ips'])
+            self._delete('ports', p2['port']['id'])
+            self._delete('subnets', sub2['id'])
 
     def test_bind_opflex_agent_svi(self):
         self._register_agent('host1', AGENT_CONF_OPFLEX)
