@@ -26,6 +26,7 @@ from neutron.db.models import securitygroup as sg_models
 from neutron.db.models import segment as segment_models
 from neutron.db import models_v2
 from neutron.db.port_security import models as psec_models
+from neutron.db.qos import models as qos_models
 from neutron.plugins.ml2 import models as ml2_models
 from neutron.services.trunk import models as trunk_models
 from neutron_lib.api.definitions import portbindings
@@ -105,6 +106,11 @@ EndpointSecurityGroupInfo = namedtuple(
     ['sg_id',
      'project_id'])
 
+EndpointQosInfo = namedtuple(
+    'EndpointQosInfo',
+    ['qos_id',
+     'project_id'])
+
 EndpointDhcpIpInfo = namedtuple(
     'EndpointDhcpIpInfo',
     ['mac_address',
@@ -151,6 +157,10 @@ EndpointTrunkInfo = namedtuple(
      'subport_port_id',
      'segmentation_type',
      'segmentation_id'])
+
+NEUTRON_INTERNAL_PORTS = (n_constants.DEVICE_OWNER_DHCP,
+     n_constants.DEVICE_OWNER_ROUTER_INTF,
+     n_constants.DEVICE_OWNER_ROUTER_GW)
 
 
 class TopologyRpcEndpoint(object):
@@ -365,6 +375,12 @@ class ApicRpcHandlerMixin(object):
                     # Query for list of the port's security groups.
                     info['sg_info'] = self._query_endpoint_sg_info(
                         session, port_info.port_id)
+
+                    # Query for port's qos policy
+                    info['qos_info'] = []
+                    if port_info.device_owner not in NEUTRON_INTERNAL_PORTS:
+                        info['qos_info'] = self._query_endpoint_qos_info(
+                            session, port_info.port_id)
 
                     # Query for list of state associated with each
                     # DHCP IP on the port's network.
@@ -606,6 +622,22 @@ class ApicRpcHandlerMixin(object):
             sg_models.SecurityGroupPortBinding.port_id ==
             sa.bindparam('port_id'))
         return [EndpointSecurityGroupInfo._make(row) for row in
+                query(session).params(
+                    port_id=port_id)]
+
+    def _query_endpoint_qos_info(self, session, port_id):
+        query = BAKERY(lambda s: s.query(
+            qos_models.QosPolicy.id,
+            qos_models.QosPolicy.project_id,
+        ))
+        query += lambda q: q.join(
+            qos_models.QosPortPolicyBinding,
+            qos_models.QosPortPolicyBinding.policy_id ==
+            qos_models.QosPolicy.id)
+        query += lambda q: q.filter(
+            qos_models.QosPortPolicyBinding.port_id ==
+            sa.bindparam('port_id'))
+        return [EndpointQosInfo._make(row) for row in
                 query(session).params(
                     port_id=port_id)]
 
@@ -944,6 +976,8 @@ class ApicRpcHandlerMixin(object):
             if not (vif_details and vif_details.get('port_filter') and
                     vif_details.get('ovs_hybrid_plug')):
                 details['security_group'] = self._build_sg_details(info)
+        if info['qos_info']:
+            details['qos_policy'] = self._build_qos_details(info)
         details['subnets'] = self._build_subnet_details(info)
         details['vm-name'] = (port_info.vm_name if
                               port_info.device_owner.startswith('compute:') and
@@ -1082,6 +1116,11 @@ class ApicRpcHandlerMixin(object):
             [{'policy-space': self.name_mapper.project(None, sg.project_id),
               'name': sg.sg_id} for sg in info['sg_info']] +
             [{'policy-space': 'common', 'name': self._default_sg_name}])
+
+    def _build_qos_details(self, info):
+        return (
+            [{'policy-space': self.name_mapper.project(None, qos.project_id),
+              'name': qos.qos_id} for qos in info['qos_info']][0])
 
     def _build_subnet_details(self, info):
         ip_info = info['ip_info']
