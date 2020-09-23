@@ -15,9 +15,10 @@ import mock
 
 # from aim.api import infra as aim_infra
 from aim.api import resource as aim_res
+from gbpservice.neutron.tests.unit.plugins.ml2plus import (
+    test_apic_aim as test_aim_md)
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
     test_aim_mapping_driver as test_aim_base)
-
 from neutron.objects.qos import policy as policy_object
 from neutron.objects.qos import rule as rule_object
 from neutron_lib import context
@@ -46,6 +47,7 @@ class TestAIMQosBase(test_aim_base.AIMBaseTestCase):
         super(TestAIMQosBase, self).setUp(
             *args, ml2_options=ml2_options, qos_plugin='qos', **kwargs)
         self._plugin = directory.get_plugin()
+        self.plugin = self._plugin
         self._plugin.remove_networks_from_down_agents = mock.Mock()
         self._plugin.is_agent_down = mock.Mock(return_value=False)
         self._ctx = context.get_admin_context()
@@ -184,6 +186,23 @@ class TestQosPolicy(TestAIMQosBase):
         self._update('networks', network['network']['id'], data)
         epg = self.aim_mgr.get(self._aim_context, epg)
         self.assertIsNone(epg.qos_name)
+
+    def test_port_qos_gbpDetailsForML2(self):
+        self._register_agent('host1', test_aim_md.AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        qosPolicy = self._make_qos_policy()
+        qosPort = self._make_port(self.fmt,
+                                  net['network']['id'],
+                                  None, arg_list=('qos_policy_id',),
+                                  qos_policy_id=qosPolicy.id)
+        self._bind_port_to_host(qosPort['port']['id'], 'host1')
+
+        mapping = self.aim_mech.get_gbp_details(
+            self._neutron_admin_context,
+            device='tap%s' % qosPort['port']['id'],
+            host='host1')
+        self.assertEqual(qosPolicy.id, mapping['qos_policy']['name'])
 
     def _test_invalid_network_exception(self, kwargs):
         # Verify creating network with QoS fails
