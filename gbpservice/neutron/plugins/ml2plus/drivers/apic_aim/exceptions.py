@@ -120,6 +120,10 @@ class InvalidNetworkForQos(exceptions.BadRequest):
                 "an external or SVI network.")
 
 
+class InvalidPolicyTargetForQos(exceptions.BadRequest):
+    message = _("Apic_aim does not support QoS policy for Floating IP.")
+
+
 class InvalidPreexistingBdForNetwork(exceptions.BadRequest):
     message = _("The Bridge Domain specified in apic:distinguished_names "
                 "either does not exist in ACI or belongs to another network "
