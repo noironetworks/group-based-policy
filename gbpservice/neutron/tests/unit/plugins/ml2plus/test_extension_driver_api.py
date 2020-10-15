@@ -15,7 +15,8 @@
 
 import uuid
 
-import mock
+from unittest import mock
+
 from neutron_lib import context
 from neutron_lib.plugins import directory
 from oslo_config import cfg

@@ -14,7 +14,8 @@
 import os
 import zlib
 
-import mock
+from unittest import mock
+
 import oslo_serialization.jsonutils as jsonutils
 import pecan
 import pika

@@ -12,10 +12,11 @@
 
 import copy
 
+from unittest import mock
+
 from keystoneauth1.identity import v2
 from keystoneauth1 import session
 from keystoneclient.v2_0 import client as identity_client
-import mock
 from neutronclient.v2_0 import client as neutron_client
 from oslo_config import cfg
 from oslo_utils import uuidutils

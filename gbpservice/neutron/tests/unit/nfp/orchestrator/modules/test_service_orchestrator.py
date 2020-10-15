@@ -13,8 +13,10 @@
 
 import uuid as pyuuid
 
+from unittest import mock
+
 from keystoneclient.v2_0 import client as identity_client
-import mock
+
 from oslo_config import cfg
 
 from gbpservice.neutron.tests.unit.nfp.orchestrator.db import test_nfp_db

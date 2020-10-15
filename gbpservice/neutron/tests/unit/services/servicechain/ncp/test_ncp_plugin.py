@@ -11,9 +11,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from unittest import mock
+
 import webob.exc
 
-import mock
 from neutron.common import config
 from neutron_lib import context as n_context
 from neutron_lib import exceptions as n_exc

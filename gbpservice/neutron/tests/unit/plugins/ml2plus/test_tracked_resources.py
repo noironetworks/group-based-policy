@@ -12,7 +12,8 @@
 
 import functools
 
-import mock
+from unittest import mock
+
 from neutron.api import extensions
 from neutron.tests.unit.plugins.ml2 import (
     test_tracked_resources as n_tracked)

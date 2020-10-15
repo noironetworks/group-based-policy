@@ -14,8 +14,9 @@
 import copy
 import itertools
 
+from unittest import mock
+
 import heatclient
-import mock
 from neutron_lib.api.definitions import external_net
 from neutron_lib import context as neutron_context
 from neutron_lib.plugins import constants

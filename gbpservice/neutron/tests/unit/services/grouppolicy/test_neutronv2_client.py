@@ -11,7 +11,8 @@
 #    under the License.
 #
 
-import mock
+from unittest import mock
+
 from neutron.tests.unit.db import test_db_base_plugin_v2
 from neutron_lib import context
 from neutronclient.common import exceptions

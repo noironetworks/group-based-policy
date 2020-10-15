@@ -14,8 +14,9 @@
 import copy
 import itertools
 
+from unittest import mock
+
 from keystonemiddleware import auth_token  # noqa
-import mock
 import netaddr
 from neutron.db.qos import models as qos_models
 from neutron.extensions import securitygroup as ext_sg

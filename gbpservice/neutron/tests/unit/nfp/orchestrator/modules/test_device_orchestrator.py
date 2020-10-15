@@ -14,7 +14,8 @@
 import copy
 import uuid as pyuuid
 
-import mock
+from unittest import mock
+
 from mock import patch
 from oslo_config import cfg
 import unittest2

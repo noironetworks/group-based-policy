@@ -12,7 +12,8 @@
 
 import uuid
 
-import mock
+from unittest import mock
+
 from neutron.tests import base
 from neutron_lib import context as ctx
 

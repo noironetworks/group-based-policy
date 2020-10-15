@@ -13,7 +13,8 @@
 import copy
 import re
 
-import mock
+from unittest import mock
+
 from neutron.tests import base
 from neutron.tests.unit.api.v2 import test_base
 from neutron.tests.unit.extensions import base as test_extensions_base

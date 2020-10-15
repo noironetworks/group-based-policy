@@ -14,8 +14,10 @@
 import copy
 import uuid
 
+from unittest import mock
+
 import fixtures
-import mock
+
 from neutron.tests import base
 from neutron_lib import context
 from sqlalchemy.orm import exc

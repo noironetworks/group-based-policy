@@ -14,13 +14,14 @@ import multiprocessing
 import random
 import time
 
+from unittest import mock
+
 from gbpservice.nfp.core import context as nfp_context
 from gbpservice.nfp.core import controller as nfp_controller
 from gbpservice.nfp.core import event as nfp_event
 from gbpservice.nfp.core import log as nfp_logging
 from gbpservice.nfp.core import manager as nfp_manager
 from gbpservice.nfp.core import worker as nfp_worker
-import mock
 from oslo_config import cfg as oslo_config
 import six
 import unittest2

@@ -18,6 +18,8 @@ import datetime
 import re
 import time
 
+from unittest import mock
+
 from aim.aim_lib import nat_strategy
 from aim import aim_manager
 from aim.api import infra as aim_infra
@@ -30,7 +32,6 @@ from aim.db import models as aim_models  # noqa
 from aim import utils as aim_utils
 import fixtures
 from keystoneclient.v3 import client as ksc_client
-import mock
 import netaddr
 from neutron.api import extensions
 from neutron.db import provisioning_blocks
@@ -3790,7 +3791,7 @@ class TestTrackedResources(tr_res.TestTrackedResources, ApicAimTestCase):
 
     def setUp(self, **kwargs):
         super(TestTrackedResources, self).setUp(**kwargs)
-        for patch in mock.mock._patch._active_patches:
+        for patch in mock._patch._active_patches:
             if patch.attribute == '_ensure_default_security_group':
                 patch.stop()
 

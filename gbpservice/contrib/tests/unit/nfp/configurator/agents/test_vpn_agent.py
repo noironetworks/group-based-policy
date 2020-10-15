@@ -11,7 +11,7 @@
 #    under the License.
 
 
-import mock
+from unittest import mock
 
 from gbpservice.contrib.nfp.configurator.agents import vpn
 from gbpservice.contrib.nfp.configurator.lib import vpn_constants as const

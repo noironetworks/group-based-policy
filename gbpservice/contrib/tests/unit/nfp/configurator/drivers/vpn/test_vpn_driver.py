@@ -12,7 +12,8 @@
 
 import json
 
-import mock
+from unittest import mock
+
 from neutron.tests import base
 from oslo_serialization import jsonutils
 import requests

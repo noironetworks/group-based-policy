@@ -11,7 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import mock
+from unittest import mock
+
 from neutron.tests.unit.plugins.ml2 import test_plugin
 from neutron_lib import context
 from oslo_config import cfg

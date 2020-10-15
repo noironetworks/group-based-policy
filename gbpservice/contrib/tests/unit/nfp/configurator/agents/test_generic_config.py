@@ -12,9 +12,11 @@
 
 import subprocess
 
-import mock
-from neutron.tests import base
+from unittest import mock
+
 import unittest2
+
+from neutron.tests import base
 
 from gbpservice.contrib.nfp.configurator.agents import generic_config as gc
 from gbpservice.contrib.nfp.configurator.lib import (

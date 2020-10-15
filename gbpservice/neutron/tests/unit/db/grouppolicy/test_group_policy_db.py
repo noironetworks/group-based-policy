@@ -14,7 +14,8 @@
 import copy
 import os
 
-import mock
+from unittest import mock
+
 from neutron.api import extensions
 from neutron.api.rpc.callbacks.producer import registry
 from neutron import policy

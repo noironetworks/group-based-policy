@@ -1,7 +1,7 @@
 - project:
     name: x/group-based-policy
     templates:
-      - openstack-python3-ussuri-jobs
+      - openstack-python3-victoria-jobs
       - publish-to-pypi
     # REVISIT: In the jobs below, the required-projects clause is needed on
     # the master branch to select the correct version of the requirements
@@ -15,17 +15,22 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/ussuri
+                override-checkout: stable/victoria
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/ussuri
+                override-checkout: stable/victoria
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/ussuri
+                override-checkout: stable/victoria
+        - openstack-tox-py38:
+            nodeset: ubuntu-bionic
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/victoria
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -38,14 +43,19 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/ussuri
+                override-checkout: stable/victoria
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/ussuri
+                override-checkout: stable/victoria
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/ussuri
+                override-checkout: stable/victoria
+        - openstack-tox-py38:
+            nodeset: ubuntu-bionic
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/victoria

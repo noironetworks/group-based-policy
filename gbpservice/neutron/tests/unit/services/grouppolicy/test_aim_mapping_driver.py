@@ -14,12 +14,13 @@
 import copy
 import hashlib
 
+from unittest import mock
+
 from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource
 from aim.api import status as aim_status
 from aim import context as aim_context
 from keystoneclient.v3 import client as ksc_client
-import mock
 import netaddr
 from netaddr import IPSet
 from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api

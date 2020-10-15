@@ -11,7 +11,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import mock
+from unittest import mock
+
 from neutron_lib import context as nctx
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
