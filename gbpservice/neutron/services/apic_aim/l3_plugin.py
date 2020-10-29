@@ -132,7 +132,7 @@ class ApicL3Plugin(extraroute_db.ExtraRoute_db_mixin,
                     'external_fixed_ips': [
                         {'subnet_id': ip["subnet_id"],
                          'ip_address': ip["ip_address"]}
-                         for ip in router.gw_port['fixed_ips']]}
+                        for ip in router.gw_port['fixed_ips']]}
             else:
                 ext_gw_info = None
             res.update({
