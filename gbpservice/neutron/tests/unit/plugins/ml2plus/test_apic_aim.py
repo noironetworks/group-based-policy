@@ -684,14 +684,16 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.assertEqual((str(sg_rule['port_range_max']) if
                           sg_rule['port_range_max'] else 'unspecified'),
                          aim_sg_rule.to_port)
-        if (sg_rule['protocol'] and sg_rule['protocol'].lower() == 'icmp'):
-            if (sg_rule['port_range_min']):
-                self.assertEqual(str(sg_rule['port_range_min']),
+        if (sg_rule['protocol'] and
+           (sg_rule['protocol'].lower() == 'icmp' or
+            sg_rule['protocol'] == '1')):
+            if (sg_rule['port_range_max']):
+                self.assertEqual(str(sg_rule['port_range_max']),
                     aim_sg_rule.icmp_code)
             else:
                 self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
-            if (sg_rule['port_range_max']):
-                self.assertEqual(str(sg_rule['port_range_max']),
+            if (sg_rule['port_range_min']):
+                self.assertEqual(str(sg_rule['port_range_min']),
                     aim_sg_rule.icmp_type)
             else:
                 self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
@@ -9931,7 +9933,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             aim_sg_rule.remote_group_id, sg_rule1['remote_group_id'])
 
         rule2 = self._build_security_group_rule(
-            default_sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, '2', '33',
+            default_sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, '33', '2',
             remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
         rules = {'security_group_rules': [rule2['security_group_rule']]}
         sg_rule2 = self._make_security_group_rule(
