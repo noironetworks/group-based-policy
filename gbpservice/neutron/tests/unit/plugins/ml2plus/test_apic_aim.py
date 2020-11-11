@@ -684,13 +684,16 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                           sg_rule['port_range_max'] else 'unspecified'),
                          aim_sg_rule.to_port)
         if (sg_rule['protocol'] and sg_rule['protocol'].lower() == 'icmp'):
-            if (sg_rule['port_range_min']):
-                self.assertEqual(str(sg_rule['port_range_min']),
+        if (sg_rule['protocol'] and
+           (sg_rule['protocol'].lower() == 'icmp' or
+            sg_rule['protocol'] == '1')):
+            if (sg_rule['port_range_max']):
+                self.assertEqual(str(sg_rule['port_range_max']),
                     aim_sg_rule.icmp_code)
             else:
                 self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
-            if (sg_rule['port_range_max']):
-                self.assertEqual(str(sg_rule['port_range_max']),
+            if (sg_rule['port_range_min']):
+                self.assertEqual(str(sg_rule['port_range_min']),
                     aim_sg_rule.icmp_type)
             else:
                 self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')

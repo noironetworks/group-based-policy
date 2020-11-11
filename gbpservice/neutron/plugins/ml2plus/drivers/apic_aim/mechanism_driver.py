@@ -3093,13 +3093,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             ethertype=sg_rule['ethertype'].lower(),
             ip_protocol=self.get_aim_protocol(sg_rule['protocol']),
             remote_ips=remote_ips,
-            icmp_code=(sg_rule['port_range_min']
-                       if (sg_rule['port_range_min'] and
-                           sg_rule['protocol'].lower() == 'icmp')
-                       else 'unspecified'),
-            icmp_type=(sg_rule['port_range_max']
+            icmp_code=(sg_rule['port_range_max']
                        if (sg_rule['port_range_max'] and
-                           sg_rule['protocol'].lower() == 'icmp')
+                          (sg_rule['protocol'].lower() == 'icmp' or
+                           sg_rule['protocol'] == '1'))
+                       else 'unspecified'),
+            icmp_type=(sg_rule['port_range_min']
+                       if (sg_rule['port_range_min'] and
+                          (sg_rule['protocol'].lower() == 'icmp' or
+                           sg_rule['protocol'] == '1'))
                        else 'unspecified'),
             from_port=(sg_rule['port_range_min']
                        if sg_rule['port_range_min'] else 'unspecified'),
