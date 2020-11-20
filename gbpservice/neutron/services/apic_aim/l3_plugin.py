@@ -47,6 +47,8 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
 
 LOG = logging.getLogger(__name__)
 
+EXTERNAL_GW_INFO = l3_def.EXTERNAL_GW_INFO
+
 
 @resource_extend.has_resource_extenders
 class ApicL3Plugin(extraroute_db.ExtraRoute_db_mixin,
@@ -126,6 +128,25 @@ class ApicL3Plugin(extraroute_db.ExtraRoute_db_mixin,
             res = self._make_router_dict(router, fields,
                                          process_extensions=False)
             res[api_plus.BULK_EXTENDED] = True
+            # If fields is not None, then the dictionary returned
+            # above contains only the fields specified. Here we add
+            # the gateway, since the subsequent call to apply_funcs
+            # raises an exception due to this missing field when
+            # extending the dictionary with the gateway (note: we
+            # also are keeping this call consistent with upstream code).
+            if router['gw_port_id']:
+                ext_gw_info = {
+                    'network_id': router.gw_port['network_id'],
+                    'external_fixed_ips': [
+                        {'subnet_id': ip["subnet_id"],
+                         'ip_address': ip["ip_address"]}
+                        for ip in router.gw_port['fixed_ips']]}
+            else:
+                ext_gw_info = None
+            res.update({
+                EXTERNAL_GW_INFO: ext_gw_info,
+                'gw_port_id': router['gw_port_id'],
+            })
             resource_extend.apply_funcs(l3_def.ROUTERS, res, router)
             res.pop(api_plus.BULK_EXTENDED, None)
             results.append(res)
