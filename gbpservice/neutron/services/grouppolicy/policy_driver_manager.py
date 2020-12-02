@@ -150,7 +150,7 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
                         )
                 elif isinstance(e, sqlalchemy_exc.InvalidRequestError):
                     LOG.exception(
-                        "Policy driver '%(name)s' failed in %(method)s ",
+                        "Policy driver '%(name)s' failed in %(method)s "
                         "with sqlalchemy.exc.InvalidRequestError",
                         {'name': driver.name, 'method': method_name})
                     raise oslo_db_excp.RetryRequest(e)
