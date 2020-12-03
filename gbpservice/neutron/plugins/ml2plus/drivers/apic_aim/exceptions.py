@@ -128,3 +128,19 @@ class InvalidPreexistingBdForNetwork(exceptions.BadRequest):
     message = _("The Bridge Domain specified in apic:distinguished_names "
                 "either does not exist in ACI or belongs to another network "
                 "in this OpenStack instance.")
+
+
+class InvalidPortForErspanSession(exceptions.BadRequest):
+    message = _("AIM ERSPAN extensions are only supported on ports with a "
+                "device owner of 'compute:'")
+
+
+class InvalidFabricPathForErspanSession(exceptions.BadRequest):
+    message = _("AIM ERSPAN extensions are only supported for ports on hosts "
+                "that are connected to the fabric via virtual port channels "
+                "(VPCs) or port channels (PCs).")
+
+
+class InvalidNetworkForErspanSession(exceptions.BadRequest):
+    message = _("AIM ERSPAN extensions are not supported on ports on SVI "
+                "type networks.")
