@@ -60,6 +60,7 @@
 
     "network_device": "field:port:device_owner=~^network:",
     "create_port": "",
+    "create_port:apic:erspan_config": "rule:admin_only",
     "create_port:device_owner": "not rule:network_device or rule:admin_or_network_owner or rule:context_is_advsvc",
     "create_port:mac_address": "rule:admin_or_network_owner or rule:context_is_advsvc",
     "create_port:fixed_ips": "rule:admin_or_network_owner or rule:context_is_advsvc",
@@ -75,6 +76,7 @@
     "get_port:binding:host_id": "rule:admin_only",
     "get_port:binding:profile": "rule:admin_only",
     "update_port": "rule:admin_or_owner or rule:context_is_advsvc",
+    "update_port:apic:erspan_config": "rule:admin_only",
     "update_port:device_owner": "not rule:network_device or rule:admin_or_network_owner or rule:context_is_advsvc",
     "update_port:mac_address": "rule:admin_only or rule:context_is_advsvc",
     "update_port:fixed_ips": "rule:admin_or_network_owner or rule:context_is_advsvc",
