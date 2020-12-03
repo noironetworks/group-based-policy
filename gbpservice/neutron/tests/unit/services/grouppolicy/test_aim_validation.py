@@ -1029,6 +1029,45 @@ class TestNeutronMapping(AimValidationTestCase):
             port_id=port['id']).update({'host': 'yyy'})
         self._validate_fails_binding_ports()
 
+    def test_erspan_ports(self):
+        # Create network, subnet, and bound port.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+        subnet = self._make_subnet(
+            self.fmt, net_resp, None, '10.0.0.0/24')['subnet']
+        fixed_ips = [{'subnet_id': subnet['id'], 'ip_address': '10.0.0.100'}]
+        port = self._make_port(
+            self.fmt, net['id'], fixed_ips=fixed_ips)['port']
+        port = self._bind_port_to_host(port['id'], 'host1')['port']
+        self._validate()
+
+        # Create host links DB info, along with pre-existing
+        # VPC interface policy group.
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='host1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(self.aim_ctx, self.hlink1)
+        acc_bundle = aim_resource.InfraAccBundleGroup(name=host1_pg,
+            monitored=True)
+        self.aim_mgr.create(self.aim_ctx, acc_bundle)
+
+        # Add ERSPAN session and verify that it validates.
+        erspan_config = {'apic:erspan_config': [
+            {'dest_ip': '192.168.0.11',
+             'direction': 'both',
+             'flow_id': 1022}]}
+        data = {'port': erspan_config}
+        port = self._update('ports', port['id'], data)['port']
+        self._validate()
+
+        # Delete source group from AIM, and verify that it
+        # can be repaired.
+        source_groups = self.aim_mgr.find(self.aim_ctx,
+                                          aim_resource.SpanVsourceGroup)
+        self.aim_mgr.delete(self.aim_ctx, source_groups[0])
+        self._validate_repair_validate()
+
 
 class TestGbpMapping(AimValidationTestCase):
 

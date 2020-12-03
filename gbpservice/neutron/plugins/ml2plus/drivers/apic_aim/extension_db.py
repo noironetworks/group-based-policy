@@ -32,6 +32,24 @@ BAKERY = baked.bakery(_size_alert=lambda c: LOG.warning(
     "sqlalchemy baked query cache size exceeded in %s", __name__))
 
 
+class PortExtensionErspanDb(model_base.BASEV2):
+
+    __tablename__ = 'apic_aim_port_erspan_configurations'
+
+    port_id = sa.Column(
+        sa.String(36), sa.ForeignKey('ports.id', ondelete="CASCADE"),
+        primary_key=True)
+    dest_ip = sa.Column(sa.String(64), primary_key=True)
+    flow_id = sa.Column(sa.Integer, primary_key=True)
+    direction = sa.Column(sa.Enum('in', 'out', 'both'),
+                          default='both', primary_key=True)
+    port = orm.relationship(models_v2.Port,
+                            backref=orm.backref(
+                                'aim_extension_erspan_configs',
+                                uselist=True,
+                                lazy='joined', cascade='delete'))
+
+
 class NetworkExtensionDb(model_base.BASEV2):
 
     __tablename__ = 'apic_aim_network_extensions'
@@ -150,6 +168,59 @@ class ExtensionDbMixin(object):
     def _set_if_not_none(self, res_dict, res_attr, db_attr):
         if db_attr is not None:
             res_dict[res_attr] = db_attr
+
+    def get_port_extn_db(self, session, port_id):
+        return self.get_port_extn_db_bulk(session, [port_id]).get(
+            port_id, {})
+
+    def get_port_extn_db_bulk(self, session, port_ids):
+        if not port_ids:
+            return {}
+
+        query = BAKERY(lambda s: s.query(
+            PortExtensionErspanDb))
+        query += lambda q: q.filter(
+            PortExtensionErspanDb.port_id.in_(
+                sa.bindparam('port_ids', expanding=True)))
+        db_erspans = query(session).params(
+            port_ids=port_ids).all()
+
+        erspans_by_port_id = {}
+        for db_erspan in db_erspans:
+            erspans_by_port_id.setdefault(db_erspan.port_id, []).append(
+                db_erspan)
+
+        result = {}
+        for db_obj in db_erspans:
+            port_id = db_obj.port_id
+            result.setdefault(port_id, self.make_port_extn_db_conf_dict(
+                erspans_by_port_id.get(port_id, [])))
+        return result
+
+    def make_port_extn_db_conf_dict(self, db_erspans):
+        port_res = {}
+        db_obj = db_erspans
+        if db_obj:
+            def _db_to_dict(db_obj):
+                ed = {cisco_apic.ERSPAN_DEST_IP: db_obj.dest_ip,
+                      cisco_apic.ERSPAN_FLOW_ID: db_obj.flow_id,
+                      cisco_apic.ERSPAN_DIRECTION: db_obj.direction}
+                return ed
+            port_res[cisco_apic.ERSPAN_CONFIG] = [_db_to_dict(e)
+                                                  for e in db_erspans]
+        return port_res
+
+    def set_port_extn_db(self, session, port_id, res_dict):
+        with session.begin(subtransactions=True):
+            if cisco_apic.ERSPAN_CONFIG in res_dict:
+                self._update_dict_attr(
+                        session, PortExtensionErspanDb,
+                        (cisco_apic.ERSPAN_DEST_IP,
+                         cisco_apic.ERSPAN_FLOW_ID,
+                         cisco_apic.ERSPAN_DIRECTION
+                         ),
+                        res_dict[cisco_apic.ERSPAN_CONFIG],
+                        port_id=port_id)
 
     def get_network_extn_db(self, session, network_id):
         return self.get_network_extn_db_bulk(session, [network_id]).get(
@@ -493,12 +564,16 @@ class ExtensionDbMixin(object):
 
         # remove duplicates, may change order
         new_values = [dict(t) for t in {tuple(d.items()) for d in new_values}]
-        for r in rows:
-            curr_obj = {key: r[key] for key in keys}
-            if curr_obj in new_values:
-                new_values.discard(curr_obj)
-            else:
-                session.delete(r)
+        # Updates are deletions with additions, so to ensure that
+        # the delete happens before a subsequent addtion, we create
+        # a subtransaction
+        with session.begin(subtransactions=True):
+            for r in rows:
+                curr_obj = {key: r[key] for key in keys}
+                if curr_obj in new_values:
+                    new_values.remove(curr_obj)
+                else:
+                    session.delete(r)
         for v in new_values:
             v.update(filters)
             db_obj = db_model(**v)
