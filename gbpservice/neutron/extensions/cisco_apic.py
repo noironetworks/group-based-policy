@@ -19,6 +19,7 @@ import functools
 from neutron_lib.api import converters as conv
 from neutron_lib.api.definitions import address_scope as as_def
 from neutron_lib.api.definitions import network as net_def
+from neutron_lib.api.definitions import port as port_def
 from neutron_lib.api.definitions import subnet as subnet_def
 from neutron_lib.api import extensions
 from neutron_lib.api import validators as valid
@@ -46,6 +47,7 @@ NESTED_DOMAIN_NODE_NETWORK_VLAN = 'apic:nested_domain_node_network_vlan'
 EXTRA_PROVIDED_CONTRACTS = 'apic:extra_provided_contracts'
 EXTRA_CONSUMED_CONTRACTS = 'apic:extra_consumed_contracts'
 EPG_CONTRACT_MASTERS = 'apic:epg_contract_masters'
+ERSPAN_CONFIG = 'apic:erspan_config'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -65,6 +67,10 @@ APIC_MAX_VLAN = 4093
 APIC_MIN_VLAN = 1
 VLAN_RANGE_START = 'start'
 VLAN_RANGE_END = 'end'
+
+ERSPAN_DEST_IP = 'dest_ip'
+ERSPAN_FLOW_ID = 'flow_id'
+ERSPAN_DIRECTION = 'direction'
 
 LOG = logging.getLogger(__name__)
 
@@ -102,6 +108,51 @@ def _validate_apic_vlan_range(data, key_specs=None):
         return msg
 
 
+def _validate_erspan_flow_id(data, key_specs=None):
+    if data is None:
+        return
+    msg = valid.validate_non_negative(data)
+    if int(data) > 1023:
+        msg = _("ERSPAN flow ID must be less than 1023 (was %s)") % data
+    elif int(data) == 0:
+        msg = _("ERSPAN flow ID must be greater than 0 (was %s)") % data
+    return msg
+
+
+def _validate_erspan_configs(data, valid_values=None):
+    """Validate a list of unique ERSPAN configurations.
+
+    :param data: The data to validate. To be valid it must be a list like
+        structure of ERSPAN config dicts, each containing 'dest_ip' and
+        'flow_id' key values.
+    :param valid_values: Not used!
+    :returns: None if data is a valid list of unique ERSPAN config dicts,
+        otherwise a human readable message indicating why validation failed.
+    """
+    if not isinstance(data, list):
+        msg = _("Invalid data format for ERSPAN config: '%s'") % data
+        LOG.debug(msg)
+        return msg
+
+    expected_keys = (ERSPAN_DEST_IP, ERSPAN_FLOW_ID,)
+    erspan_configs = []
+    for erspan_config in data:
+        msg = valid._verify_dict_keys(expected_keys, erspan_config, False)
+        if msg:
+            return msg
+        msg = _validate_erspan_flow_id(erspan_config[ERSPAN_FLOW_ID])
+        if msg:
+            return msg
+        msg = valid.validate_ip_address(erspan_config[ERSPAN_DEST_IP])
+        if msg:
+            return msg
+        if erspan_config in erspan_configs:
+            msg = _("Duplicate ERSPAN config '%s'") % erspan_config
+            LOG.debug(msg)
+            return msg
+        erspan_configs.append(erspan_config)
+
+
 def _validate_dict_or_string(data, key_specs=None):
     if data is None:
         return
@@ -110,7 +161,7 @@ def _validate_dict_or_string(data, key_specs=None):
         try:
             data = ast.literal_eval(data)
         except Exception:
-            msg = _("Allowed VLANs %s cannot be converted to dict") % data
+            msg = _("Extension %s cannot be converted to dict") % data
             return msg
 
     return valid.validate_dict_or_none(data, key_specs)
@@ -154,12 +205,23 @@ valid.validators['type:apic_vlan_list'] = functools.partial(
 valid.validators['type:apic_vlan_range_list'] = functools.partial(
         valid._validate_list_of_items, _validate_apic_vlan_range)
 valid.validators['type:dict_or_string'] = _validate_dict_or_string
+valid.validators['type:apic_erspan_flow_id'] = _validate_erspan_flow_id
+valid.validators['type:apic_erspan_configs'] = _validate_erspan_configs
 
 
 APIC_ATTRIBUTES = {
     DIST_NAMES: {'allow_post': False, 'allow_put': False, 'is_visible': True},
     SYNC_STATE: {'allow_post': False, 'allow_put': False, 'is_visible': True}
 }
+
+ERSPAN_KEY_SPECS = [
+    {ERSPAN_DEST_IP: {'type:ip_address': None,
+                      'required': True},
+     ERSPAN_FLOW_ID: {'type:apic_erspan_flow_id': None,
+                      'required': True},
+     ERSPAN_DIRECTION: {'type:values': ['in', 'out', 'both'],
+                        'default': 'both'}},
+]
 
 EPG_CONTRACT_MASTER_KEY_SPECS = [
     # key spec for opt_name in _VALID_BLANK_EXTRA_DHCP_OPTS
@@ -168,6 +230,15 @@ EPG_CONTRACT_MASTER_KEY_SPECS = [
      'name': {'type:not_empty_string': None,
               'required': True}},
 ]
+
+PORT_ATTRIBUTES = {
+    ERSPAN_CONFIG: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'convert_to': conv.convert_none_to_empty_list,
+        'validate': {'type:apic_erspan_configs': None},
+    },
+}
 
 NET_ATTRIBUTES = {
     SVI: {
@@ -318,6 +389,8 @@ ADDRESS_SCOPE_ATTRIBUTES = {
 
 
 EXTENDED_ATTRIBUTES_2_0 = {
+    port_def.COLLECTION_NAME: dict(
+        list(APIC_ATTRIBUTES.items()) + list(PORT_ATTRIBUTES.items())),
     net_def.COLLECTION_NAME: dict(
         list(APIC_ATTRIBUTES.items()) + list(EXT_NET_ATTRIBUTES.items()) +
         list(NET_ATTRIBUTES.items())),

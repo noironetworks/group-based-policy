@@ -452,6 +452,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._ensure_any_filter(aim_ctx)
         self._setup_default_arp_dhcp_security_group_rules(aim_ctx)
 
+        # This is required for infra resources needed by ERSPAN
+        check_topology = self.aim.find(aim_ctx, aim_resource.Topology)
+        if not check_topology:
+            topology_aim = aim_resource.Topology()
+            self.aim.create(aim_ctx, topology_aim)
+        check_infra = self.aim.find(aim_ctx, aim_resource.Infra)
+        if not check_infra:
+            infra_aim = aim_resource.Infra()
+            self.aim.create(aim_ctx, infra_aim)
+
     def _setup_default_arp_dhcp_security_group_rules(self, aim_ctx):
         sg_name = self._default_sg_name
         dname = aim_utils.sanitize_display_name('DefaultSecurityGroup')
@@ -1202,6 +1212,89 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     # if we are not done with the AIM resources processing.
                     res_dict[cisco_apic.SYNC_STATE] = (
                         aim_status_track[SYNC_STATE_TMP])
+
+    def extend_port_dict_bulk(self, session, results, single=False):
+        """Extend port resource with apic_aim extensions
+
+        Add any extensions defined by the apic_aim mechanism
+        driver. This method may get called before the mechanism
+        driver precommit calls.
+        """
+        LOG.debug("APIC AIM MD extending dict bulk for port: %s",
+                  results)
+
+        # Gather db objects
+        aim_ctx = aim_context.AimContext(session)
+        aim_resources_aggregate = []
+        res_dict_by_aim_res_dn = {}
+        # template to track the status related info
+        # for each resource.
+        aim_status_track_template = {
+            SYNC_STATE_TMP: cisco_apic.SYNC_NOT_APPLICABLE,
+            AIM_RESOURCES_CNT: 0}
+
+        for res_dict, port_db in results:
+            aim_resources = []
+            # Use a tmp field to aggregate the status across mapped
+            # AIM objects, we set the actual sync_state only if we
+            # are able to process all the status objects for these
+            # corresponding AIM resources. If any status object is not
+            # available then sync_state will be 'build'. On create,
+            # subnets start in 'N/A'. The tracking object is added
+            # along with the res_dict on the DN based res_dict_by_aim_res_dn
+            # dict which maintains the mapping from status objs to res_dict.
+            aim_status_track = copy.deepcopy(aim_status_track_template)
+
+            res_dict[cisco_apic.SYNC_STATE] = cisco_apic.SYNC_NOT_APPLICABLE
+            res_dict_and_aim_status_track = (res_dict, aim_status_track)
+            erspan_ext = port_db.aim_extension_erspan_configs
+            if not erspan_ext and single:
+                # Needed because of commit
+                # d8c1e153f88952b7670399715c2f88f1ecf0a94a in Neutron that
+                # put the extension call in Pike+ *before* the precommit
+                # calls happen in port creation. I believe this is a bug
+                # and should be discussed with the Neutron team.
+                ext_dict = self.get_port_extn_db(session, port_db.id)
+            else:
+                ext_dict = self.make_port_extn_db_conf_dict(erspan_ext)
+            if ext_dict:
+                res_dict.update(ext_dict)
+
+            # ERSPAN resources will only be valid if it's a bound port for
+            # a compute instance on an opflex type network.
+            cep_dn = self._map_port(session, port_db)
+            resources = self._get_erspan_aim_resources_list(port_db, cep_dn)
+            if resources:
+                aim_resources.extend(resources)
+            binding = (port_db.port_bindings[0]
+                       if port_db.port_bindings else None)
+            acc_name = self._get_acc_bundle_for_host(aim_ctx, binding.host)
+            if resources and acc_name:
+                acc_bundle = aim_resource.InfraAccBundleGroup(name=acc_name)
+                aim_resources.append(acc_bundle)
+                resources.append(acc_bundle)
+            for resource in resources:
+                res_dict_by_aim_res_dn[resource.dn] = (
+                    res_dict_and_aim_status_track)
+
+            # Track the number of AIM resources in aim_status_track,
+            # decrement count each time we process a status obj related to
+            # the resource. If the count hits zero then we have processed
+            # the status objs for all of the associated AIM resources. Until
+            # this happens, the sync_state is held as 'build' (unless it has
+            # to be set to 'error').
+            aim_status_track[AIM_RESOURCES_CNT] = len(aim_resources)
+            aim_resources_aggregate.extend(aim_resources)
+
+        self._merge_aim_status_bulk(aim_ctx, aim_resources_aggregate,
+                                    res_dict_by_aim_res_dn)
+
+    def extend_port_dict(self, session, port_db, result):
+        if result.get(api_plus.BULK_EXTENDED):
+            return
+        LOG.debug("APIC AIM MD extending dict for port: %s", result)
+        self.extend_port_dict_bulk(session, [(result, port_db)],
+                                   single=True)
 
     def extend_network_dict_bulk(self, session, results, single=False):
         # Gather db objects
@@ -2641,9 +2734,181 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 raise exceptions.AAPNotAllowedOnDifferentActiveActiveAAPSubnet(
                     subnet_ids=subnet_ids, other_subnet_ids=other_subnet_ids)
 
+    def _get_erspan_aim_resources(self, port_id, cep_dn, erspan_config):
+        dest_ip = erspan_config[cisco_apic.ERSPAN_DEST_IP]
+        flow_id = erspan_config[cisco_apic.ERSPAN_FLOW_ID]
+        direction = erspan_config[cisco_apic.ERSPAN_DIRECTION]
+        source_group_name = self._erspan_source_group_name(port_id,
+                                                           erspan_config)
+        dest_group_name = self._erspan_dest_group_name(erspan_config)
+
+        source_group = aim_resource.SpanVsourceGroup(
+            name=source_group_name)
+        dest_group = aim_resource.SpanVdestGroup(name=dest_group_name)
+        source = aim_resource.SpanVsource(vsg_name=source_group_name,
+            name=source_group_name, dir=direction, src_paths=[cep_dn])
+        dest = aim_resource.SpanVdest(vdg_name=dest_group_name,
+                                      name=dest_group_name)
+        summary = aim_resource.SpanVepgSummary(vdg_name=dest_group_name,
+            vd_name=dest_group_name, dst_ip=dest_ip, flow_id=flow_id)
+        label = aim_resource.SpanSpanlbl(vsg_name=source_group_name,
+            name=dest_group_name, tag='yellow-green')
+        return (source_group, dest_group, source, dest, summary, label)
+
+    def _get_erspan_aim_resources_list(self, port, cep_dn):
+        erspan_configs = port.aim_extension_erspan_configs or []
+        resources = []
+        for erspan_config in erspan_configs:
+            resources.extend(self._get_erspan_aim_resources(
+                port['id'], cep_dn, erspan_config))
+        return resources
+
+    def _get_acc_bundle_for_host(self, aim_ctx, host_name):
+        if not host_name:
+            return None
+        host_links = self.aim.find(aim_ctx, aim_infra.HostLink,
+            host_name=host_name)
+        # Extract the interface policy group names from the DNs.
+        grpNames = []
+        for host_link in host_links:
+            # topology is a tuple consisting of:
+            # (is_vpc, pod_id, nodes, node_paths, module/bundle, None/port)
+            topology = self._get_topology_from_path(host_link.path)
+            # This currently only supports opflex devices connected via
+            # interface policy groups that are either port channel or
+            # virtual port channel interfaces.
+            if not topology[0]:
+                continue
+            grpNames.append(topology[4])
+        # VPCs will have two entries, so remove duplicates.
+        return list(set(grpNames))[0] if grpNames else None
+
+    def _create_erspan_aim_config(self, context, cep_dn, port):
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(db_session=session)
+
+        agent = context.host_agents(ofcst.AGENT_TYPE_OPFLEX_OVS)
+        if not agent:
+            LOG.warning("Port %s is not bound to an opflex host, "
+                        "so an RSPAN session can't be established.",
+                        port['id'])
+            return
+
+        acc_name = self._get_acc_bundle_for_host(aim_ctx,
+            port['binding:host_id'])
+        if acc_name:
+            acc_bundle = aim_resource.InfraAccBundleGroup(name=acc_name)
+        else:
+            LOG.warning("A interface port group for port %s "
+                        "could not be found - ERSPAN session "
+                        "can't be established.", port['id'])
+            return
+
+        for erspan_config in port.get(cisco_apic.ERSPAN_CONFIG, []):
+            resources = self._get_erspan_aim_resources(port['id'], cep_dn,
+                                                       erspan_config)
+            # Create ERSPAN source group and source
+            if not self.aim.get(aim_ctx, resources[0]):
+                self.aim.create(aim_ctx, resources[0])
+                # Create ERSPAN source and destination.
+                self.aim.create(aim_ctx, resources[2])
+
+            # Create the dest group, dest, and summary
+            # resources if needed.
+            if not self.aim.get(aim_ctx, resources[1]):
+                self.aim.create(aim_ctx, resources[1])
+                self.aim.create(aim_ctx, resources[3])
+                self.aim.create(aim_ctx, resources[4])
+
+            # Update the bundle group.
+            curr_bundle = self.aim.get(aim_ctx, acc_bundle)
+            source_groups = curr_bundle.span_vsource_group_names
+            dest_groups = curr_bundle.span_vdest_group_names
+            if resources[0].name not in source_groups:
+                source_groups.append(resources[0].name)
+            if resources[1].name not in dest_groups:
+                dest_groups.append(resources[1].name)
+            self.aim.update(aim_ctx, curr_bundle,
+                span_vsource_group_names=source_groups,
+                span_vdest_group_names=dest_groups)
+            # Create the ERSPAN label.
+            if not self.aim.get(aim_ctx, resources[5]):
+                self.aim.create(aim_ctx, resources[5])
+
+    def _erspan_source_group_name(self, port_id, erspan_config):
+        return port_id + '-' + erspan_config['direction']
+
+    def _erspan_dest_group_name(self, erspan_config):
+        return erspan_config['dest_ip'] + '-' + str(erspan_config['flow_id'])
+
+    def _delete_erspan_aim_config(self, context, port, erspan_configs=None):
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(db_session=session)
+        acc_name = self._get_acc_bundle_for_host(aim_ctx,
+            port.get('binding:host_id'))
+        erspan_configs = (erspan_configs if erspan_configs else
+            port.get(cisco_apic.ERSPAN_CONFIG, []))
+        for erspan_config in erspan_configs:
+            source_group = self._erspan_source_group_name(port['id'],
+                                                          erspan_config)
+            dest_group = self._erspan_dest_group_name(erspan_config)
+            # The destination state can be shared, so check to see if
+            # any other label sources reference it.
+            labels = self.aim.find(aim_ctx, aim_resource.SpanSpanlbl,
+                                   name=dest_group)
+            other_sources = [label.name for label in labels
+                             if label.vsg_name != source_group]
+            if acc_name:
+                # Remove the source from the bundle group, but only
+                # remove the destination if no other sources are using it.
+                curr_bg = self.aim.get(aim_ctx,
+                    aim_resource.InfraAccBundleGroup(name=acc_name))
+                vsource_group_names = list(
+                    set(curr_bg.span_vsource_group_names) -
+                    set([source_group]))
+                vdest_group_names = list(set(curr_bg.span_vdest_group_names) -
+                                         set([dest_group]) if not other_sources
+                                         else curr_bg.span_vdest_group_names)
+                self.aim.update(aim_ctx, aim_resource.InfraAccBundleGroup(
+                    name=acc_name),
+                    span_vsource_group_names=vsource_group_names,
+                    span_vdest_group_names=vdest_group_names)
+
+            # We can delete the source state and label, as those
+            # are only dependent on this neutron port.
+            self.aim.delete(aim_ctx, aim_resource.SpanSpanlbl(
+                vsg_name=source_group, name=dest_group))
+
+            self.aim.delete(aim_ctx, aim_resource.SpanVsource(
+                vsg_name=source_group, name=source_group))
+            self.aim.delete(aim_ctx, aim_resource.SpanVsourceGroup(
+                name=source_group))
+
+            # No other sources share this dest, so we can delete it.
+            if not other_sources:
+                self.aim.delete(aim_ctx, aim_resource.SpanVepgSummary(
+                    vdg_name=dest_group, vd_name=dest_group))
+                self.aim.delete(aim_ctx, aim_resource.SpanVdest(
+                    vdg_name=dest_group, name=dest_group))
+                self.aim.delete(aim_ctx, aim_resource.SpanVdestGroup(
+                    name=dest_group))
+
+    def _check_valid_erspan_config(self, port):
+        # Currently only supported on instance ports
+        if not port['device_owner'].startswith('compute:'):
+            raise exceptions.InvalidPortForErspanSession()
+
+        # Not supported on SVI networks
+        ctx = nctx.get_admin_context()
+        net_db = self.plugin._get_network(ctx, port['network_id'])
+        if self._is_svi_db(net_db):
+            raise exceptions.InvalidNetworkForErspanSession()
+
     def create_port_precommit(self, context):
         port = context.current
         self._check_active_active_aap(context, port)
+        if port.get(cisco_apic.ERSPAN_CONFIG):
+            self._check_valid_erspan_config(port)
         self._really_update_sg_rule_with_remote_group_set(
             context, port, port['security_groups'], is_delete=False)
         self._insert_provisioning_block(context)
@@ -2824,8 +3089,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             context, static_ports, bind_context.network.current)
 
     def update_port_precommit(self, context):
+        session = context._plugin_context.session
+        orig = context.original
         port = context.current
         self._check_active_active_aap(context, port)
+        if port.get(cisco_apic.ERSPAN_CONFIG):
+            self._check_valid_erspan_config(port)
         if context.original_host and context.original_host != context.host:
             self.disassociate_domain(context, use_original=True)
             if self._use_static_path(context.original_bottom_bound_segment):
@@ -2833,6 +3102,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._update_static_path(context, host=context.original_host,
                     segment=context.original_bottom_bound_segment, remove=True)
                 self._release_dynamic_segment(context, use_original=True)
+            # The port is either being unbound or rebound. We need the host
+            # from the original port binding, so pass that as the port
+            self._delete_erspan_aim_config(context, orig,
+                                           port.get(cisco_apic.ERSPAN_CONFIG))
         if self._is_port_bound(port):
             if self._use_static_path(context.bottom_bound_segment):
                 self._associate_domain(context, is_vmm=False)
@@ -2841,6 +3114,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                   self._is_opflex_type(
                         context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self._associate_domain(context, is_vmm=True)
+            # Handle changes in ERSPAN configuration.
+            if (port.get(cisco_apic.ERSPAN_CONFIG) or
+                    orig.get(cisco_apic.ERSPAN_CONFIG)):
+                erspan_deletions = []
+                for erspan in orig.get(cisco_apic.ERSPAN_CONFIG, []):
+                    if erspan not in port[cisco_apic.ERSPAN_CONFIG]:
+                        erspan_deletions.append(erspan)
+                cep_dn = self._map_port(session, port)
+                self._delete_erspan_aim_config(context, port,
+                                               erspan_deletions)
+                self._create_erspan_aim_config(context, cep_dn, port)
+
         self._update_sg_rule_with_remote_group_set(context, port)
         self._check_allowed_address_pairs(context, port)
         self._insert_provisioning_block(context)
@@ -2900,6 +3185,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                   self._is_opflex_type(
                       context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self.disassociate_domain(context)
+            self._delete_erspan_aim_config(context, port)
         self._really_update_sg_rule_with_remote_group_set(
             context, port, port['security_groups'], is_delete=True)
 
@@ -4069,6 +4355,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             id=sa.bindparam('scope_id'))
         return query(session).params(
             scope_id=scope_id).one_or_none()
+
+    def _map_port(self, session, port):
+        tenant_aname = self.name_mapper.project(session,
+                                                port['project_id'])
+        # REVISIT: GBP workflow isn't supported in this release. If
+        #          we do add support for GBP, getting the EPG requires
+        #          determining which workflow was used, and get the
+        #          EPG accordingly.
+        mapping = self._get_network_mapping(session, port['network_id'])
+        # If it's not a network we support (e.g. SVI), we can't look
+        # up the CEP
+        if not mapping or not mapping.epg_name:
+            return None
+        epg = self._get_network_epg(mapping)
+        # The ERSPAN source ocnfiguration requires the DN
+        # for the EP, so we construct it.
+        return ('uni/tn-' + tenant_aname +
+                '/ap-OpenStack/epg-' + epg.name +
+                '/cep-' + port['mac_address'].upper())
 
     def _map_network(self, session, network, vrf=None, preexisting_bd_dn=None):
         tenant_aname = (vrf.tenant_name if vrf and vrf.tenant_name != 'common'
@@ -6062,6 +6367,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mgr.register_aim_resource_class(aim_resource.Tenant)
         mgr.register_aim_resource_class(aim_resource.VMMDomain)
         mgr.register_aim_resource_class(aim_resource.VRF)
+        mgr.register_aim_resource_class(aim_resource.SpanVsourceGroup)
+        mgr.register_aim_resource_class(aim_resource.SpanVdestGroup)
+        mgr.register_aim_resource_class(aim_resource.SpanVsource)
+        mgr.register_aim_resource_class(aim_resource.SpanVdest)
+        mgr.register_aim_resource_class(aim_resource.SpanVepgSummary)
+        mgr.register_aim_resource_class(aim_resource.SpanSpanlbl)
+        mgr.register_aim_resource_class(aim_resource.InfraAccBundleGroup)
 
         # Copy common Tenant from actual to expected AIM store.
         for tenant in mgr.aim_mgr.find(
@@ -6784,6 +7096,32 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         query += lambda q: q.distinct()
         for project_id, in query(mgr.actual_session):
             self._expect_project(mgr, project_id)
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port))
+        for port_db in query(mgr.actual_session):
+            # We can only validate AIM resources on bound ports.
+            if port_db.aim_extension_erspan_configs and port_db.port_bindings:
+                cep_dn = self._map_port(mgr.actual_session, port_db)
+                resources = self._get_erspan_aim_resources_list(port_db,
+                                                                cep_dn)
+                # Copy the bundle group pre-existing resources, if they
+                # are monitored, from the actual AIM store to the validation
+                # AIM store, so that the resource behaves as expected
+                # during validation. Make sure not to overwrite any
+                # pre-existing resources that have already been copied.
+                acc_name = self._get_acc_bundle_for_host(mgr.actual_aim_ctx,
+                    port_db.port_bindings[0].host)
+                if acc_name:
+                    acc_bundle = aim_resource.InfraAccBundleGroup(
+                        name=acc_name)
+                    actual_bg = mgr.aim_mgr.get(mgr.actual_aim_ctx, acc_bundle)
+                    if actual_bg and actual_bg.monitored:
+                        if not mgr.aim_mgr.get(mgr.expected_aim_ctx,
+                                               actual_bg):
+                            mgr.aim_mgr.create(mgr.expected_aim_ctx,
+                                               actual_bg)
+                for resource in resources:
+                    mgr.expect_aim_resource(resource)
 
     def _validate_subnetpools(self, mgr):
         query = BAKERY(lambda s: s.query(

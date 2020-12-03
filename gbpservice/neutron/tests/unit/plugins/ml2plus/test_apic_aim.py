@@ -4115,6 +4115,93 @@ class TestSyncState(ApicAimTestCase):
     def test_unmanaged_external_subnet(self):
         self._test_external_subnet('N/A')
 
+    def _test_erspan_sync(self, expected_state, with_erspan=True):
+
+        aim_ctx = aim_context.AimContext(
+                db_session=db_api.get_writer_session())
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        self._register_agent('host2', AGENT_CONF_OPFLEX)
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='host1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
+        # Add topology for this
+        acc_bundle = aim_resource.InfraAccBundleGroup(name=host1_pg)
+        self.aim_mgr.create(aim_ctx, acc_bundle)
+        # Host 2: non-VPC host
+        host2_pg = 'eth1/17'
+        host2_dn = 'topology/pod-1/paths-101/pathep-[%s]' % host2_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='host2', interface_name='eth0', path=host2_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
+
+        # Create the test network, subnet, and port.
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(
+            self.fmt, net, '10.0.0.1', '10.0.0.0/24')['subnet']
+        arg_list = None
+        erspan_config = {}
+        if with_erspan:
+            erspan_config = {'apic:erspan_config':
+                             [{'dest_ip': '192.168.0.10',
+                               'direction': 'in',
+                               'flow_id': 1023}]}
+            arg_list = ('apic:erspan_config',)
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:',
+                             arg_list=arg_list,
+                             **erspan_config)['port']
+
+        # Bind the port to host1, and verify the AIM configuration
+        self._bind_port_to_host(p1['id'], 'host1')
+        port = self._show('ports', p1['id'])['port']
+        self.assertEqual(expected_state, port['apic:synchronization_state'])
+
+    def test_erspan_no_status(self):
+        def get_status(self, context, resource, create_if_absent=True):
+            return None
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_erspan_sync('N/A')
+
+    def test_erspan_sync(self):
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_erspan_sync('synced')
+
+    def test_erspan_build(self):
+        def get_status(self, context, resource, create_if_absent=True):
+            return TestSyncState._get_pending_status_for_type(
+                context, resource, aim_resource.InfraAccBundleGroup)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_erspan_sync('build')
+
+    def test_erspan_error(self):
+        def get_status(self, context, resource, create_if_absent=True):
+            return TestSyncState._get_failed_status_for_type(
+                context, resource, aim_resource.InfraAccBundleGroup)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status', get_status):
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_erspan_sync('error')
+
+    def test_no_erspan(self):
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_erspan_sync('N/A', with_erspan=False)
+
 
 class TestTopology(ApicAimTestCase):
     def test_network_subnets_on_same_router(self):
@@ -6880,6 +6967,332 @@ class TestExtensionAttributes(ApicAimTestCase):
                                                     expected_status=400)
             self.assertIn('is already in use by address-scope',
                           resp['NeutronError']['message'])
+
+    def test_erspan_extension(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(
+            self.fmt, net, '10.0.0.1', '10.0.0.0/24')['subnet']
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:')['port']
+
+        # Update the port with just the destination IP, which should fail
+        data = {'port': {'apic:erspan_config': [{'dest_ip': '192.168.0.10'}]}}
+        req = self.new_update_request('ports', data, p1['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_int, webob.exc.HTTPClientError.code)
+
+        # Update the port with just the flow ID, which should fail
+        data = {'port': {'apic:erspan_config': [{'flow_id': 1023}]}}
+        req = self.new_update_request('ports', data, p1['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_int, webob.exc.HTTPClientError.code)
+
+        # Update the port with a destination IP but an invalid flow ID
+        data = {'port': {'apic:erspan_config': [{'dest_ip': '192.168.0.10',
+                                                 'flow_id': 1024}]}}
+        req = self.new_update_request('ports', data, p1['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_int, webob.exc.HTTPClientError.code)
+
+        # Update the port with a valid destination IP and flow ID. Also
+        # verify that flow ID can be a string (in addition t an int).
+        data = {'port': {'apic:erspan_config': [{'dest_ip': '192.168.0.10',
+                                                 'flow_id': '1023'}]}}
+        req = self.new_update_request('ports', data, p1['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_int, webob.exc.HTTPOk.code)
+        port_data = self.deserialize(self.fmt, resp)['port']
+        data['port']['apic:erspan_config'][0]['direction'] = 'both'
+        data['port']['apic:erspan_config'][0]['flow_id'] = int(
+                 data['port']['apic:erspan_config'][0]['flow_id'])
+        self.assertEqual(data['port']['apic:erspan_config'],
+                         port_data.get('apic:erspan_config'))
+
+        # Update the port with a valid destination IP,
+        # flow ID, but change the direction to "out"
+        data = {'port': {'apic:erspan_config': [{'dest_ip': '192.168.0.10',
+                                                 'flow_id': 1023,
+                                                 'direction': 'out'}]}}
+        req = self.new_update_request('ports', data, p1['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_int, webob.exc.HTTPOk.code)
+        port_data = self.deserialize(self.fmt, resp)['port']
+        self.assertEqual(data['port']['apic:erspan_config'],
+                         port_data.get('apic:erspan_config'))
+
+    def test_erspan_exceptions(self):
+        net1 = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(
+            self.fmt, net1, '10.0.0.1', '10.0.0.0/24')['subnet']
+        # Make network with ERSPAN config, but isn't an instance port.
+        data = {'port': {'network_id': net1['network']['id'],
+                         'apic:erspan_config': [{'dest_ip': '192.168.0.10',
+                                                 'flow_id': 1023}],
+                         'project_id': 'tenant1'}}
+        req = self.new_create_request('ports', data, self.fmt)
+        resp = req.get_response(self.api)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidPortForErspanSession',
+            result['NeutronError']['type'])
+
+        # Make another port, which isn't an instance port, but without
+        # ERSPAN configuration.
+        p1 = self._make_port(self.fmt, net1['network']['id'])['port']
+        # Update the port with ERSPAN config, which should fail.
+        data = {'port': {'apic:erspan_config': [{'dest_ip': '192.168.0.10',
+                                            'flow_id': 1023}]}}
+        req = self.new_update_request('ports', data, p1['id'], self.fmt)
+        # Make an SVI type network, and a port with ERSPAN configuraiton,
+        # which should fail.
+        resp = req.get_response(self.api)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidPortForErspanSession',
+            result['NeutronError']['type'])
+        net2 = self._make_network(self.fmt, 'net2', True,
+                                  arg_list=('provider:physical_network',
+                                            'provider:network_type', SVI),
+                                  **{'provider:physical_network': 'physnet3',
+                                     'provider:network_type': 'vlan',
+                                     'apic:svi': 'True'})
+        self._make_subnet(
+            self.fmt, net2, '20.0.0.1', '20.0.0.0/24')['subnet']
+        data = {'port': {'network_id': net2['network']['id'],
+                         'apic:erspan_config': [{'dest_ip': '192.168.0.10',
+                                                 'flow_id': 1023}],
+                         'device_owner': 'compute:',
+                         'project_id': 'tenant1'}}
+        req = self.new_create_request('ports', data, self.fmt)
+        resp = req.get_response(self.api)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidNetworkForErspanSession',
+            result['NeutronError']['type'])
+        # Verify that attempting to update a port on an SVI network with
+        # ERSPAN state fails.
+        p2 = self._make_port(self.fmt, net2['network']['id'])['port']
+        data = {'port': {'apic:erspan_config': [{'dest_ip': '192.168.0.10',
+                                                 'flow_id': 1023}],
+                         'device_owner': 'compute:'}}
+        req = self.new_update_request('ports', data, p2['id'], self.fmt)
+        resp = req.get_response(self.api)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidNetworkForErspanSession',
+            result['NeutronError']['type'])
+
+    def test_erspan_aim_config(self, network_type='opflex'):
+        aim_ctx = aim_context.AimContext(
+                db_session=db_api.get_writer_session())
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        self._register_agent('host2', AGENT_CONF_OPFLEX)
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='host1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
+        # Add topology for this
+        acc_bundle = aim_resource.InfraAccBundleGroup(name=host1_pg)
+        self.aim_mgr.create(aim_ctx, acc_bundle)
+        # Host 2: non-VPC host
+        host2_pg = 'eth1/17'
+        host2_dn = 'topology/pod-1/paths-101/pathep-[%s]' % host2_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='host2', interface_name='eth0', path=host2_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
+
+        # Create the test network, subnet, and port.
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(
+            self.fmt, net, '10.0.0.1', '10.0.0.0/24')['subnet']
+        erspan_config = {'apic:erspan_config':
+                         [{'dest_ip': '192.168.0.10',
+                           'direction': 'in',
+                           'flow_id': 1023}]}
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:',
+                             arg_list=('apic:erspan_config',),
+                             **erspan_config)['port']
+        self.assertEqual(erspan_config.get('apic:erspan_config'),
+                         p1['apic:erspan_config'])
+
+        def check_erspan_config(aim_ctx, source_resources, dest_resources):
+            # Convert AIM resources to dicts, removing any
+            # non-user_attributes (e.g. "epoch"), and sorting
+            # any lists so that comparisons will work.
+            def normalize_resources(resources):
+                new_resources = []
+                for res in resources:
+                    res_dict = {}
+                    for k, v in res.members.items():
+                        if k in res.user_attributes():
+                            if isinstance(v, list):
+                                v = v.sort() or []
+                            res_dict[k] = v
+                    new_resources.append(res_dict)
+                return new_resources
+
+            def items_equal(actual, expected):
+                for res in expected:
+                    self.assertIn(res, actual)
+
+            expected = normalize_resources(source_resources[0])
+            actual = normalize_resources(
+                self.aim_mgr.find(aim_ctx, aim_resource.SpanVsourceGroup))
+            items_equal(actual, expected)
+            expected = normalize_resources(dest_resources[0])
+            actual = normalize_resources(
+                self.aim_mgr.find(aim_ctx, aim_resource.SpanVdestGroup))
+            items_equal(actual, expected)
+            expected = normalize_resources(source_resources[1])
+            actual = normalize_resources(
+                self.aim_mgr.find(aim_ctx, aim_resource.SpanVsource))
+            items_equal(actual, expected)
+            expected = normalize_resources(dest_resources[1])
+            actual = normalize_resources(
+                self.aim_mgr.find(aim_ctx, aim_resource.SpanVdest))
+            items_equal(actual, expected)
+            expected = normalize_resources(dest_resources[2])
+            actual = normalize_resources(
+                self.aim_mgr.find(aim_ctx, aim_resource.SpanVepgSummary))
+            items_equal(actual, expected)
+            expected = normalize_resources(source_resources[2])
+            actual = normalize_resources(
+                self.aim_mgr.find(aim_ctx, aim_resource.SpanSpanlbl))
+            items_equal(actual, expected)
+            expected = normalize_resources(dest_resources[3])
+            actual = normalize_resources(
+                self.aim_mgr.find(aim_ctx, aim_resource.InfraAccBundleGroup))
+            items_equal(actual, expected)
+
+        # Verify that there is no information in AIM for
+        # the unbound port.
+        source_resources = [[], [], []]
+        dest_resources = [
+            [], [], [], [aim_resource.InfraAccBundleGroup(name=host1_pg)]]
+        check_erspan_config(aim_ctx, source_resources, dest_resources)
+
+        # Bind the port to host1, and verify the AIM configuration
+        self._bind_port_to_host(p1['id'], 'host1')
+        source_name = p1['id'] + '-in'
+        dest_name = '192.168.0.10' + '-' + '1023'
+        source_resources = [[aim_resource.SpanVsourceGroup(
+            name=source_name)],
+            [aim_resource.SpanVsource(vsg_name=source_name,
+                name=source_name, dir='in',
+                src_paths=['uni/tn-prj_' + p1['project_id'] +
+                '/ap-OpenStack/epg-net_' + net['network']['id'] +
+                '/cep-' + p1['mac_address'].upper()])],
+            [aim_resource.SpanSpanlbl(vsg_name=source_name,
+                name=dest_name, tag='yellow-green')]]
+        dest_resources = [[aim_resource.SpanVdestGroup(
+            name=dest_name)],
+            [aim_resource.SpanVdest(vdg_name=dest_name,
+                name=dest_name)],
+            [aim_resource.SpanVepgSummary(vdg_name=dest_name,
+                vd_name=dest_name, dst_ip='192.168.0.10',
+                flow_id='1023')]]
+        dest_resources.append([
+            aim_resource.InfraAccBundleGroup(name=host1_pg,
+                span_vsource_group_names=[source_resources[0][0].name],
+                span_vdest_group_names=[dest_resources[0][0].name])])
+        check_erspan_config(aim_ctx, source_resources, dest_resources)
+
+        # Update the port to add another ERSPAN session, using a
+        # different direction, destination, and flow ID.
+        erspan_config['apic:erspan_config'].append(
+                {'dest_ip': '192.168.0.11',
+                 'direction': 'both',
+                 'flow_id': '1022'})
+        data = {'port': erspan_config}
+        p1 = self._update('ports', p1['id'], data)['port']
+        source_name = p1['id'] + '-both'
+        dest_name = '192.168.0.11' + '-' + '1022'
+        source_resources[0].append(aim_resource.SpanVsourceGroup(
+            name=source_name))
+        source_resources[1].append(aim_resource.SpanVsource(
+            vsg_name=source_name, name=source_name, dir='both',
+            src_paths=['uni/tn-prj_' + p1['project_id'] +
+                       '/ap-OpenStack/epg-net_' + net['network']['id'] +
+                       '/cep-' + p1['mac_address'].upper()]))
+        source_resources[2].append(aim_resource.SpanSpanlbl(
+            vsg_name=source_name, name=dest_name, tag='yellow-green'))
+        dest_resources[0].append(aim_resource.SpanVdestGroup(
+            name=dest_name))
+        dest_resources[1].append(aim_resource.SpanVdest(vdg_name=dest_name,
+            name=dest_name))
+        dest_resources[2].append(aim_resource.SpanVepgSummary(
+            vdg_name=dest_name, vd_name=dest_name, dst_ip='192.168.0.11',
+            flow_id='1022'))
+        dest_resources[3] = [aim_resource.InfraAccBundleGroup(
+            name=host1_pg,
+            span_vsource_group_names=[res.name for res in source_resources[0]],
+            span_vdest_group_names=[res.name for res in dest_resources[0]])]
+        check_erspan_config(aim_ctx, source_resources, dest_resources)
+
+        # Create a new port and bind it, using the same destination and
+        # flow ID used for the first port. This should create a new set
+        # of source resources, but not destination resources in AIM.
+        erspan_config = {'apic:erspan_config':
+                         [{'dest_ip': '192.168.0.10',
+                           'direction': 'both',
+                           'flow_id': 1023}]}
+        p2 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:',
+                             arg_list=('apic:erspan_config',),
+                             **erspan_config)['port']
+        self.assertEqual(erspan_config.get('apic:erspan_config'),
+                         p2['apic:erspan_config'])
+        self._bind_port_to_host(p2['id'], 'host1')
+        source_name = p2['id'] + '-both'
+        dest_name = '192.168.0.10' + '-' + '1023'
+        source_resources[0].append(aim_resource.SpanVsourceGroup(
+            name=source_name))
+        source_resources[1].append(aim_resource.SpanVsource(
+            vsg_name=source_name, name=source_name, dir='both',
+            src_paths=['uni/tn-prj_' + p2['project_id'] +
+                       '/ap-OpenStack/epg-net_' + net['network']['id'] +
+                       '/cep-' + p2['mac_address'].upper()]))
+        source_resources[2].append(aim_resource.SpanSpanlbl(
+            vsg_name=source_name, name=dest_name, tag='yellow-green'))
+        dest_resources[3] = [aim_resource.InfraAccBundleGroup(
+            name=host1_pg,
+            span_vsource_group_names=[res.name for res in source_resources[0]],
+            span_vdest_group_names=[res.name for res in dest_resources[0]])]
+        check_erspan_config(aim_ctx, source_resources, dest_resources)
+
+        # Rebind the first port to host2, which doesn't have
+        # a VPC. Verify that the ports resources are removed.
+        self._bind_port_to_host(p1['id'], 'host2')
+        source_resources = [[aim_resource.SpanVsourceGroup(
+            name=source_name)],
+            [aim_resource.SpanVsource(
+                vsg_name=source_name, name=source_name, dir='both',
+                src_paths=['uni/tn-prj_' + p2['project_id'] +
+                '/ap-OpenStack/epg-net_' + net['network']['id'] +
+                '/cep-' + p2['mac_address'].upper()])],
+            [aim_resource.SpanSpanlbl(
+                vsg_name=source_name, name=dest_name, tag='yellow-green')]]
+        dest_resources = [[aim_resource.SpanVdestGroup(
+            name=dest_name)],
+            [aim_resource.SpanVdest(vdg_name=dest_name,
+                name=dest_name)],
+            [aim_resource.SpanVepgSummary(vdg_name=dest_name,
+                vd_name=dest_name, dst_ip='192.168.0.10',
+                flow_id='1023')]]
+        dest_resources.append([aim_resource.InfraAccBundleGroup(
+            name=host1_pg,
+            span_vsource_group_names=[res.name for res in source_resources[0]],
+            span_vdest_group_names=[res.name for res in dest_resources[0]])])
+        check_erspan_config(aim_ctx, source_resources, dest_resources)
+        # Unbuind the second port, and verify that no resources are left.
+        self._bind_port_to_host(p2['id'], '')
+        source_resources = [[], [], []]
+        dest_resources = [
+            [], [], [], [aim_resource.InfraAccBundleGroup(name=host1_pg)]]
+        check_erspan_config(aim_ctx, source_resources, dest_resources)
 
 
 class CallRecordWrapper(object):
