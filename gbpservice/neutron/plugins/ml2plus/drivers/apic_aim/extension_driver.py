@@ -59,6 +59,43 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
     def extension_alias(self):
         return "cisco-apic"
 
+    def extend_port_dict(self, session, base_model, result):
+        try:
+            self._md.extend_port_dict(session, base_model, result)
+        except Exception as e:
+            with excutils.save_and_reraise_exception():
+                if db_api.is_retriable(e):
+                    LOG.debug("APIC AIM extend_port_dict got retriable "
+                              "exception: %s", type(e))
+                else:
+                    LOG.exception("APIC AIM extend_port_dict failed")
+
+    def extend_port_dict_bulk(self, session, results):
+        try:
+            self._md.extend_port_dict_bulk(session, results)
+        except Exception as e:
+            with excutils.save_and_reraise_exception():
+                if db_api.is_retriable(e):
+                    LOG.debug("APIC AIM extend_port_dict_bulk got retriable "
+                              "exception: %s", type(e))
+                else:
+                    LOG.exception("APIC AIM extend_port_dict_bulk failed")
+
+    def process_create_port(self, plugin_context, data, result):
+        res_dict = {cisco_apic.ERSPAN_CONFIG:
+                    data.get(cisco_apic.ERSPAN_CONFIG, [])}
+        self.set_port_extn_db(plugin_context.session, result['id'],
+                              res_dict)
+        result.update(res_dict)
+
+    def process_update_port(self, plugin_context, data, result):
+        if cisco_apic.ERSPAN_CONFIG not in data:
+            return
+        res_dict = {cisco_apic.ERSPAN_CONFIG: data[cisco_apic.ERSPAN_CONFIG]}
+        self.set_port_extn_db(plugin_context.session, result['id'],
+                              res_dict)
+        result.update(res_dict)
+
     def extend_network_dict(self, session, base_model, result):
         try:
             self._md.extend_network_dict(session, base_model, result)
