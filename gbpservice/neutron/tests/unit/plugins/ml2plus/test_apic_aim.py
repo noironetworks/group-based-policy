@@ -9982,6 +9982,57 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             sg_rule1['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, [])
 
+    def test_create_sg_rule_with_remote_group_set_different_tenant(self):
+        # Create network.
+        net_resp = self._make_network(
+            self.fmt, 'net1', True, tenant_id='tenant_1')
+        net = net_resp['network']
+
+        # Create subnet
+        subnet = self._make_subnet(self.fmt, net_resp, '10.0.1.1',
+                               '10.0.1.0/24', tenant_id='tenant_1')['subnet']
+        subnet_id = subnet['id']
+
+        # Create port on subnet
+        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.100'}]
+        port = self._make_port(self.fmt, net['id'], fixed_ips=fixed_ips,
+                               tenant_id='tenant_1')['port']
+        default_sg_id = port['security_groups'][0]
+        default_sg = self._show('security-groups',
+                                default_sg_id)['security_group']
+        for sg_rule in default_sg['security_group_rules']:
+            if sg_rule['remote_group_id'] and sg_rule['ethertype'] == 'IPv4':
+                break
+        tenant_aname = self.name_mapper.project(None, default_sg['tenant_id'])
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+        self.assertEqual(
+            aim_sg_rule.remote_group_id, sg_rule['remote_group_id'])
+
+        # add another rule with remote_group_id set
+        rule1 = self._build_security_group_rule(
+            default_sg_id, 'ingress', n_constants.PROTO_NAME_TCP, '22', '23',
+            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule1['security_group_rule']]}
+        sg_rule1 = self._make_security_group_rule(
+            self.fmt, rules, tenant_id='tenant_2')['security_group_rules'][0]
+        aim_sg_rule1 = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule1.remote_ips, ['10.0.1.100'])
+        self.assertEqual(
+            aim_sg_rule1.remote_group_id, sg_rule1['remote_group_id'])
+
+        # Add another port on subnet
+        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.200'}]
+        port = self._make_port(self.fmt, net['id'], fixed_ips=fixed_ips,
+                               tenant_id='tenant_1')['port']
+        aim_sg_rule1 = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule1.remote_ips, ['10.0.1.100', '10.0.1.200'])
+        self.assertEqual(
+            aim_sg_rule1.remote_group_id, sg_rule['remote_group_id'])
+
     def test_mixed_ports_on_network_with_specific_domains(self):
         aim_ctx = aim_context.AimContext(self.db_session)
         hd_mapping = aim_infra.HostDomainMappingV2(host_name='opflex-1',

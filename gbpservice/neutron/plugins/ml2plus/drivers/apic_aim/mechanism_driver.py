@@ -2547,9 +2547,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     all())
 
         fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
+        sg_to_tenant = {}
         for sg_rule in sg_rules:
-            tenant_aname = self.name_mapper.project(session,
-                                                    sg_rule['tenant_id'])
+            sg_id = sg_rule['security_group_id']
+            if sg_id in sg_to_tenant:
+                tenant_id = sg_to_tenant[sg_id]
+            else:
+                tenant_id = self._get_sg_rule_tenant_id(session, sg_rule)
+                sg_to_tenant[sg_id] = tenant_id
+            tenant_aname = self.name_mapper.project(session, tenant_id)
             sg_rule_aim = aim_resource.SecurityGroupRule(
                 tenant_name=tenant_aname,
                 security_group_name=sg_rule['security_group_id'],
