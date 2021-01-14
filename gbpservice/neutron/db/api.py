@@ -20,7 +20,7 @@
 # corresponding to the newest neutron branch supported by this
 # repository.
 
-from sqlalchemy import inspect
+import sqlalchemy
 
 from neutron.db import _model_query
 from neutron.db import _utils as db_utils
@@ -49,7 +49,7 @@ def get_session_from_obj(db_obj):
     if isinstance(db_obj, n_base.NeutronObject):
         return db_obj.obj_context.session
     try:
-        instance = inspect(db_obj)
+        instance = sqlalchemy.inspect(db_obj)
         return instance.session
     except Exception:
         return None
