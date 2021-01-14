@@ -29,6 +29,7 @@ from neutron_lib.api.definitions import portbindings
 from neutron_lib import exceptions
 from neutron_lib.plugins import constants
 from neutron_lib.plugins import directory
+from neutron_lib.services.qos import constants as qos_consts
 from oslo_log import log as logging
 from oslo_utils import excutils
 
@@ -37,6 +38,8 @@ from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron import extensions as extensions_pkg
 from gbpservice.neutron.extensions import cisco_apic_l3 as l3_ext
 from gbpservice.neutron.plugins.ml2plus import driver_api as api_plus
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    exceptions as aim_exceptions)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     extension_db as extn_db)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
@@ -236,6 +239,8 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
 
     @n_utils.transaction_guard
     def create_floatingip(self, context, floatingip):
+        if floatingip['floatingip'].get(qos_consts.QOS_POLICY_ID):
+            raise aim_exceptions.InvalidPolicyTargetForQos()
         fip = floatingip['floatingip']
         # REVISIT: This ensure_tenant call probably isn't needed, as
         # FIPs don't map directly to any AIM resources. If it is
@@ -286,6 +291,8 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
 
     @n_utils.transaction_guard
     def update_floatingip(self, context, id, floatingip):
+        if floatingip['floatingip'].get(qos_consts.QOS_POLICY_ID):
+            raise aim_exceptions.InvalidPolicyTargetForQos()
         old_fip = self.get_floatingip(context, id)
         result = super(ApicL3Plugin, self).update_floatingip(
             context, id, floatingip)

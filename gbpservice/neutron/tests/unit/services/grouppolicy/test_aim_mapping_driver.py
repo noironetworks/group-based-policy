@@ -26,6 +26,7 @@ from neutron.api.rpc.agentnotifiers import dhcp_rpc_agent_api
 from neutron.db.models import securitygroup as sg_models
 from neutron.db.port_security import models as psec_models
 from neutron.extensions import dns
+from neutron.objects.qos import policy as policy_object
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_securitygroup
@@ -36,12 +37,15 @@ from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from opflexagent import constants as ocst
 from oslo_config import cfg
+from oslo_utils import uuidutils
 import webob.exc
 
 import gbpservice.common.utils as g_utils
 from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db.grouppolicy import group_policy_mapping_db
 from gbpservice.neutron.extensions import cisco_apic
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+    exceptions as exceptions)
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
     mechanism_driver as md)
 from gbpservice.neutron.services.grouppolicy.common import (
@@ -3454,6 +3458,14 @@ class TestPolicyTarget(AIMBaseTestCase,
             host='h1')
         self.assertEqual(2000, mapping['interface_mtu'])
 
+    def _make_qos_policy(self):
+        ctx = nctx.get_admin_context()
+        qos_policy = policy_object.QosPolicy(
+            ctx, project_id=uuidutils.generate_uuid(),
+            shared=False, is_default=False)
+        qos_policy.create()
+        return qos_policy
+
     def _do_test_gbp_details_no_pt(self, use_as=True, routed=True,
                                    pre_vrf=None):
         # Create port and bind it
@@ -3508,6 +3520,15 @@ class TestPolicyTarget(AIMBaseTestCase,
                                         'tenant_id': network['tenant_id'],
                                         'port_id': port_id}})
 
+                    qosPolicy = self._make_qos_policy()
+                    self.assertRaises(exceptions.InvalidPolicyTargetForQos,
+                       self.l3_plugin.create_floatingip,
+                       nctx.get_admin_context(),
+                        {'floatingip': {'floating_network_id':
+                                        ext_net1['id'],
+                                        'tenant_id': network['tenant_id'],
+                                        'port_id': port_id,
+                                        'qos_policy_id': qosPolicy.id}})
                 self._bind_port_to_host(port_id, 'h1')
                 mapping = self.mech_driver.get_gbp_details(
                     self._neutron_admin_context, device='tap%s' % port_id,
