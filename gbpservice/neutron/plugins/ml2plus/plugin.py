@@ -629,8 +629,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             # Also, older branches are a slight variation, in line with
             # upstream code.
             subnets_db = db_api.get_collection(context, models_v2.Subnet,
-                                               filters=filters,
                                                dict_func=None,
+                                               filters=filters,
                                                sorts=sorts,
                                                limit=limit,
                                                marker_obj=marker_obj,
