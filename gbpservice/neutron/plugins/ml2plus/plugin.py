@@ -612,6 +612,19 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             marker_obj = db_api.get_marker_obj(plugin, context,
                                                'subnet', limit, marker)
 
+            # REVISIT: This is a workaround to fix a bug that was introduced
+            # in upstream neutron (see the following commit:
+            # https://review.opendev.org/c/openstack/neutron/+/761829). A fix
+            # has been posted to neutron:
+            # https://review.opendev.org/c/openstack/neutron/+/771155. This
+            # workaround can be removed once that has been merged.
+            new_filters = {}
+            if filters:
+                for key, value in filters.items():
+                    if not isinstance(value, list):
+                        value = [value]
+                new_filters[key] = value
+                filters = new_filters
             # REVIST(sridar): We need to rethink if we want to support
             # OVO. For now we put our head in the sand but this needs a
             # revisit.
