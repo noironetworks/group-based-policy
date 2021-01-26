@@ -165,15 +165,18 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     def _ml2_md_extend_network_dict(result, netdb):
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(netdb)
-        if not session:
+        if session and session.is_active:
+            # REVISIT: Check if transaction begin is still
+            # required here, and if so, if reader pattern
+            # can be used instead (will require getting the
+            # current context, which should be available in
+            # the session.info's dictionary, with a key of
+            # 'using_context').
+            with session.begin(subtransactions=True):
+                plugin.extension_manager.extend_network_dict(
+                        session, netdb, result)
+        else:
             session = db_api.get_writer_session()
-        # REVISIT: Check if transaction begin is still
-        # required here, and if so, if reader pattern
-        # can be used instead (will require getting the
-        # current context, which should be available in
-        # the session.info's dictionary, with a key of
-        # 'using_context').
-        with session.begin(subtransactions=True):
             plugin.extension_manager.extend_network_dict(
                     session, netdb, result)
 
@@ -183,9 +186,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         netdb = results[0][1] if results else None
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(netdb)
-        if not session:
+        if session and session.is_active:
+            with session.begin(subtransactions=True):
+                plugin.extension_manager.extend_network_dict_bulk(session,
+                                                                  results)
+        else:
             session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
             plugin.extension_manager.extend_network_dict_bulk(session, results)
 
     @staticmethod
@@ -193,15 +199,18 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     def _ml2_md_extend_port_dict(result, portdb):
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(portdb)
-        if not session:
+        if session and session.is_active:
+            # REVISIT: Check if transaction begin is still
+            # required here, and if so, if reader pattern
+            # can be used instead (will require getting the
+            # current context, which should be available in
+            # the session.info's dictionary, with a key of
+            # 'using_context').
+            with session.begin(subtransactions=True):
+                plugin.extension_manager.extend_port_dict(
+                        session, portdb, result)
+        else:
             session = db_api.get_writer_session()
-        # REVISIT: Check if transaction begin is still
-        # required here, and if so, if reader pattern
-        # can be used instead (will require getting the
-        # current context, which should be available in
-        # the session.info's dictionary, with a key of
-        # 'using_context').
-        with session.begin(subtransactions=True):
             plugin.extension_manager.extend_port_dict(
                     session, portdb, result)
 
@@ -211,9 +220,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         portdb = results[0][1] if results else None
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(portdb)
-        if not session:
+        if session and session.is_active:
+            with session.begin(subtransactions=True):
+                plugin.extension_manager.extend_port_dict_bulk(session,
+                                                               results)
+        else:
             session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
             plugin.extension_manager.extend_port_dict_bulk(session, results)
 
     @staticmethod
@@ -228,13 +240,18 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             # be okay for other resources, as well
             # as post-queens.
             session = patch_neutron.get_current_session()
-        # REVISIT: Check if transaction begin is still
-        # required here, and if so, if reader pattern
-        # can be used instead (will require getting the
-        # current context, which should be available in
-        # the session.info's dictionary, with a key of
-        # 'using_context').
-        with session.begin(subtransactions=True):
+        if session and session.is_active:
+            # REVISIT: Check if transaction begin is still
+            # required here, and if so, if reader pattern
+            # can be used instead (will require getting the
+            # current context, which should be available in
+            # the session.info's dictionary, with a key of
+            # 'using_context').
+            with session.begin(subtransactions=True):
+                plugin.extension_manager.extend_subnet_dict(
+                        session, subnetdb, result)
+        else:
+            session = db_api.get_writer_session()
             plugin.extension_manager.extend_subnet_dict(
                     session, subnetdb, result)
 
@@ -251,7 +268,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             # be okay for other resources, as well
             # as post-queens.
             session = patch_neutron.get_current_session()
-        with session.begin(subtransactions=True):
+        if session and session.is_active:
+            with session.begin(subtransactions=True):
+                plugin.extension_manager.extend_subnet_dict_bulk(session,
+                                                                 results)
+        else:
+            session = db_api.get_writer_session()
             plugin.extension_manager.extend_subnet_dict_bulk(session, results)
 
     @staticmethod
@@ -259,6 +281,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     def _ml2_md_extend_subnetpool_dict(result, subnetpooldb):
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(subnetpooldb)
+        # REVISIT: This is not consistent with other dict
+        # extend calls, and should be fixed.
         if not session:
             session = db_api.get_writer_session()
         # REVISIT: Check if transaction begin is still
@@ -277,9 +301,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         subnetpooldb = results[0][1] if results else None
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(subnetpooldb)
-        if not session:
+        if session and session.is_active:
+            with session.begin(subtransactions=True):
+                plugin.extension_manager.extend_subnetpool_dict_bulk(session,
+                                                                     results)
+        else:
             session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
             plugin.extension_manager.extend_subnetpool_dict_bulk(session,
                                                                  results)
 
@@ -288,15 +315,18 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
     def _ml2_md_extend_address_scope_dict(result, address_scope):
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(address_scope)
-        if not session:
+        if session and session.is_active:
+            # REVISIT: Check if transaction begin is still
+            # required here, and if so, if reader pattern
+            # can be used instead (will require getting the
+            # current context, which should be available in
+            # the session.info's dictionary, with a key of
+            # 'using_context').
+            with session.begin(subtransactions=True):
+                plugin.extension_manager.extend_address_scope_dict(
+                        session, address_scope, result)
+        else:
             session = db_api.get_writer_session()
-        # REVISIT: Check if transaction begin is still
-        # required here, and if so, if reader pattern
-        # can be used instead (will require getting the
-        # current context, which should be available in
-        # the session.info's dictionary, with a key of
-        # 'using_context').
-        with session.begin(subtransactions=True):
             plugin.extension_manager.extend_address_scope_dict(
                     session, address_scope, result)
 
@@ -306,9 +336,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         address_scope = results[0][1] if results else None
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(address_scope)
-        if not session:
+        if session and session.is_active:
+            with session.begin(subtransactions=True):
+                plugin.extension_manager.extend_address_scope_dict_bulk(
+                    session, results)
+        else:
             session = db_api.get_writer_session()
-        with session.begin(subtransactions=True):
             plugin.extension_manager.extend_address_scope_dict_bulk(session,
                                                                     results)
 
