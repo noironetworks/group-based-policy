@@ -124,7 +124,7 @@ class TestQosPolicy(TestAIMQosBase):
         self.qos_driver.update_policy_precommit(self.ctxt, _policy)
         pol = self.aim_mgr.get(self._aim_context, pol)
         self.assertIsNotNone(pol)
-        self.assertEqual(pol.dscp,
+        self.assertEqual(int(pol.dscp),
                          self.rule_data['dscp_marking_rule']['dscp_mark'])
 
         # Test bw rules
@@ -134,21 +134,21 @@ class TestQosPolicy(TestAIMQosBase):
         self.assertIsNotNone(pol)
         self.assertEqual(pol.ingress_dpp_pol, self.ingress_rule.id)
         self.assertEqual(pol.egress_dpp_pol, self.egress_rule.id)
-        self.assertIsNone(pol.dscp)
+        self.assertEqual(pol.dscp, '')
         egress_bw_rule = aim_res.QosDppPol(
             name=self.egress_rule.id, tenant_name=tenant_name)
         egress_bw_rule = self.aim_mgr.get(self._aim_context, egress_bw_rule)
         self.assertIsNotNone(egress_bw_rule)
         self.assertEqual(egress_bw_rule.burst,
                          str(self.egress_rule.max_burst_kbps))
-        self.assertEqual(egress_bw_rule.rate, self.egress_rule.max_kbps)
+        self.assertEqual(int(egress_bw_rule.rate), self.egress_rule.max_kbps)
         ingress_bw_rule = aim_res.QosDppPol(
             name=self.ingress_rule.id, tenant_name=tenant_name)
         ingress_bw_rule = self.aim_mgr.get(self._aim_context, ingress_bw_rule)
         self.assertIsNotNone(ingress_bw_rule)
         self.assertEqual(ingress_bw_rule.burst,
                          str(self.ingress_rule.max_burst_kbps))
-        self.assertEqual(ingress_bw_rule.rate, self.ingress_rule.max_kbps)
+        self.assertEqual(int(ingress_bw_rule.rate), self.ingress_rule.max_kbps)
 
         # Clean up the rules
         setattr(_policy, "rules", [])
