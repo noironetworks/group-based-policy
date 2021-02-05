@@ -7020,6 +7020,28 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual(data['port']['apic:erspan_config'],
                          port_data.get('apic:erspan_config'))
 
+    def test_create_bulk_erspan_extension(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(
+            self.fmt, net, '10.0.0.1', '10.0.0.0/24')['subnet']
+
+        # Update the port with just the destination IP, which should fail
+        data = {'ports': [{'admin_state_up': False,
+                           'project_id': 'tenant1',
+                           'name': 'p1',
+                           'network_id': net['network']['id'],
+                           'apic:erspan_config': [{'dest_ip': '192.168.0.10',
+                                                   'flow_id': '1023'}]},
+                          {'admin_state_up': False,
+                           'project_id': 'tenant1',
+                           'name': 'p2',
+                           'network_id': net['network']['id'],
+                           'apic:erspan_config': [{'dest_ip': '192.168.0.10',
+                                                   'flow_id': '1023'}]}]}
+        req = self.new_create_request('ports', data, self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_int, webob.exc.HTTPCreated.code)
+
     def test_erspan_exceptions(self):
         net1 = self._make_network(self.fmt, 'net1', True)
         self._make_subnet(

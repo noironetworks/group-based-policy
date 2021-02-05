@@ -86,7 +86,16 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     data.get(cisco_apic.ERSPAN_CONFIG, [])}
         self.set_port_extn_db(plugin_context.session, result['id'],
                               res_dict)
-        result.update(res_dict)
+        # REVISIT: This is a workaround to fix a bug in upstream
+        # neutron, which was introduced with the commit hash
+        # 2dc61dfbcceaf6b85ee80188b420738476a14c36. The bug
+        # results in a DB object being passed instead of a
+        # dictionary for bulk create operations. This patch
+        # guards against it by always converting it to a
+        # dictionary. The workaround should be reverted once
+        # the patches that fix it have been backported.
+        if isinstance(result, dict):
+            result.update(res_dict)
 
     def process_update_port(self, plugin_context, data, result):
         if cisco_apic.ERSPAN_CONFIG not in data:
