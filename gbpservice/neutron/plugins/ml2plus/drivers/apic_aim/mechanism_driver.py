@@ -1246,6 +1246,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_status_track = copy.deepcopy(aim_status_track_template)
 
             res_dict[cisco_apic.SYNC_STATE] = cisco_apic.SYNC_NOT_APPLICABLE
+            res_dict[cisco_apic.ERSPAN_CONFIG] = []
             res_dict_and_aim_status_track = (res_dict, aim_status_track)
             erspan_ext = port_db.aim_extension_erspan_configs
             if not erspan_ext and single:

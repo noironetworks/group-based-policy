@@ -6968,6 +6968,15 @@ class TestExtensionAttributes(ApicAimTestCase):
             self.assertIn('is already in use by address-scope',
                           resp['NeutronError']['message'])
 
+    def test_erspan_lifecycle(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(
+            self.fmt, net, '10.0.0.1', '10.0.0.0/24')['subnet']
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             device_owner='compute:')['port']
+        p1_show = self._show('ports', p1['id'])['port']
+        self.assertEqual(p1, p1_show)
+
     def test_erspan_extension(self):
         net = self._make_network(self.fmt, 'net1', True)
         self._make_subnet(
