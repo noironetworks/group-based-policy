@@ -262,6 +262,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                             enable_keystone_notification_purge)
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
+        self.vif_details = {portbindings.VIF_DETAILS_CONNECTIVITY:
+                            portbindings.CONNECTIVITY_L2}
+        self.vif_details.update(self._update_binding_sg())
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
         self.apic_nova_vm_name_cache_update_interval = (cfg.CONF.ml2_apic_aim.
                                     apic_nova_vm_name_cache_update_interval)
