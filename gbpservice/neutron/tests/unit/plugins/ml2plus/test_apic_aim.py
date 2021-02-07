@@ -6096,6 +6096,14 @@ class TestPortBinding(ApicAimTestCase):
                                                   'host1', **kwargs)['port']
         self.assertEqual('binding_failed', other_net1_port['binding:vif_type'])
 
+    def test_bind_port_no_ips(self):
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        resp = self._create_port(self.fmt, net['id'])
+        port = self.deserialize(self.fmt, resp)
+        port = self._bind_port_to_host(port['port']['id'], 'host1')['port']
+        self.assertEqual(port['binding:vif_type'], 'ovs')
+
     # TODO(rkukura): Add tests for opflex, local and unsupported
     # network_type values.
 
