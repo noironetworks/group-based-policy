@@ -495,10 +495,10 @@ class PolicyDriverManager(stevedore.named.NamedExtensionManager):
     def start_rpc_listeners(self):
         return self._call_on_drivers("start_rpc_listeners")
 
-    def validate_state(self, repair):
+    def validate_state(self, repair, resources, tenants):
         result = api.VALIDATION_PASSED
         for driver in self.ordered_policy_drivers:
-            this_result = driver.obj.validate_state(repair)
+            this_result = driver.obj.validate_state(repair, resources, tenants)
             if this_result not in api.VALIDATION_RESULT_PRECEDENCE:
                 LOG.error("Policy driver %(name)s validate_state returned "
                           "unrecognized result: %(result)s",
