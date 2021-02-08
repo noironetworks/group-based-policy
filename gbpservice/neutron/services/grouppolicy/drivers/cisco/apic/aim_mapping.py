@@ -151,9 +151,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def start_rpc_listeners(self):
         return []
 
-    def validate_state(self, repair):
+    def validate_state(self, repair, resources, tenants):
         mgr = aim_validation.ValidationManager()
-        return mgr.validate(repair)
+        return mgr.validate(repair, resources, tenants)
 
     @property
     def aim_mech_driver(self):
