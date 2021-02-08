@@ -28,7 +28,9 @@ from gbpservice.neutron.services.grouppolicy import (
 # the CLI options must be registered before the GBP service plugin and
 # the configured policy drivers can be loaded.
 cli_opts = [
-    cfg.BoolOpt('repair', default=False, help='Enable repair of invalid state.')
+    cfg.BoolOpt('repair', default=False, help='Enable repair of invalid state.'),
+    cfg.ListOpt('resources', default=[], help='List of resources to be reconciled'),
+    cfg.ListOpt('tenants', default=[], help='List of tenants to be reconciled')
 ]
 
 
@@ -52,7 +54,7 @@ def main():
     if not gbp_plugin:
         sys.exit("GBP service plugin not configured.")
 
-    result = gbp_plugin.validate_state(cfg.CONF.repair)
+    result = gbp_plugin.validate_state(cfg.CONF.repair, cfg.CONF.resources, cfg.CONF.tenants)
     if result in [api.VALIDATION_FAILED_REPAIRABLE,
                   api.VALIDATION_FAILED_UNREPAIRABLE,
                   api.VALIDATION_FAILED_WITH_EXCEPTION]:

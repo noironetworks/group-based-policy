@@ -45,6 +45,11 @@ class AimValidationTestMixin(object):
         # Validate should pass.
         self.assertEqual(api.VALIDATION_PASSED, self.av_mgr.validate())
 
+    def _validate_scoped(self, resources=None, tenants=None):
+        # Validate should pass.
+        self.assertEqual(api.VALIDATION_PASSED,
+            self.av_mgr.validate(False, resources, tenants))
+
     def _validate_repair_validate(self):
         # Validate should fail.
         self.assertEqual(
@@ -56,6 +61,27 @@ class AimValidationTestMixin(object):
 
         # Validate should pass.
         self.assertEqual(api.VALIDATION_PASSED, self.av_mgr.validate())
+
+    def _validate_repair_validate_scoped(self, resources, tenants):
+        # Validate should fail.
+        self.assertEqual(
+            api.VALIDATION_FAILED_REPAIRABLE,
+            self.av_mgr.validate(False, resources, tenants))
+
+        # Repair.
+        self.assertEqual(
+            api.VALIDATION_REPAIRED,
+            self.av_mgr.validate(True, resources, tenants))
+
+        # Validate should pass.
+        self.assertEqual(api.VALIDATION_PASSED,
+            self.av_mgr.validate(False, resources, tenants))
+
+    def _validate_repairable_scoped(self, resources, tenants):
+        # Validate should fail.
+        self.assertEqual(
+            api.VALIDATION_FAILED_REPAIRABLE,
+            self.av_mgr.validate(False, resources, tenants))
 
     def _validate_unrepairable(self):
         # Repair should fail.
@@ -757,6 +783,7 @@ class TestNeutronMapping(AimValidationTestCase):
         (self.db_session.query(aim_lib_model.CloneL3Out).
          filter_by(tenant_name=tenant_name, name=l3out_name).
          delete())
+        self._validate_repairable_scoped(["network"], None)
         self._validate_repair_validate()
 
         # Corrupt the CloneL3Out record and test.
@@ -1067,6 +1094,116 @@ class TestNeutronMapping(AimValidationTestCase):
                                           aim_resource.SpanVsourceGroup)
         self.aim_mgr.delete(self.aim_ctx, source_groups[0])
         self._validate_repair_validate()
+
+    def test_network_scope(self):
+        kwargs = {'apic:extra_provided_contracts': ['ep1', 'ep2'],
+                  'apic:extra_consumed_contracts': ['ec1', 'ec2'],
+                  'apic:epg_contract_masters': [{'app_profile_name': 'ap1',
+                                                 'name': 'ec3'},
+                                                {'app_profile_name': 'ap2',
+                                                 'name': 'ec4'}]}
+        net_resp = self._make_network(
+            self.fmt, 'net1', True, arg_list=tuple(kwargs.keys()), **kwargs)
+        net = net_resp['network']
+        net_id = net['id']
+        self._validate()
+        self._validate_scoped(["router"], None)
+        self._validate_scoped(["security_group"], None)
+
+        # Test AIM resources.
+        bd_dn = net['apic:distinguished_names']['BridgeDomain']
+        epg_dn = net['apic:distinguished_names']['EndpointGroup']
+
+        # Delete the network's mapping record and test.
+        (self.db_session.query(db.NetworkMapping).
+         filter_by(network_id=net_id).
+         delete())
+
+        # delete BridgeDomain.
+        bd = aim_resource.BridgeDomain.from_dn(bd_dn)
+        self.aim_mgr.delete(self.aim_ctx, bd)
+
+        # delete EndpointGroup.
+        epg = aim_resource.EndpointGroup.from_dn(epg_dn)
+        self.aim_mgr.delete(self.aim_ctx, epg)
+
+        # self._validate_scoped(["router"], None)
+        self._validate_repair_validate_scoped(["network"], None)
+
+    def test_tenant_scope(self):
+        # setting scope to security group but
+        # should validate common tenant resources
+        tenant = aim_resource.Tenant(name='common')
+        self.aim_mgr.delete(self.aim_ctx, tenant)
+        self._validate_repair_validate_scoped(["security_group"], None)
+
+        net_resp1 = self._make_network(
+            self.fmt, 'net1', True, tenant_id='tenant_1')
+        net1 = net_resp1['network']
+        bd_dn1 = net1['apic:distinguished_names']['BridgeDomain']
+        epg_dn1 = net1['apic:distinguished_names']['EndpointGroup']
+
+        bd1 = aim_resource.BridgeDomain.from_dn(bd_dn1)
+        self.aim_mgr.delete(self.aim_ctx, bd1)
+
+        # delete EndpointGroup.
+        epg1 = aim_resource.EndpointGroup.from_dn(epg_dn1)
+        self.aim_mgr.delete(self.aim_ctx, epg1)
+
+        net_resp2 = self._make_network(
+            self.fmt, 'net2', True, tenant_id='tenant_2')
+        net2 = net_resp2['network']
+        bd_dn2 = net2['apic:distinguished_names']['BridgeDomain']
+        epg_dn2 = net2['apic:distinguished_names']['EndpointGroup']
+
+        bd2 = aim_resource.BridgeDomain.from_dn(bd_dn2)
+        self.aim_mgr.delete(self.aim_ctx, bd2)
+
+        # delete EndpointGroup.
+        epg2 = aim_resource.EndpointGroup.from_dn(epg_dn2)
+        self.aim_mgr.delete(self.aim_ctx, epg2)
+        self._validate_repair_validate_scoped(None, ['prj_tenant_1'])
+        self._validate_repair_validate_scoped(None, ['prj_tenant_2'])
+
+    def test_security_group_scope(self):
+        sg = self._make_security_group(
+            self.fmt, 'sg1', 'security group 1')['security_group']
+        rule1 = self._build_security_group_rule(
+            sg['id'], 'ingress', 'tcp', '22', '23')
+        rules = {'security_group_rules': [rule1['security_group_rule']]}
+        sg_rule = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+
+        # Test the AIM SecurityGroup.
+        tenant_name = self.driver.aim_mech_driver.name_mapper.project(
+            None, sg['project_id'])
+        sg_name = sg['id']
+        aim_sg = aim_resource.SecurityGroup(
+            name=sg_name, tenant_name=tenant_name)
+        self._test_aim_resource(aim_sg)
+        self.aim_mgr.delete(self.aim_ctx, aim_sg)
+
+        # Test the AIM SecurityGroupSubject.
+        aim_subject = aim_resource.SecurityGroupSubject(
+            name='default', security_group_name=sg_name,
+            tenant_name=tenant_name)
+        self._test_aim_resource(aim_subject)
+        self.aim_mgr.delete(self.aim_ctx, aim_subject)
+
+        # Test the AIM SecurityGroupRule.
+        aim_rule = aim_resource.SecurityGroupRule(
+            name=sg_rule['id'],
+            security_group_subject_name='default',
+            security_group_name=sg_name,
+            tenant_name=tenant_name)
+        self._test_aim_resource(aim_rule)
+        self.aim_mgr.delete(self.aim_ctx, aim_rule)
+
+        aim_tenant = aim_resource.Tenant(name=tenant_name)
+        self._test_aim_resource(aim_tenant)
+        self.aim_mgr.delete(self.aim_ctx, aim_tenant)
+
+        self._validate_repair_validate_scoped(None, [tenant_name])
 
 
 class TestGbpMapping(AimValidationTestCase):

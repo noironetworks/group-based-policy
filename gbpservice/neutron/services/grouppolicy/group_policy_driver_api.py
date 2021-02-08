@@ -1400,7 +1400,7 @@ class PolicyDriver(object):
         """
         pass
 
-    def validate_state(self, repair):
+    def validate_state(self, repair, resources, tenants):
         """Validate persistent state managed by the driver.
 
         :param repair: Repair invalid state if True.
