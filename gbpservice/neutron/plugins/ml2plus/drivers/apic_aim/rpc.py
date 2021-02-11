@@ -148,6 +148,7 @@ EndpointSnatInfo = namedtuple(
     'EndpointSnatInfo',
     ['network_id',
      'ip_address',
+     'mac_address',
      'cidr',
      'gateway_ip'])
 
@@ -781,6 +782,7 @@ class ApicRpcHandlerMixin(object):
         query = BAKERY(lambda s: s.query(
             models_v2.Port.network_id,
             models_v2.IPAllocation.ip_address,
+            models_v2.Port.mac_address,
             models_v2.Subnet.cidr,
             models_v2.Subnet.gateway_ip,
         ))
@@ -1060,6 +1062,7 @@ class ApicRpcHandlerMixin(object):
             snat = snat_info.get(ext_net.network_id)
             if snat:
                 snat_ip = {'host_snat_ip': snat.ip_address,
+                           'host_snat_mac': snat.mac_address,
                            'gateway_ip': snat.gateway_ip,
                            'prefixlen': int(snat.cidr.split('/')[1])}
             else:
