@@ -955,6 +955,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         gw, prefix = subnet_cidr.split('/')
         self._check_ip_in_cidr(snat_ip, subnet_cidr)
         mapping['host_snat_ips'][0].pop('host_snat_ip', None)
+        mapping['host_snat_ips'][0].pop('host_snat_mac', None)
         self.assertEqual({'ext_net_id': ext_net_id,
                           'external_segment_name': ext_segment_name,
                           'gateway_ip': gw,
