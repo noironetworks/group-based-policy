@@ -158,9 +158,8 @@ EndpointTrunkInfo = namedtuple(
      'segmentation_type',
      'segmentation_id'])
 
-NEUTRON_INTERNAL_PORTS = (n_constants.DEVICE_OWNER_DHCP,
-     n_constants.DEVICE_OWNER_ROUTER_INTF,
-     n_constants.DEVICE_OWNER_ROUTER_GW)
+NEUTRON_INTERNAL_PORTS = (n_constants.DEVICE_OWNER_ROUTER_INTF,
+    n_constants.DEVICE_OWNER_ROUTER_GW)
 
 
 class TopologyRpcEndpoint(object):
