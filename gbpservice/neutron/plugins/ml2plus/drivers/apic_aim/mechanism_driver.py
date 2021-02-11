@@ -4818,6 +4818,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         desired.
         If IP was found or successfully allocated, returns a dict like:
             {'host_snat_ip': <ip_addr>,
+             'host_snat_mac': <mac_addr>,
              'gateway_ip': <gateway_ip of subnet>,
              'prefixlen': <prefix_length_of_subnet>}
         """
@@ -4825,6 +4826,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # Query for existing SNAT port.
             query = BAKERY(lambda s: s.query(
                 models_v2.IPAllocation.ip_address,
+                models_v2.Port.mac_address,
                 models_v2.Subnet.gateway_ip,
                 models_v2.Subnet.cidr))
             query += lambda q: q.join(
@@ -4842,8 +4844,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 device_id=host_or_vrf).first()
             if result:
                 return {'host_snat_ip': result[0],
-                        'gateway_ip': result[1],
-                        'prefixlen': int(result[2].split('/')[1])}
+                        'host_snat_mac': result[1],
+                        'gateway_ip': result[2],
+                        'prefixlen': int(result[3].split('/')[1])}
 
             # None found, so query for subnets on which to allocate
             # SNAT port.
@@ -4901,6 +4904,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if port and port['fixed_ips']:
                     snat_ip = port['fixed_ips'][0]['ip_address']
                     return {'host_snat_ip': snat_ip,
+                            'host_snat_mac': port['mac_address'],
                             'gateway_ip': snat_subnet['gateway_ip'],
                             'prefixlen':
                             int(snat_subnet['cidr'].split('/')[1])}
