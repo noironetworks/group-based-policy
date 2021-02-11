@@ -8542,12 +8542,14 @@ class TestSnatIpAllocation(ApicAimTestCase):
                                                         'h%d' % x, ext_net)
             self._check_ip_in_cidr(alloc['host_snat_ip'], sub1['cidr'])
             self.assertEqual({'host_snat_ip': alloc['host_snat_ip'],
+                              'host_snat_mac': alloc['host_snat_mac'],
                               'gateway_ip': '100.100.100.1',
                               'prefixlen': 29}, alloc)
             alloc = self.driver.get_or_allocate_snat_ip(admin_ctx,
                                                         'h%d' % x, ext_net)
             self._check_ip_in_cidr(alloc['host_snat_ip'], sub1['cidr'])
             self.assertEqual({'host_snat_ip': alloc['host_snat_ip'],
+                              'host_snat_mac': alloc['host_snat_mac'],
                               'gateway_ip': '100.100.100.1',
                               'prefixlen': 29}, alloc)
 
@@ -8561,6 +8563,7 @@ class TestSnatIpAllocation(ApicAimTestCase):
         alloc = self.driver.get_or_allocate_snat_ip(admin_ctx, 'h5', ext_net)
         self._check_ip_in_cidr(alloc['host_snat_ip'], sub2['cidr'])
         self.assertEqual({'host_snat_ip': alloc['host_snat_ip'],
+                          'host_snat_mac': alloc['host_snat_mac'],
                           'gateway_ip': '200.100.100.1',
                           'prefixlen': 28}, alloc)
 
