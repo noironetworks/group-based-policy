@@ -14,6 +14,7 @@ import copy
 
 from neutron.api import extensions
 from neutron.api.v2 import resource as neutron_resource
+from neutron.db.db_base_plugin_v2 import _constants
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
@@ -491,3 +492,7 @@ try:
 except ImportError as e:
     LOG.warning("Import error while patching networking-sfc: %s",
                 str(e))
+
+
+DEVICE_OWNER_SVI_PORT = 'apic:svi'
+_constants.AUTO_DELETE_PORT_OWNERS.append(DEVICE_OWNER_SVI_PORT)
