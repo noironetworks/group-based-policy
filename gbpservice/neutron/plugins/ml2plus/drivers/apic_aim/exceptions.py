@@ -115,6 +115,11 @@ class InvalidNetworkForEpgContractMaster(exceptions.BadRequest):
                 "an external or SVI network.")
 
 
+class InvalidNetworkForPolicyEnforcementPref(exceptions.BadRequest):
+    message = _("apic:policy_enforcement_pref cannot be 'enforced' for "
+                "SVI network.")
+
+
 class InvalidNetworkForQos(exceptions.BadRequest):
     message = _("Cannot specify qos policy for "
                 "an external or SVI network.")

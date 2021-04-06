@@ -48,6 +48,7 @@ EXTRA_PROVIDED_CONTRACTS = 'apic:extra_provided_contracts'
 EXTRA_CONSUMED_CONTRACTS = 'apic:extra_consumed_contracts'
 EPG_CONTRACT_MASTERS = 'apic:epg_contract_masters'
 ERSPAN_CONFIG = 'apic:erspan_config'
+POLICY_ENFORCEMENT_PREF = 'apic:policy_enforcement_pref'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -335,6 +336,11 @@ NET_ATTRIBUTES = {
                      'required': False}
             },
         }
+    },
+    POLICY_ENFORCEMENT_PREF: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': 'unenforced',
+        'validate': {'type:values': ['unenforced', 'enforced', '']},
     },
 }
 
