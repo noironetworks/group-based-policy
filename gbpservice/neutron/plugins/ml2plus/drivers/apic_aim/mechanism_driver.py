@@ -788,6 +788,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if (current[cisco_apic.EPG_CONTRACT_MASTERS] and (is_ext or is_svi)):
             raise exceptions.InvalidNetworkForEpgContractMaster()
 
+        if current[cisco_apic.POLICY_ENFORCEMENT_PREF] == 'enforced' and \
+           is_svi:
+            raise exceptions.InvalidNetworkForPolicyEnforcementPref()
+
         if (current.get(qos_consts.QOS_POLICY_ID) and (is_ext or is_svi)):
             raise exceptions.InvalidNetworkForQos()
 
@@ -924,6 +928,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 cisco_apic.EXTRA_CONSUMED_CONTRACTS]
             epg.epg_contract_masters = current[
                 cisco_apic.EPG_CONTRACT_MASTERS]
+            epg.policy_enforcement_pref = current[
+                cisco_apic.POLICY_ENFORCEMENT_PREF]
             epg.qos_name = current.get(qos_consts.QOS_POLICY_ID, None)
             self.aim.create(aim_ctx, epg)
 
@@ -1011,6 +1017,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             epg = self.aim.get(aim_ctx, self._get_network_epg(mapping))
             self.aim.update(
                 aim_ctx, epg, epg_contract_masters=curr_masters)
+
+        # Update Policy Enforcement Pref if changed.
+        curr_masters = current[cisco_apic.POLICY_ENFORCEMENT_PREF]
+        orig_masters = original[cisco_apic.POLICY_ENFORCEMENT_PREF]
+        if curr_masters != orig_masters:
+            if curr_masters == 'enforced' and is_svi:
+                raise exceptions.InvalidNetworkForPolicyEnforcementPref()
+
+            epg = self.aim.get(aim_ctx, self._get_network_epg(mapping))
+            self.aim.update(
+                aim_ctx, epg, policy_enforcement_pref=curr_masters)
 
         if is_ext:
             _, ext_net, ns = self._get_aim_nat_strategy(current)
@@ -6731,6 +6748,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             cisco_apic.BGP: False,
             cisco_apic.BGP_TYPE: 'default_export',
             cisco_apic.BGP_ASN: 0,
+            cisco_apic.POLICY_ENFORCEMENT_PREF: 'unenforced',
             cisco_apic.NESTED_DOMAIN_NAME: '',
             cisco_apic.NESTED_DOMAIN_TYPE: '',
             cisco_apic.NESTED_DOMAIN_INFRA_VLAN: None,
@@ -6812,6 +6830,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 for key in ('app_profile_name', 'name')}
                                 for x in
                                 net_db.aim_extension_epg_contract_masters]
+        policy_enforcement_pref = (
+            net_db.aim_extension_mapping.policy_enforcement_pref if
+            net_db.aim_extension_mapping
+            else 'unenforced')
 
         # REVISIT: Refactor to share code.
         dname = aim_utils.sanitize_display_name(net_db.name)
@@ -6828,7 +6850,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         epg.display_name = dname
         epg.bd_name = bd.name
-        epg.policy_enforcement_pref = 'unenforced'
+        epg.policy_enforcement_pref = policy_enforcement_pref
         epg.provided_contract_names = provided_contract_names
         epg.consumed_contract_names = consumed_contract_names
         epg.openstack_vmm_domain_names = []
