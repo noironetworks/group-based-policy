@@ -1020,6 +1020,7 @@ class TestAimMapping(ApicAimTestCase):
         consumed_contract_names = set(
             router_anames + net['apic:extra_consumed_contracts'])
         epg_contract_masters = net['apic:epg_contract_masters']
+        policy_enforcement_pref = net['apic:policy_enforcement_pref']
 
         if routers:
             if vrf:
@@ -1098,6 +1099,8 @@ class TestAimMapping(ApicAimTestCase):
                                   aim_epg.consumed_contract_names)
             self.assertItemsEqual(epg_contract_masters,
                                   aim_epg.epg_contract_masters)
+            self.assertItemsEqual(policy_enforcement_pref,
+                                  aim_epg.policy_enforcement_pref)
             # REVISIT(rkukura): Check openstack_vmm_domain_names and
             # physical_domain_names?
             self._check_dn_is_resource(dns, 'EndpointGroup', aim_epg)
@@ -1402,7 +1405,8 @@ class TestAimMapping(ApicAimTestCase):
                   'apic:epg_contract_masters': [{'app_profile_name': 'ap1',
                                                  'name': 'epg1'},
                                                 {'app_profile_name': 'ap2',
-                                                 'name': 'epg2'}]}
+                                                 'name': 'epg2'}],
+                  'apic:policy_enforcement_pref': 'enforced'}
         net = self._make_network(
             self.fmt, 'net1', True, arg_list=tuple(list(kwargs.keys())),
             **kwargs)['network']
@@ -1421,7 +1425,8 @@ class TestAimMapping(ApicAimTestCase):
                  'apic:epg_contract_masters': [{'app_profile_name': 'ap1',
                                                 'name': 'epg2'},
                                                {'app_profile_name': 'ap3',
-                                                'name': 'epg2'}]}}
+                                                'name': 'epg2'}],
+                 'apic:policy_enforcement_pref': 'enforced'}}
         net = self._update('networks', net_id, data)['network']
         self._check_network(net)
 
@@ -1610,11 +1615,39 @@ class TestAimMapping(ApicAimTestCase):
             'InvalidNetworkForEpgContractMaster',
             result['NeutronError']['type'])
 
+    def _test_invalid_policy_enforcement_pref(self, kwargs):
+        # Verify creating network with Policy Enforcement Pref fails.
+        kwargs['apic:policy_enforcement_pref'] = 'enforced'
+
+        resp = self._create_network(
+            self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
+            **kwargs)
+        result = self.deserialize(self.fmt, resp)
+        self.assertEqual(
+            'InvalidNetworkForPolicyEnforcementPref',
+            result['NeutronError']['type'])
+        del kwargs['apic:policy_enforcement_pref']
+
+        # Create network with default Policy Enforcement Pref
+        net_id = self._make_network(
+            self.fmt, 'net', True,
+            arg_list=tuple(list(kwargs.keys())), **kwargs)['network']['id']
+
+        # Verify setting Policy Enforcement Pref on network fails.
+        result = self._update(
+            'networks', net_id,
+            {'network': {'apic:policy_enforcement_pref': 'enforced'}},
+            webob.exc.HTTPBadRequest.code)
+        self.assertEqual(
+            'InvalidNetworkForPolicyEnforcementPref',
+            result['NeutronError']['type'])
+
     def test_external_network_exceptions(self):
         self._test_invalid_network_exceptions({'router:external': True})
 
     def test_svi_network_exceptions(self):
         self._test_invalid_network_exceptions({'apic:svi': True})
+        self._test_invalid_policy_enforcement_pref({'apic:svi': True})
 
     def test_security_group_lifecycle(self):
         # Test create
@@ -6537,6 +6570,49 @@ class TestExtensionAttributes(ApicAimTestCase):
         # Test show after update.
         net = self._show('networks', net_id)['network']
         self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+
+        # Test delete.
+        self._delete('networks', net_id)
+        self.assertFalse(extn.get_network_extn_db(session, net_id))
+        db_masters = (session.query(
+            extn_db.NetworkExtEpgContractMasterDb).filter_by(
+                network_id=net_id).all())
+        self.assertEqual([], db_masters)
+
+    def test_network_with_policy_enforcement_pref_lifecycle(self):
+        session = db_api.get_reader_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # Create network with default Policy Enforcement Pref
+        net = self._make_network(
+            self.fmt, 'net1', True)['network']
+        net_id = net['id']
+        self.assertItemsEqual('unenforced',
+            net['apic:policy_enforcement_pref'])
+
+        # Test show.
+        net = self._show('networks', net_id)['network']
+        self.assertItemsEqual('unenforced',
+            net['apic:policy_enforcement_pref'])
+
+        # Test list.
+        net = self._list(
+            'networks', query_params=('id=%s' % net_id))['networks'][0]
+        self.assertItemsEqual('unenforced',
+            net['apic:policy_enforcement_pref'])
+
+        # Test update with Policy Enforcement Pref
+        net = self._update(
+            'networks', net_id,
+            {'network':
+             {'apic:policy_enforcement_pref': 'enforced'}})['network']
+        self.assertItemsEqual('enforced',
+            net['apic:policy_enforcement_pref'])
+
+        # Test show after update.
+        net = self._show('networks', net_id)['network']
+        self.assertItemsEqual('enforced',
+            net['apic:policy_enforcement_pref'])
 
         # Test delete.
         self._delete('networks', net_id)
