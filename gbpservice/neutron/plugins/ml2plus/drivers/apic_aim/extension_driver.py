@@ -167,6 +167,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     data.get(cisco_apic.EXTRA_CONSUMED_CONTRACTS),
                     cisco_apic.EPG_CONTRACT_MASTERS:
                     data.get(cisco_apic.EPG_CONTRACT_MASTERS),
+                    cisco_apic.POLICY_ENFORCEMENT_PREF:
+                    data.get(cisco_apic.POLICY_ENFORCEMENT_PREF, "unenforced"),
                     }
         if cisco_apic.VLANS_LIST in (data.get(
                 cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS) or {}):
@@ -228,7 +230,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS,
                 cisco_apic.EXTRA_PROVIDED_CONTRACTS,
                 cisco_apic.EXTRA_CONSUMED_CONTRACTS,
-                cisco_apic.EPG_CONTRACT_MASTERS]
+                cisco_apic.EPG_CONTRACT_MASTERS,
+                cisco_apic.POLICY_ENFORCEMENT_PREF]
         if not(set(update_attrs) & set(data.keys())):
             return
 
@@ -247,7 +250,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN,
                 cisco_apic.EXTRA_PROVIDED_CONTRACTS,
                 cisco_apic.EXTRA_CONSUMED_CONTRACTS,
-                cisco_apic.EPG_CONTRACT_MASTERS]
+                cisco_apic.EPG_CONTRACT_MASTERS,
+                cisco_apic.POLICY_ENFORCEMENT_PREF]
         for e_k in ext_keys:
             if e_k in data:
                 res_dict.update({e_k: data[e_k]})
