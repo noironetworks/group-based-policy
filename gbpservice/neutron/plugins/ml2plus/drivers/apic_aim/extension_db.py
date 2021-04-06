@@ -66,6 +66,9 @@ class NetworkExtensionDb(model_base.BASEV2):
                          default='default_export',
                          nullable=False)
     bgp_asn = sa.Column(sa.String(64), default='0', nullable=False)
+    policy_enforcement_pref = sa.Column(sa.Enum('unenforced', 'enforced', ''),
+                         default='unenforced',
+                         nullable=False)
 
     network = orm.relationship(models_v2.Network,
                                backref=orm.backref(
@@ -331,6 +334,8 @@ class ExtensionDbMixin(object):
             net_res[cisco_apic.EPG_CONTRACT_MASTERS] = [
                 {'app_profile_name': m.app_profile_name,
                  'name': m.name} for m in db_masters]
+            net_res[cisco_apic.POLICY_ENFORCEMENT_PREF] = db_obj[
+                'policy_enforcement_pref']
         if net_res.get(cisco_apic.EXTERNAL_NETWORK):
             net_res[cisco_apic.EXTERNAL_CIDRS] = [c.cidr for c in db_cidrs]
         return net_res
@@ -376,6 +381,9 @@ class ExtensionDbMixin(object):
             if cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN in res_dict:
                 db_obj['nested_domain_node_network_vlan'] = res_dict[
                         cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN]
+            if cisco_apic.POLICY_ENFORCEMENT_PREF in res_dict:
+                db_obj['policy_enforcement_pref'] = res_dict[
+                        cisco_apic.POLICY_ENFORCEMENT_PREF]
             session.add(db_obj)
 
             if cisco_apic.EXTERNAL_CIDRS in res_dict:
