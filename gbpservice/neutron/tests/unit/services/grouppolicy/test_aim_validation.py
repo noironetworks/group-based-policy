@@ -1138,7 +1138,7 @@ class TestNeutronMapping(AimValidationTestCase):
         self._validate_repair_validate_scoped(["security_group"], None)
 
         net_resp1 = self._make_network(
-            self.fmt, 'net1', True, tenant_id='tenant_1')
+            self.fmt, 'net1', True, tenant_id='ten_1')
         net1 = net_resp1['network']
         bd_dn1 = net1['apic:distinguished_names']['BridgeDomain']
         epg_dn1 = net1['apic:distinguished_names']['EndpointGroup']
@@ -1151,7 +1151,7 @@ class TestNeutronMapping(AimValidationTestCase):
         self.aim_mgr.delete(self.aim_ctx, epg1)
 
         net_resp2 = self._make_network(
-            self.fmt, 'net2', True, tenant_id='tenant_2')
+            self.fmt, 'net2', True, tenant_id='ten_2')
         net2 = net_resp2['network']
         bd_dn2 = net2['apic:distinguished_names']['BridgeDomain']
         epg_dn2 = net2['apic:distinguished_names']['EndpointGroup']
@@ -1162,12 +1162,13 @@ class TestNeutronMapping(AimValidationTestCase):
         # delete EndpointGroup.
         epg2 = aim_resource.EndpointGroup.from_dn(epg_dn2)
         self.aim_mgr.delete(self.aim_ctx, epg2)
-        self._validate_repair_validate_scoped(None, ['prj_tenant_1'])
-        self._validate_repair_validate_scoped(None, ['prj_tenant_2'])
+        self._validate_repair_validate_scoped(None, ['prj_ten_1'])
+        self._validate_repair_validate_scoped(None, ['prj_ten_2'])
 
     def test_security_group_scope(self):
         sg = self._make_security_group(
-            self.fmt, 'sg1', 'security group 1')['security_group']
+            self.fmt, 'sg1', 'security group 1',
+            tenant_id='ten_1')['security_group']
         rule1 = self._build_security_group_rule(
             sg['id'], 'ingress', 'tcp', '22', '23')
         rules = {'security_group_rules': [rule1['security_group_rule']]}
