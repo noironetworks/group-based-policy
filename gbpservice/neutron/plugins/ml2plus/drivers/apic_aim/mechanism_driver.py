@@ -6405,7 +6405,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         for project_id in project_dict.keys():
             tenant_name = project_dict[project_id][0]
             if tenant_name in mgr.tenants:
-                mgr.tenat_ids.append(project_id)
+                mgr.tenant_ids.append(project_id)
 
         for tenant in mgr.aim_mgr.find(
             mgr.actual_aim_ctx,
