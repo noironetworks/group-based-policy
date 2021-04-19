@@ -157,6 +157,8 @@ TEST_TENANT_NAMES = {
     'tenant_1': 'Tenant1Name',
     'tenant_2': 'Tenant2Name',
     'test-tenant': 'TestTenantName',
+    'ten_1': 'prj_ten_1',
+    'ten_2': 'prj_ten_2',
     test_plugin.TEST_TENANT_ID: test_plugin.TEST_TENANT_ID,
 }
 
