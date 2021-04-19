@@ -345,7 +345,7 @@ class ValidationManager(object):
             elif instance_class == db.AddressScopeMapping:
                 instance_tenant = instance.vrf_tenant_name
             elif instance_class == db.NetworkMapping:
-                if hasattr(instance, 'l3out_tenant_name'):
+                if instance.l3out_tenant_name:
                     instance_tenant = instance.l3out_tenant_name
                 else:
                     instance_tenant = instance.epg_tenant_name
