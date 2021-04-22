@@ -6876,6 +6876,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             cisco_apic.BGP: False,
             cisco_apic.BGP_TYPE: 'default_export',
             cisco_apic.BGP_ASN: 0,
+            cisco_apic.POLICY_ENFORCEMENT_PREF: 'unenforced',
             cisco_apic.NESTED_DOMAIN_NAME: '',
             cisco_apic.NESTED_DOMAIN_TYPE: '',
             cisco_apic.NESTED_DOMAIN_INFRA_VLAN: None,
@@ -6958,7 +6959,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 for x in
                                 net_db.aim_extension_epg_contract_masters]
         policy_enforcement_pref = (
-            net_db.aim_extension_mapping.policy_enforcement_pref)
+            net_db.aim_extension_mapping.policy_enforcement_pref if
+            net_db.aim_extension_mapping
+            else 'unenforced')
 
         # REVISIT: Refactor to share code.
         dname = aim_utils.sanitize_display_name(net_db.name)
