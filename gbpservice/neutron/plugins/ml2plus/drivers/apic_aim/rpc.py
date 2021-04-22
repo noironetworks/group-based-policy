@@ -340,12 +340,21 @@ class ApicRpcHandlerMixin(object):
                              "RPC from host %s", port_id, host)
                     return response
                 if len(port_infos) > 1:
-                    LOG.info("Multiple ports start with %s in "
-                             "requent_endpoint_details RPC from host %s",
-                             port_id, host)
-                    return response
-                port_info = port_infos[0]
-                info['port_info'] = port_info
+                    # Port bindings were changed to include the
+                    # host as a primary key. This means we can
+                    # have the same port show up more than once,
+                    # so only include ports whose host matches
+                    # the host passed to this method (i.e. the
+                    # host that requested the details).
+                    for port in port_infos[::-1]:
+                        if port.host != host:
+                            port_infos.remove(port)
+                    if len(port_infos) > 1:
+                        LOG.info("Multiple ports start with %s in "
+                                 "requent_endpoint_details RPC from host %s",
+                                 port_id, host)
+                        return response
+                info['port_info'] = port_info = port_infos[0]
 
                 # If port is bound, check host and do remaining
                 # queries.
