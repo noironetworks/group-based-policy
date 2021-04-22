@@ -5125,6 +5125,56 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
 
 
 class TestPortBinding(ApicAimTestCase):
+    def test_opflex_agent_live_migration(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = port['id']
+        # Test migrating from host1 to host2.
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        self._register_agent('host2', AGENT_CONF_OPFLEX)
+
+        # Port starts of bound to host1
+        port = self._bind_port_to_host(port_id, 'host1')['port']
+        self.assertEqual('ovs', port['binding:vif_type'])
+        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
+                port['binding:vif_details'])
+
+        # Verify details are delivered for this port for this host.
+        request = {'device': 'tap%s' % port_id,
+                   'timestamp': 12345,
+                   'request_id': 'a_request'}
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host1')
+        self.assertIsNotNone(rpc_response.get('gbp_details'))
+        self.assertEqual('host1', rpc_response['gbp_details']['host'])
+        # Verify details are absent from target host.
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host2')
+        self.assertIsNone(rpc_response.get('gbp_details'))
+
+        # Set up live-migration port binding. We first set the "migrating_to"
+        # key in the 'profile' of the original binding. At this
+        # point, we expect to see two port bindings.
+        target_binding = {'binding:vnic_type': 'normal'}
+        target_binding.update({
+            'binding:profile': {'migrating_to': 'host2'}})
+        port = self._bind_port_to_host(port_id, 'host1',
+                                       **target_binding)['port']
+
+        # Activate the new binding
+        port = self._bind_port_to_host(port_id, 'host2',
+                                       **target_binding)['port']
+
+        # The details should now only be available on the target host.
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host1')
+        self.assertIsNone(rpc_response.get('gbp_details'))
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host2')
+        self.assertIsNotNone(rpc_response.get('gbp_details'))
+        self.assertEqual('host2', rpc_response['gbp_details']['host'])
+
     def test_bind_opflex_agent(self):
         self._register_agent('host1', AGENT_CONF_OPFLEX)
         net = self._make_network(self.fmt, 'net1', True)
