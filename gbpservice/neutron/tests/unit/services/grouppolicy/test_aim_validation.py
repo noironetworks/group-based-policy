@@ -473,7 +473,8 @@ class TestNeutronMapping(AimValidationTestCase):
                   'apic:epg_contract_masters': [{'app_profile_name': 'ap1',
                                                  'name': 'ec3'},
                                                 {'app_profile_name': 'ap2',
-                                                 'name': 'ec4'}]}
+                                                 'name': 'ec4'}],
+                  'apic:policy_enforcement_pref': 'unenforced'}
         if preexisting_bd:
             kwargs.update(
                 {'apic:distinguished_names':
