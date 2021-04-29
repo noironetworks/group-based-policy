@@ -16,6 +16,7 @@
 from contextlib import contextmanager
 import copy
 
+from aim.aim_lib.db import model as aim_lib_model
 from aim import aim_store
 from aim.api import resource as aim_resource
 from aim import context as aim_context
@@ -24,10 +25,13 @@ from neutron_lib.plugins import directory
 from oslo_log import log
 
 from gbpservice.neutron.db import api as db_api
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 
 LOG = log.getLogger(__name__)
+
+COMMON_TENANT_NAME = 'common'
 
 
 class InternalValidationError(Exception):
@@ -54,11 +58,65 @@ class ValidationManager(object):
             if driver:
                 self.sfcd = driver.obj
 
-    def validate(self, repair=False):
+    def validate(self, repair=False, resources=None, tenants=None):
         self.output("Validating deployment, repair: %s" % repair)
-
         self.result = api.VALIDATION_PASSED
         self.repair = repair
+        self.neutron_resources = resources if resources else []
+        self.tenants = tenants if tenants else []
+        self.resource_scope = True if self.neutron_resources else False
+        self.tenant_scope = True if self.tenants else False
+
+        self.neutron_to_aim_mapping = {
+            "router": [
+                aim_resource.Contract,
+                aim_resource.ContractSubject,
+                aim_resource.Tenant,
+                aim_resource.ApplicationProfile],
+            "security_group": [
+                aim_resource.SecurityGroup,
+                aim_resource.SecurityGroupRule,
+                aim_resource.SecurityGroupSubject,
+                aim_resource.Tenant,
+                aim_resource.ApplicationProfile],
+            "network": [
+                aim_resource.BridgeDomain,
+                aim_resource.ApplicationProfile,
+                aim_resource.EndpointGroup,
+                aim_resource.ExternalNetwork,
+                aim_resource.ExternalSubnet,
+                db.NetworkMapping,
+                aim_resource.L3Outside,
+                aim_resource.Subnet,
+                aim_resource.VRF,
+                aim_resource.Tenant,
+                aim_resource.ApplicationProfile,
+                aim_lib_model.CloneL3Out],
+            "port": [
+                aim_resource.InfraAccBundleGroup,
+                aim_resource.SpanVsourceGroup,
+                aim_resource.SpanVdestGroup,
+                aim_resource.SpanVsource,
+                aim_resource.SpanVdest,
+                aim_resource.SpanVepgSummary,
+                aim_resource.SpanSpanlbl,
+                aim_resource.Tenant,
+                aim_resource.ApplicationProfile],
+            "subnetpool": [
+                aim_resource.Tenant,
+                aim_resource.ApplicationProfile],
+            "floatingip": [
+                aim_resource.Tenant,
+                aim_resource.ApplicationProfile],
+            "address_scope": [
+                aim_resource.VRF,
+                db.AddressScopeMapping,
+                aim_resource.Tenant,
+                aim_resource.ApplicationProfile],
+                                   }
+        self.aim_resources = set()
+        for resource in self.neutron_resources:
+            self.aim_resources.update(self.neutron_to_aim_mapping[resource])
 
         # REVISIT: Validate configuration.
 
@@ -147,7 +205,8 @@ class ValidationManager(object):
             self._actual_aim_resources[resource_class] = {
                 tuple(resource.identity): resource
                 for resource in self.aim_mgr.find(
-                        self.actual_aim_ctx, resource_class)}
+                    self.actual_aim_ctx, resource_class)
+                if self._should_register_resource(resource)}
 
     def expect_aim_resource(self, resource, replace=False, remove=False):
         expected_resources = self._expected_aim_resources[resource.__class__]
@@ -189,6 +248,8 @@ class ValidationManager(object):
         return list(self._actual_aim_resources[resource_class].values())
 
     def register_db_instance_class(self, instance_class, primary_keys):
+        if self.aim_resources and instance_class not in self.aim_resources:
+            return
         self._expected_db_instances.setdefault(instance_class, {})
         self._db_instance_primary_keys[instance_class] = primary_keys
 
@@ -240,9 +301,14 @@ class ValidationManager(object):
         for resource_class in self._expected_aim_resources.keys():
             self._validate_aim_resource_class(resource_class)
 
+    def _should_validate_neutron_resource(self, resource):
+        if self.neutron_resources:
+            return True if resource in self.neutron_resources else False
+        else:
+            return True
+
     def _validate_aim_resource_class(self, resource_class):
         expected_resources = self._expected_aim_resources[resource_class]
-
         for actual_resource in self.actual_aim_resources(resource_class):
             key = tuple(actual_resource.identity)
             expected_resource = expected_resources.pop(key, None)
@@ -252,11 +318,57 @@ class ValidationManager(object):
         for expected_resource in expected_resources.values():
             self._handle_missing_aim_resource(expected_resource)
 
+    def _should_validate_unexpected_resource(self, resource):
+        resource_class = resource.__class__
+        if self.tenant_scope:
+            if resource_class == aim_resource.Tenant:
+                if (resource.name != COMMON_TENANT_NAME and
+                    resource.name in self.tenants):
+                    return True
+                else:
+                    return False
+            else:
+                if not hasattr(resource, 'tenant_name'):
+                    return True
+                return True if resource.tenant_name in self.tenants else False
+        else:
+            if self.resource_scope:
+                return False
+        return True
+
+    def _should_validate_unexpected_db_instance(self, instance):
+        instance_class = instance.__class__
+        if self.tenant_scope:
+            instance_tenant = None
+            if instance_class == aim_lib_model.CloneL3Out:
+                instance_tenant = instance.tenant_name
+            elif instance_class == db.AddressScopeMapping:
+                instance_tenant = instance.vrf_tenant_name
+            elif instance_class == db.NetworkMapping:
+                if instance.l3out_tenant_name:
+                    instance_tenant = instance.l3out_tenant_name
+                else:
+                    instance_tenant = instance.epg_tenant_name
+            if instance_tenant:
+                return True if instance_tenant in self.tenants else False
+            else:
+                return True
+        return True
+
     def _validate_actual_aim_resource(self, actual_resource,
                                       expected_resource):
         if not expected_resource:
             # Some infra resources do not have the monitored
             # attribute, but are treated as if they are monitored.
+            # During resource scoped run of validation routine
+            # it will report tenant and ap of some other resource
+            # as unexpected, although they may be expected for other
+            # resource. We can only know for sure from  unscoped validationn
+            # or from tenant scoped validation of reported tenant/ap.
+            # Therefore ignore them during recource scoped run.
+            if (not self._should_validate_unexpected_resource(
+                expected_resource)):
+                return
             if not getattr(actual_resource, 'monitored', True):
                 self._handle_unexpected_aim_resource(actual_resource)
         else:
@@ -267,6 +379,29 @@ class ValidationManager(object):
             if not expected_resource.user_equal(actual_resource):
                 self._handle_incorrect_aim_resource(
                     expected_resource, actual_resource)
+
+    def _should_validate_tenant(self, tenant):
+        if tenant == COMMON_TENANT_NAME:
+            return True
+        if self.tenants:
+            return True if tenant in self.tenants else False
+        return True
+
+    def _should_register_resource(self, resource):
+        resource_class = resource.__class__
+        if (resource_class == aim_resource.Tenant and
+            self.tenants and resource.name != COMMON_TENANT_NAME and
+            resource.name not in self.tenants):
+            return False
+        if (not hasattr(resource, 'tenant_name') or
+            resource.tenant_name == COMMON_TENANT_NAME):
+            return True
+        if (self.aim_resources and
+            resource_class not in self.aim_resources):
+            return False
+        if self.tenants:
+            return True if resource.tenant_name in self.tenants else False
+        return True
 
     def _handle_unexpected_aim_resource(self, actual_resource):
         if self.should_repair(
@@ -316,6 +451,9 @@ class ValidationManager(object):
         key = tuple([getattr(actual_instance, k) for k in primary_keys])
         expected_instance = expected_instances.pop(key, None)
         if not expected_instance:
+            if (not self._should_validate_unexpected_db_instance(
+                actual_instance)):
+                return
             self._handle_unexpected_db_instance(actual_instance)
         else:
             if not self._is_db_instance_correct(
