@@ -71,8 +71,9 @@ class GroupPolicyPlugin(group_policy_mapping_db.GroupPolicyMappingDbPlugin):
     def start_rpc_listeners(self):
         return self.policy_driver_manager.start_rpc_listeners()
 
-    def validate_state(self, repair):
-        return self.policy_driver_manager.validate_state(repair)
+    def validate_state(self, repair, resources, tenants):
+        return self.policy_driver_manager.validate_state(repair,
+            resources, tenants)
 
     @property
     def servicechain_plugin(self):
