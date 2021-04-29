@@ -6369,7 +6369,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                             network_id=mapping.network_id)
 
     def validate_aim_mapping(self, mgr):
-        # Register all AIM resource types used by mapping.
         mgr.register_aim_resource_class(aim_infra.HostDomainMappingV2)
         mgr.register_aim_resource_class(aim_resource.ApplicationProfile)
         mgr.register_aim_resource_class(aim_resource.BridgeDomain)
@@ -6398,8 +6397,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mgr.register_aim_resource_class(aim_resource.InfraAccBundleGroup)
 
         # Copy common Tenant from actual to expected AIM store.
+        mgr.tenant_ids = []
+        project_dict = self.project_details_cache.project_details
+        for project_id in project_dict.keys():
+            tenant_name = project_dict[project_id][0]
+            if tenant_name in mgr.tenants:
+                mgr.tenant_ids.append(project_id)
+
         for tenant in mgr.aim_mgr.find(
-            mgr.actual_aim_ctx, aim_resource.Tenant, name=COMMON_TENANT_NAME):
+            mgr.actual_aim_ctx,
+            aim_resource.Tenant,
+            name=COMMON_TENANT_NAME):
             mgr.aim_mgr.create(mgr.expected_aim_ctx, tenant)
 
         # Copy AIM resources that are managed via aimctl from actual
@@ -6417,7 +6425,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                aim_resource.L3Outside,
                                aim_resource.VRF]:
             for resource in mgr.actual_aim_resources(resource_class):
-                if resource.monitored:
+                if (resource.monitored and
+                    mgr._should_validate_tenant(resource.tenant_name)):
                     mgr.aim_mgr.create(mgr.expected_aim_ctx, resource)
 
         # Register DB tables to be validated.
@@ -6434,10 +6443,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # manager since this will be needed for both Neutron and GBP
         # resources.
         mgr._expected_projects = set()
+
         self._validate_static_resources(mgr)
         self._validate_address_scopes(mgr)
-        router_dbs, ext_net_routers = self._validate_routers(mgr)
-        self._validate_networks(mgr, router_dbs, ext_net_routers)
+        self._validate_routers(mgr)
+        self._validate_networks(mgr)
         self._validate_security_groups(mgr)
         self._validate_ports(mgr)
         self._validate_subnetpools(mgr)
@@ -6449,6 +6459,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     # test execution, where they are called repeatedly.
 
     def _validate_static_resources(self, mgr):
+        if not mgr._should_validate_tenant(COMMON_TENANT_NAME):
+            return
         self._ensure_common_tenant(mgr.expected_aim_ctx)
         self._ensure_unrouted_vrf(mgr.expected_aim_ctx)
         self._ensure_any_filter(mgr.expected_aim_ctx)
@@ -6456,11 +6468,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             mgr.expected_aim_ctx)
 
     def _validate_address_scopes(self, mgr):
+        if not mgr._should_validate_neutron_resource("address_scope"):
+            return
         owned_scopes_by_vrf = defaultdict(list)
 
+        scopes_db = None
         query = BAKERY(lambda s: s.query(
             as_db.AddressScope))
-        for scope_db in query(mgr.actual_session):
+        if mgr.tenant_scope:
+            query += lambda q: q.filter(
+                as_db.AddressScope.project_id.in_(
+                    sa.bindparam('project_ids', expanding=True)))
+            scopes_db = query(mgr.actual_session).params(
+                    project_ids=list(mgr.tenant_ids))
+        else:
+            scopes_db = query(mgr.actual_session)
+        for scope_db in scopes_db:
             self._expect_project(mgr, scope_db.project_id)
             mapping = scope_db.aim_mapping
             if mapping:
@@ -6486,12 +6509,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         mgr.expected_aim_ctx, vrf, scopes)
 
     def _validate_routers(self, mgr):
+        if not mgr._should_validate_neutron_resource("router"):
+            return
         router_dbs = {}
         ext_net_routers = defaultdict(list)
 
         query = BAKERY(lambda s: s.query(
             l3_db.Router))
-        for router_db in query(mgr.actual_session):
+        if mgr.tenant_scope:
+            query += lambda q: q.filter(
+                l3_db.Router.project_id.in_(
+                    sa.bindparam('project_ids', expanding=True)))
+            rtr_dbs = query(mgr.actual_session).params(
+                project_ids=list(mgr.tenant_ids))
+        else:
+            rtr_dbs = query(mgr.actual_session)
+        for router_db in rtr_dbs:
             self._expect_project(mgr, router_db.project_id)
             router_dbs[router_db.id] = router_db
             if router_db.gw_port_id:
@@ -6519,13 +6552,38 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         return router_dbs, ext_net_routers
 
-    def _validate_networks(self, mgr, router_dbs, ext_net_routers):
+    def _get_routers(self, mgr):
+        router_dbs = {}
+        ext_net_routers = defaultdict(list)
+
+        query = BAKERY(lambda s: s.query(
+            l3_db.Router))
+        for router_db in query(mgr.actual_session):
+            router_dbs[router_db.id] = router_db
+            if router_db.gw_port_id:
+                ext_net_routers[router_db.gw_port.network_id].append(
+                    router_db.id)
+        return router_dbs, ext_net_routers
+
+    def _validate_networks(self, mgr):
+        if not mgr._should_validate_neutron_resource("network"):
+            return
+        router_dbs, ext_net_routers = self._get_routers(mgr)
+        net_dbs = {}
         query = BAKERY(lambda s: s.query(
             models_v2.Network))
         query += lambda q: q.options(
             orm.joinedload('segments'))
-        net_dbs = {net_db.id: net_db for net_db in query(mgr.actual_session)}
-
+        if mgr.tenant_scope:
+            query += lambda q: q.filter(
+                models_v2.Network.project_id.in_(
+                    sa.bindparam('project_ids', expanding=True)))
+            net_db_dicts = query(mgr.actual_session).params(
+                project_ids=list(mgr.tenant_ids))
+            net_dbs = {net_db.id: net_db for net_db in net_db_dicts}
+        else:
+            net_dbs = {net_db.id: net_db
+                for net_db in query(mgr.actual_session)}
         router_ext_prov, router_ext_cons = self._get_router_ext_contracts(mgr)
         routed_nets = self._get_router_interface_info(mgr)
         network_vrfs, router_vrfs = self._determine_vrfs(
@@ -7052,6 +7110,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         return bd, epg, vrf
 
     def _validate_security_groups(self, mgr):
+        if not mgr._should_validate_neutron_resource("security_group"):
+            return
         sg_ips = defaultdict(set)
 
         query = BAKERY(lambda s: s.query(
@@ -7070,14 +7130,23 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # lazy='subquery' to lazy='dynamic'. If there is any way to
         # override this dynamic loading with eager loading for a
         # specific query, we may want to do so.
+        sg_dbs = None
         query = BAKERY(lambda s: s.query(
             sg_models.SecurityGroup))
-        for sg_db in query(mgr.actual_session):
+        if mgr.tenant_scope:
+            query += lambda q: q.filter(
+                sg_models.SecurityGroup.tenant_id.in_(
+                    sa.bindparam('project_ids', expanding=True)))
+            sg_dbs = query(mgr.actual_session).params(
+                    project_ids=list(mgr.tenant_ids))
+        else:
+            sg_dbs = query(mgr.actual_session)
+        for sg_db in sg_dbs:
             # Ignore anonymous SGs, which seem to be a Neutron bug.
             if sg_db.tenant_id:
-                self._expect_project(mgr, sg_db.project_id)
                 tenant_name = self.name_mapper.project(
                     mgr.expected_session, sg_db.tenant_id)
+                self._expect_project(mgr, sg_db.project_id)
                 sg = aim_resource.SecurityGroup(
                     tenant_name=tenant_name, name=sg_db.id,
                     display_name=aim_utils.sanitize_display_name(sg_db.name))
@@ -7118,10 +7187,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     mgr.expect_aim_resource(sg_rule)
 
     def _validate_ports(self, mgr):
+        if not mgr._should_validate_neutron_resource("port"):
+            return
         query = BAKERY(lambda s: s.query(
             models_v2.Port.project_id))
         query += lambda q: q.distinct()
         for project_id, in query(mgr.actual_session):
+            tenant_name = self.name_mapper.project(
+                mgr.expected_session, project_id)
+            if not mgr._should_validate_tenant(tenant_name):
+                continue
             self._expect_project(mgr, project_id)
         query = BAKERY(lambda s: s.query(
             models_v2.Port))
@@ -7151,17 +7226,29 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     mgr.expect_aim_resource(resource)
 
     def _validate_subnetpools(self, mgr):
+        if not mgr._should_validate_neutron_resource("subnet_pool"):
+            return
         query = BAKERY(lambda s: s.query(
             models_v2.SubnetPool.project_id))
         query += lambda q: q.distinct()
         for project_id, in query(mgr.actual_session):
+            tenant_name = self.name_mapper.project(
+                mgr.expected_session, project_id)
+            if not mgr._should_validate_tenant(tenant_name):
+                continue
             self._expect_project(mgr, project_id)
 
     def _validate_floatingips(self, mgr):
+        if not mgr._should_validate_neutron_resource("floatingip"):
+            return
         query = BAKERY(lambda s: s.query(
             l3_db.FloatingIP.project_id))
         query += lambda q: q.distinct()
         for project_id, in query(mgr.actual_session):
+            tenant_name = self.name_mapper.project(
+                mgr.expected_session, project_id)
+            if not mgr._should_validate_tenant(tenant_name):
+                continue
             self._expect_project(mgr, project_id)
 
     def _validate_port_bindings(self, mgr):
