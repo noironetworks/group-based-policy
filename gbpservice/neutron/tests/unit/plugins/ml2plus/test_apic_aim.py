@@ -5128,6 +5128,158 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
 
 
 class TestPortBinding(ApicAimTestCase):
+
+    # Helper methods for port binding APIs.
+    def _check_code_and_serialize(self, response, raw_response):
+        if raw_response:
+            return response
+        if response.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=response.status_int)
+        return self.deserialize(self.fmt, response)
+
+    def _create_port_binding(self, fmt, port_id, host, tenant_id=None,
+                             **kwargs):
+        tenant_id = tenant_id or self._tenant_id
+        data = {'binding': {'host': host, 'tenant_id': tenant_id}}
+        if kwargs:
+            data['binding'].update(kwargs)
+        binding_resource = 'ports/%s/bindings' % port_id
+        binding_req = self.new_create_request(binding_resource, data, fmt)
+        return binding_req.get_response(self.api)
+
+    def _update_port_binding(self, fmt, port_id, host, **kwargs):
+        data = {'binding': kwargs}
+        binding_req = self.new_update_request('ports', data, port_id, fmt,
+                                              subresource='bindings',
+                                              sub_id=host)
+        return binding_req.get_response(self.api)
+
+    def _do_update_port_binding(self, fmt, port_id, host, **kwargs):
+        res = self._update_port_binding(fmt, port_id, host, **kwargs)
+        if res.status_int >= webob.exc.HTTPClientError.code:
+            raise webob.exc.HTTPClientError(code=res.status_int)
+        return self.deserialize(fmt, res)
+
+    def _list_port_bindings(self, port_id, params=None, raw_response=True):
+        response = self._req(
+            'GET', 'ports', fmt=self.fmt, id=port_id, subresource='bindings',
+            params=params).get_response(self.api)
+        return self._check_code_and_serialize(response, raw_response)
+
+    def _activate_port_binding(self, port_id, host, raw_response=True):
+        response = self._req('PUT', 'ports', id=port_id,
+                             data={'port_id': port_id},
+                             subresource='bindings', sub_id=host,
+                             action='activate').get_response(self.api)
+        return self._check_code_and_serialize(response, raw_response)
+
+    def _delete_port_binding(self, port_id, host):
+        response = self._req(
+            'DELETE', 'ports', fmt=self.fmt, id=port_id,
+            subresource='bindings', sub_id=host).get_response(self.api)
+        return response
+
+    def test_opflex_agent_live_migration(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
+        port = self._make_port(self.fmt, net['network']['id'])['port']
+        port_id = port['id']
+        # Test migrating from host1 to host2.
+        self._register_agent('host1', AGENT_CONF_OPFLEX)
+        self._register_agent('host2', AGENT_CONF_OPFLEX)
+
+        # Port starts of bound to host1
+        port = self._bind_port_to_host(port_id, 'host1')['port']
+        bindings = self._list_port_bindings(port_id,
+                                            raw_response=False)['bindings']
+        self.assertEqual(1, len(bindings))
+        self.assertEqual('ovs', bindings[0]['vif_type'])
+        self.assertEqual('ACTIVE', bindings[0]['status'])
+        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
+                         bindings[0]['vif_details'])
+
+        # Verify details are delivered for this port for this host.
+        request = {'device': 'tap%s' % port_id,
+                   'timestamp': 12345,
+                   'request_id': 'a_request'}
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host1')
+        self.assertIsNotNone(rpc_response.get('gbp_details'))
+        self.assertEqual('host1', rpc_response['gbp_details']['host'])
+        # Verify details are absent from target host.
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host2')
+        self.assertIsNone(rpc_response.get('gbp_details'))
+        # Create inactive binding on target host
+        target_binding = {'vnic_type': 'normal'}
+        self._create_port_binding(self.fmt, port_id,
+                                  'host2', **target_binding)
+        bindings = self._list_port_bindings(port_id,
+                                            raw_response=False)['bindings']
+        self.assertEqual(2, len(bindings))
+        self.assertEqual('ACTIVE', bindings[0]['status'])
+        self.assertEqual('INACTIVE', bindings[1]['status'])
+
+        # Verify that the port is now available on both hosts.
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host1')
+        self.assertIsNotNone(rpc_response.get('gbp_details'))
+        self.assertEqual('host1', rpc_response['gbp_details']['host'])
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host2')
+        self.assertIsNotNone(rpc_response.get('gbp_details'))
+        self.assertEqual('host2', rpc_response['gbp_details']['host'])
+        # Set up live-migration port binding. We first set the "migrating_to"
+        # key in the 'profile' of the original binding. At this
+        # point, we expect to see two port bindings.
+        target_binding.update({
+            'profile': {'migrating_to': 'host2'}})
+        self._do_update_port_binding(self.fmt, port_id, 'host1',
+                                     **target_binding)['binding']
+        bindings = self._list_port_bindings(port_id,
+                                            raw_response=False)['bindings']
+        self.assertEqual(2, len(bindings))
+        self.assertEqual('ACTIVE', bindings[0]['status'])
+        self.assertEqual('INACTIVE', bindings[1]['status'])
+
+        # Activate the new binding
+        self._activate_port_binding(
+            port_id, 'host2', raw_response=False)
+        bindings = self._list_port_bindings(port_id,
+                                            raw_response=False)['bindings']
+        self.assertEqual(2, len(bindings))
+        self.assertEqual('INACTIVE', bindings[0]['status'])
+        self.assertEqual('ACTIVE', bindings[1]['status'])
+
+        # Verify that port bindings are still available on both hosts.
+
+        # REVISIT: When this code is included, the test hangs on a SQL call
+        # in the upstream ML2 get_bound_port_context method.
+        # rpc_response = self.driver.request_endpoint_details(
+        #     n_context.get_admin_context(), request=request, host='host1')
+        # self.assertIsNotNone(rpc_response.get('gbp_details'))
+        # self.assertEqual('host1', rpc_response['gbp_details']['host'])
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host2')
+        self.assertIsNotNone(rpc_response.get('gbp_details'))
+        self.assertEqual('host2', rpc_response['gbp_details']['host'])
+
+        # Remove the original binding
+        self._delete_port_binding(port_id, 'host1')
+        bindings = self._list_port_bindings(port_id,
+                                            raw_response=False)['bindings']
+        self.assertEqual(1, len(bindings))
+        self.assertEqual('ACTIVE', bindings[0]['status'])
+
+        # The details should now only be available on the target host.
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host1')
+        self.assertIsNone(rpc_response.get('gbp_details'))
+        rpc_response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='host2')
+        self.assertIsNotNone(rpc_response.get('gbp_details'))
+        self.assertEqual('host2', rpc_response['gbp_details']['host'])
+
     def test_bind_opflex_agent(self):
         self._register_agent('host1', AGENT_CONF_OPFLEX)
         net = self._make_network(self.fmt, 'net1', True)
