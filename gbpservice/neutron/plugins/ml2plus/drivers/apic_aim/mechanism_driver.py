@@ -6400,13 +6400,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mgr.register_aim_resource_class(aim_resource.InfraAccBundleGroup)
 
         # Copy common Tenant from actual to expected AIM store.
-        mgr.tenant_ids = []
-        project_dict = self.project_details_cache.project_details
-        for project_id in project_dict.keys():
-            tenant_name = project_dict[project_id][0]
-            if tenant_name in mgr.tenants:
-                mgr.tenant_ids.append(project_id)
-
         for tenant in mgr.aim_mgr.find(
             mgr.actual_aim_ctx,
             aim_resource.Tenant,
@@ -6471,7 +6464,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             mgr.expected_aim_ctx)
 
     def _validate_address_scopes(self, mgr):
-        if not mgr._should_validate_neutron_resource("address_scope"):
+        if (not mgr._should_validate_neutron_resource("address_scope") and
+            not mgr._should_validate_neutron_resource("network")):
             return
         owned_scopes_by_vrf = defaultdict(list)
 
@@ -6573,20 +6567,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return
         router_dbs, ext_net_routers = self._get_routers(mgr)
         net_dbs = {}
+
         query = BAKERY(lambda s: s.query(
             models_v2.Network))
         query += lambda q: q.options(
             orm.joinedload('segments'))
-        if mgr.tenant_scope:
-            query += lambda q: q.filter(
-                models_v2.Network.project_id.in_(
-                    sa.bindparam('project_ids', expanding=True)))
-            net_db_dicts = query(mgr.actual_session).params(
-                project_ids=list(mgr.tenant_ids))
-            net_dbs = {net_db.id: net_db for net_db in net_db_dicts}
-        else:
-            net_dbs = {net_db.id: net_db
-                for net_db in query(mgr.actual_session)}
+        net_dbs = {net_db.id: net_db
+            for net_db in query(mgr.actual_session)}
+
         router_ext_prov, router_ext_cons = self._get_router_ext_contracts(mgr)
         routed_nets = self._get_router_interface_info(mgr)
         network_vrfs, router_vrfs = self._determine_vrfs(
