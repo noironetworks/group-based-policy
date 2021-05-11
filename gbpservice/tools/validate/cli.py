@@ -29,7 +29,8 @@ from gbpservice.neutron.services.grouppolicy import (
 # the configured policy drivers can be loaded.
 cli_opts = [
     cfg.BoolOpt('repair', default=False, help='Enable repair of invalid state.'),
-    cfg.ListOpt('resources', default=[], help='List of resources to be reconciled'),
+    cfg.ListOpt('resources', default=[], help='List of resources to be reconciled. '
+    'Avaiable options are router, security_group, network, port, subnetpool, floatingip, address_scope'),
     cfg.ListOpt('tenants', default=[], help='List of tenants to be reconciled')
 ]
 
