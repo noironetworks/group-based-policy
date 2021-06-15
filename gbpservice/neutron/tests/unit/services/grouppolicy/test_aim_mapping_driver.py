@@ -2154,6 +2154,8 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
             policy_target_group_id=ptg['id'])['policy_target']
         self._bind_port_to_host(pt['port_id'], 'h1')
         port = self._plugin.get_port(self._context, pt['port_id'])
+        if 'standard_attr_id' in port:
+            del port['standard_attr_id']
         mapping = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % pt['port_id'],
             host='h1')
@@ -3007,6 +3009,8 @@ class TestPolicyTarget(AIMBaseTestCase,
             segmentation_labels=segmentation_labels)['policy_target']
         self.assertItemsEqual(segmentation_labels, pt['segmentation_labels'])
         port = self._plugin.get_port(self._context, pt['port_id'])
+        if 'standard_attr_id' in port:
+            del port['standard_attr_id']
         mock_notif.assert_called_once_with(mock.ANY, port)
         mock_notif.reset_mock()
         pt = self.update_policy_target(

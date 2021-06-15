@@ -78,9 +78,10 @@ def upgrade():
     )
     op.create_unique_constraint(None, 'gp_policy_targets', ['port_id'])
     op.create_foreign_key('gp_policy_targets_ibfk_2',
-                          source='gp_policy_targets', referent='ports',
-                          local_cols=['port_id'], remote_cols=['id'],
-                          ondelete='SET NULL')
+                          source_table='gp_policy_targets',
+                          referent_table='ports',
+                          local_cols=['port_id'],
+                          remote_cols=['id'], ondelete='SET NULL')
 
     op.add_column(
         'gp_l2_policies',
@@ -88,8 +89,10 @@ def upgrade():
     )
     op.create_unique_constraint(None, 'gp_l2_policies', ['network_id'])
     op.create_foreign_key('gp_l2_policies_ibfk_2',
-                          source='gp_l2_policies', referent='networks',
-                          local_cols=['network_id'], remote_cols=['id'])
+                          source_table='gp_l2_policies',
+                          referent_table='networks',
+                          local_cols=['network_id'],
+                          remote_cols=['id'])
 
 
 def downgrade():

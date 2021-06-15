@@ -4761,6 +4761,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         port = self.plugin.get_port(plugin_context.elevated(), port_id)
         if self._is_port_bound(port):
             LOG.debug("Enqueing notify for port %s", port['id'])
+            # REVISIT: Check to see if the standard_attr_id
+            # should be leveraged by the plugin.
+            if 'standard_attr_id' in port:
+                del port['standard_attr_id']
             self.notifier.port_update(plugin_context, port)
 
     def _notify_port_update_for_fip(self, plugin_context, port_id):

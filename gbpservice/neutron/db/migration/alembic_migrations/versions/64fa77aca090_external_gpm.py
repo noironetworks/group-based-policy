@@ -40,7 +40,8 @@ def upgrade():
     )
     op.create_unique_constraint(None, 'gp_external_segments', ['subnet_id'])
     op.create_foreign_key('gp_external_segment_ibfk_2',
-                          source='gp_external_segments', referent='subnets',
+                          source_table='gp_external_segments',
+                          referent_table='subnets',
                           local_cols=['subnet_id'], remote_cols=['id'])
 
 

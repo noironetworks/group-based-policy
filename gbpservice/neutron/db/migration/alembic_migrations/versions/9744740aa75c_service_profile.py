@@ -43,8 +43,9 @@ def upgrade():
         sa.Column('service_profile_id', sa.String(36), nullable=True)
     )
 
-    op.create_foreign_key('sc_nodes_ibfk_profile', source='sc_nodes',
-                          referent='service_profiles',
+    op.create_foreign_key('sc_nodes_ibfk_profile',
+                          source_table='sc_nodes',
+                          referent_table='service_profiles',
                           local_cols=['service_profile_id'],
                           remote_cols=['id'])
 

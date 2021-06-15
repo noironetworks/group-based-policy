@@ -252,7 +252,8 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                  'port_range_min': port_min,
                  'port_range_max': port_max,
                  'remote_ip_prefix': cidr,
-                 'remote_group_id': None}
+                 'remote_group_id': None,
+                 'remote_address_group_id': None}
         filters = {}
         for key in attrs:
             value = attrs[key]

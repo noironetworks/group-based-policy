@@ -155,11 +155,15 @@ class LocalAPI(object):
     def _get_resource(self, plugin, context, resource, resource_id):
         obj_getter = getattr(plugin, 'get_' + resource)
         obj = obj_getter(context, resource_id)
+        if 'standard_attr_id' in obj:
+            del obj['standard_attr_id']
         return obj
 
     def _get_resources(self, plugin, context, resource_plural, filters=None):
         obj_getter = getattr(plugin, 'get_' + resource_plural)
         obj = obj_getter(context, filters)
+        if 'standard_attr_id' in obj:
+            del obj['standard_attr_id']
         return obj
 
     # The following methods perform the necessary subset of

@@ -637,7 +637,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                     sorts=None, limit=None, marker=None,
                     page_reverse=False):
 
-        with db_api.CONTEXT_WRITER.using(context):
+        with db_api.CONTEXT_READER.using(context):
             plugin = directory.get_plugin()
             marker_obj = db_api.get_marker_obj(plugin, context,
                                                'subnet', limit, marker)

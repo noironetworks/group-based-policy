@@ -45,8 +45,8 @@ def upgrade():
                   nullable=True))
 
     op.create_foreign_key('gp_application_policy_group_ibfk_1',
-                          source='gp_policy_target_groups',
-                          referent='gp_application_policy_groups',
+                          source_table='gp_policy_target_groups',
+                          referent_table='gp_application_policy_groups',
                           local_cols=['application_policy_group_id'],
                           remote_cols=['id'])
 

@@ -40,8 +40,8 @@ def upgrade(active_plugins=None, options=None):
                                'unique')
             break
     op.create_foreign_key('gp_policy_target_groups_ibfk_nsp',
-                          source='gp_policy_target_groups',
-                          referent='gp_network_service_policies',
+                          source_table='gp_policy_target_groups',
+                          referent_table='gp_network_service_policies',
                           local_cols=['network_service_policy_id'],
                           remote_cols=['id'])
     with migration.remove_fks_from_table(
@@ -53,9 +53,9 @@ def upgrade(active_plugins=None, options=None):
                 table_name='gpm_service_policy_ipaddress_mappings',
                 type_='primary')
         op.create_primary_key(
-                name='pk_policytargetgroup_servicepolicyid',
+                constraint_name='pk_policytargetgroup_servicepolicyid',
                 table_name='gpm_service_policy_ipaddress_mappings',
-                cols=['policy_target_group', 'service_policy_id'])
+                columns=['policy_target_group', 'service_policy_id'])
 
 
 def downgrade(active_plugins=None, options=None):

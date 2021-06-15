@@ -5251,7 +5251,7 @@ class TestNatPool(ResourceMappingTestCase):
 
     def test_delete_with_fip_allocated(self):
         with self.network(router__external=True) as net:
-            with self.subnet(cidr='192.168.0.0/31', enable_dhcp=False,
+            with self.subnet(cidr='192.168.0.0/30', enable_dhcp=False,
                              network=net) as sub:
                 es = self.create_external_segment(
                     name="default",

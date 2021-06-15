@@ -62,8 +62,8 @@ def upgrade():
                                 ['network_service_policy_id'])
 
     op.create_foreign_key('gp_policy_target_groups_ibfk_nsp',
-                          source='gp_policy_target_groups',
-                          referent='gp_network_service_policies',
+                          source_table='gp_policy_target_groups',
+                          referent_table='gp_network_service_policies',
                           local_cols=['network_service_policy_id'],
                           remote_cols=['id'], ondelete='CASCADE')
 

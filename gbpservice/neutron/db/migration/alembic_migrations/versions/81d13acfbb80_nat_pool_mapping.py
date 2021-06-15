@@ -40,7 +40,8 @@ def upgrade():
     )
     op.create_unique_constraint(None, 'gp_nat_pools', ['subnet_id'])
     op.create_foreign_key('gp_nat_pool_ibfk_2',
-                          source='gp_nat_pools', referent='subnets',
+                          source_table='gp_nat_pools',
+                          referent_table='subnets',
                           local_cols=['subnet_id'], remote_cols=['id'])
 
 

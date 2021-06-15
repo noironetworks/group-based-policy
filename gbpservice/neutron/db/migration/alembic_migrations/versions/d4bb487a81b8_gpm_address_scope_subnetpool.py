@@ -65,11 +65,13 @@ def upgrade():
     op.create_unique_constraint('gpm_l3p_addr_scope_v6_uq',
                                 'gp_l3_policies', ['address_scope_v6_id'])
     op.create_foreign_key('gpm_l3p_addr_scope_v4_fk',
-                          source='gp_l3_policies', referent='address_scopes',
+                          source_table='gp_l3_policies',
+                          referent_table='address_scopes',
                           local_cols=['address_scope_v4_id'],
                           remote_cols=['id'])
     op.create_foreign_key('gpm_l3p_addr_scope_v6_fk',
-                          source='gp_l3_policies', referent='address_scopes',
+                          source_table='gp_l3_policies',
+                          referent_table='address_scopes',
                           local_cols=['address_scope_v6_id'],
                           remote_cols=['id'])
 
