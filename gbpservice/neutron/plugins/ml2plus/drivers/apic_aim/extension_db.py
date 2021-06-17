@@ -176,13 +176,9 @@ class ExtensionDbMixin(object):
         if not port_ids:
             return {}
 
-        query = BAKERY(lambda s: s.query(
-            PortExtensionErspanDb))
-        query += lambda q: q.filter(
-            PortExtensionErspanDb.port_id.in_(
-                sa.bindparam('port_ids', expanding=True)))
-        db_erspans = query(session).params(
-            port_ids=port_ids).all()
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        db_erspans = session.query(PortExtensionErspanDb).filter(
+            PortExtensionErspanDb.port_id.in_(port_ids)).all()
 
         erspans_by_port_id = {}
         for db_erspan in db_erspans:
