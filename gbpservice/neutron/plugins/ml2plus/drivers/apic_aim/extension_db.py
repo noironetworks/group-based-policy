@@ -237,13 +237,9 @@ class ExtensionDbMixin(object):
         db_contracts = (session.query(NetworkExtExtraContractDb).filter(
             NetworkExtExtraContractDb.network_id.in_(network_ids)).all())
 
-        query = BAKERY(lambda s: s.query(
-            NetworkExtEpgContractMasterDb))
-        query += lambda q: q.filter(
-            NetworkExtEpgContractMasterDb.network_id.in_(
-                sa.bindparam('network_ids', expanding=True)))
-        db_masters = query(session).params(
-            network_ids=network_ids).all()
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        db_masters = session.query(NetworkExtEpgContractMasterDb).filter(
+            NetworkExtEpgContractMasterDb.network_id.in_(network_ids)).all()
 
         cidrs_by_net_id = {}
         vlans_by_net_id = {}
