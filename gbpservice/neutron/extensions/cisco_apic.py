@@ -49,6 +49,7 @@ EXTRA_CONSUMED_CONTRACTS = 'apic:extra_consumed_contracts'
 EPG_CONTRACT_MASTERS = 'apic:epg_contract_masters'
 ERSPAN_CONFIG = 'apic:erspan_config'
 POLICY_ENFORCEMENT_PREF = 'apic:policy_enforcement_pref'
+SNAT_SUBNET_ONLY = 'apic:snat_subnet_only'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -371,6 +372,12 @@ EXT_SUBNET_ATTRIBUTES = {
     ACTIVE_ACTIVE_AAP: {
         # Whether a subnet will support the active active AAP or not.
         'allow_post': True, 'allow_put': False,
+        'is_visible': True, 'default': False,
+        'convert_to': conv.convert_to_boolean,
+    },
+    SNAT_SUBNET_ONLY: {
+        # Whether this subnet can be used for assigning snat addresses only
+        'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': False,
         'convert_to': conv.convert_to_boolean,
     }

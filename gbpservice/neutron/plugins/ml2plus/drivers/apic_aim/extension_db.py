@@ -149,6 +149,7 @@ class SubnetExtensionDb(model_base.BASEV2):
         primary_key=True)
     snat_host_pool = sa.Column(sa.Boolean)
     active_active_aap = sa.Column(sa.Boolean)
+    snat_subnet_only = sa.Column(sa.Boolean)
     subnet = orm.relationship(models_v2.Subnet,
                               backref=orm.backref(
                                   'aim_extension_mapping', lazy='joined',
@@ -488,6 +489,8 @@ class ExtensionDbMixin(object):
                                   db_obj['snat_host_pool'])
             self._set_if_not_none(result, cisco_apic.ACTIVE_ACTIVE_AAP,
                                   db_obj['active_active_aap'])
+            self._set_if_not_none(result, cisco_apic.SNAT_SUBNET_ONLY,
+                                  db_obj['snat_subnet_only'])
         return result
 
     def set_subnet_extn_db(self, session, subnet_id, res_dict):
@@ -504,6 +507,9 @@ class ExtensionDbMixin(object):
         if cisco_apic.ACTIVE_ACTIVE_AAP in res_dict:
             db_obj['active_active_aap'] = res_dict[
                                             cisco_apic.ACTIVE_ACTIVE_AAP]
+        if cisco_apic.SNAT_SUBNET_ONLY in res_dict:
+            db_obj['snat_subnet_only'] = res_dict[
+                                            cisco_apic.SNAT_SUBNET_ONLY]
         session.add(db_obj)
 
     def get_router_extn_db(self, session, router_id):
