@@ -149,3 +149,7 @@ class InvalidFabricPathForErspanSession(exceptions.BadRequest):
 class InvalidNetworkForErspanSession(exceptions.BadRequest):
     message = _("AIM ERSPAN extensions are not supported on ports on SVI "
                 "type networks.")
+
+
+class SnatPoolCannotBeUsedForGatewayIp(exceptions.BadRequest):
+    message = _("Snat only subnet cannot be used to assign network gateway.")
