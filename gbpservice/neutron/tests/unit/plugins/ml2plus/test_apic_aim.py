@@ -128,6 +128,7 @@ SVI = 'apic:svi'
 BGP = 'apic:bgp_enable'
 ASN = 'apic:bgp_asn'
 BGP_TYPE = 'apic:bgp_type'
+SNAT_SUBNET_ONLY = 'apic:snat_subnet_only'
 
 
 def sort_if_list(attr):
@@ -8910,7 +8911,6 @@ class TestSnatIpAllocation(ApicAimTestCase):
             '100.100.100.0/24')['subnet']
         self._update('subnets', snat_sub['id'],
                      {'subnet': {SNAT_POOL: True}})
-
         # allocate FIP by subnet
         res = self._create_floatingip(self.fmt, ext_net['id'],
                                       subnet_id=snat_sub['id'])
@@ -11911,3 +11911,219 @@ class TestOpflexRpc(ApicAimTestCase):
             mock.call(mock.ANY, port2_id)]
         self._check_call_list(exp_calls,
             self.driver._notify_port_update.call_args_list)
+
+
+class TestUpdateRouterSubnet(ApicAimTestCase):
+    def test_update_gateway_with_extension(self):
+        ext_net = self._make_ext_network('ext-net1')
+
+        # create a snat subnet on the network
+        snat_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/29')['subnet']
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_SUBNET_ONLY: True}})
+
+        # create a floating IP subnet on the same network too
+        fip_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '250.100.100.1',
+            '250.100.100.0/29')['subnet']
+
+        # create and update the router gateway with a fixed subnet
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+        router_id = router['id']
+        fixed_ips = [{'subnet_id': fip_sub['id']}]
+        data = {'router': {'external_gateway_info':
+                           {'network_id': ext_net['id'],
+                            'external_fixed_ips': fixed_ips}
+                           }
+                }
+        router = self._update('routers', router_id, data)['router']
+        self._check_ip_in_cidr(router
+            ['external_gateway_info']['external_fixed_ips'][0]['ip_address'],
+            fip_sub['cidr'])
+
+        self._delete('routers', router_id)
+
+        # create and update the router with no fixed subnet
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+        router_id = router['id']
+        data = {'router': {'external_gateway_info':
+                           {'network_id': ext_net['id']}
+                           }}
+        router = self._update('routers', router_id, data)['router']
+        self._check_ip_in_cidr(router
+            ['external_gateway_info']['external_fixed_ips'][0]['ip_address'],
+            fip_sub['cidr'])
+
+    def test_update_gateway_no_extension(self):
+        # create an external network
+        ext_net = self._make_ext_network('ext-net1')
+
+        # create a snat subnet on the network without new extension
+        snat_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/29')['subnet']
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        # create a floating IP subnet on the same network too
+        self._make_subnet(self.fmt, {'network': ext_net}, '250.100.100.1',
+            '250.100.100.0/29')['subnet']
+
+        # create a router and update the router gateway without fixed subnet
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+        router_id = router['id']
+        data = {'router': {'external_gateway_info':
+                           {'network_id': ext_net['id']}
+                           }}
+        router = self._update('routers', router_id, data)['router']
+
+        self.assertIsNotNone(netaddr.IPAddress(router['external_gateway_info']
+                                    ['external_fixed_ips'][0]['ip_address']))
+
+        self._delete('routers', router_id)
+
+        # create a router and update gateway with a fixed subnet
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+        router_id = router['id']
+        fixed_ips = [{'subnet_id': snat_sub['id']}]
+        data = {'router': {'external_gateway_info':
+                           {'network_id': ext_net['id'],
+                            'external_fixed_ips': fixed_ips}
+                           }}
+        router = self._update('routers', router_id, data)['router']
+
+        self._check_ip_in_cidr(router
+            ['external_gateway_info']['external_fixed_ips'][0]['ip_address'],
+            snat_sub['cidr'])
+
+    def test_update_gateway_with_extension_exception(self):
+        ext_net = self._make_ext_network('ext-net1')
+
+        # create a snat subnet on the network
+        snat_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/29')['subnet']
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_SUBNET_ONLY: True}})
+        # create a router
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+        router_id = router['id']
+
+        fixed_ips = [{'subnet_id': snat_sub['id']}]
+        data = {'router': {'external_gateway_info':
+                           {'network_id': ext_net['id'],
+                            'external_fixed_ips': fixed_ips}
+                           }}
+
+        self.assertRaises(
+            exceptions.SnatPoolCannotBeUsedForGatewayIp,
+            self.l3_plugin.update_router,
+            n_context.get_admin_context(), router_id,
+            data)
+
+    def test_create_router_with_gateway(self):
+        ext_net = self._make_ext_network('ext-net1')
+
+        # create a snat subnet on the network
+        snat_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/29')['subnet']
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_SUBNET_ONLY: True}})
+
+        # create a floating IP subnet on the same network too
+        fip_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '250.100.100.1',
+            '250.100.100.0/29')['subnet']
+
+        # create a router with fixed subnet
+        fixed_ips = [{'subnet_id': fip_sub['id']}]
+        router = self._make_router(
+                        self.fmt, self._tenant_id, 'router1',
+                        external_gateway_info={'network_id': ext_net['id'],
+                                'external_fixed_ips': fixed_ips})['router']
+        router_id = router['id']
+        self._check_ip_in_cidr(router
+            ['external_gateway_info']['external_fixed_ips'][0]['ip_address'],
+            fip_sub['cidr'])
+
+        self._delete('routers', router_id)
+
+        # create a router with fixed subnet, but snat set
+        fixed_ips = [{'subnet_id': snat_sub['id']}]
+        data = {
+                "router": {
+                    "tenant_id": self._tenant_id,
+                    "external_gateway_info": {
+                        "network_id": ext_net["id"],
+                        "external_fixed_ips": fixed_ips,
+                    },
+                    "name": "router2",
+                    "admin_state_up": True,
+                }
+               }
+
+        self.assertRaises(
+            exceptions.SnatPoolCannotBeUsedForGatewayIp,
+            self.l3_plugin.create_router,
+            n_context.get_admin_context(), data)
+
+    def test_update_snat_ext(self):
+        # Create snat subnet only, and check if gateway is not set
+        ext_net = self._make_ext_network('ext-net1')
+        snat_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/29')['subnet']
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_SUBNET_ONLY: True}})
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+        router_id = router['id']
+
+        fixed_ips = [{'subnet_id': snat_sub['id']}]
+        data = {'router': {'external_gateway_info':
+                           {'network_id': ext_net['id'],
+                            'external_fixed_ips': fixed_ips}
+                           }}
+        self.assertRaises(
+            exceptions.SnatPoolCannotBeUsedForGatewayIp,
+            self.l3_plugin.update_router,
+            n_context.get_admin_context(), router_id,
+            data)
+
+        # Update the subnet attribute, and check if gateway works
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_SUBNET_ONLY: False}})
+        router = self._update('routers', router_id, data)['router']
+        self._check_ip_in_cidr(router
+            ['external_gateway_info']['external_fixed_ips'][0]['ip_address'],
+            snat_sub['cidr'])
+
+        # Remove the gateway
+        data = {'router': {'external_gateway_info': {}}}
+        router = self._update('routers', router_id, data)['router']
+        self.assertIsNone(router['external_gateway_info'])
