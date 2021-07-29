@@ -34,7 +34,7 @@
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
-            voting: true
+            voting: false
         - legacy-group-based-policy-dsvm-nfp:
             voting: false
     gate:
