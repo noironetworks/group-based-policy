@@ -257,7 +257,8 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                                 LOG.info('No more IP addresses available '
                                          'in subnet %s for gateway', ext_sn)
                     if not result:
-                        raise exceptions.IpAddressGenerationFailure()
+                        raise exceptions.IpAddressGenerationFailure(
+                                net_id=current_gw_info['network_id'])
                     else:
                         return result
         return super(ApicL3Plugin, self).update_router(context, id, router)
