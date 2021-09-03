@@ -42,6 +42,7 @@ from sqlalchemy.orm import lazyload
 
 from gbpservice.neutron.extensions import cisco_apic as ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 
 
 # The following definitions have been taken from commit:
@@ -426,3 +427,31 @@ def do_sg_rule_remote_group_id_insertion(session):
 
     alembic_util.msg(
         "Finished remote_group_id insertion for SG rules.")
+
+
+def do_ha_ip_vrf_name_insertion(session):
+    alembic_util.msg(
+        "Starting vrf name insertion for HA IP table.")
+
+    db_mixin = db.DbMixin()
+    with session.begin(subtransactions=True):
+        objs = (session.query(db.HAIPAddressToPortAssociation).
+                options(lazyload('*')).all())
+        for obj in objs:
+            port_id = obj['port_id']
+            ipaddress = obj['ha_ip_address']
+            ports = (session.query(models_v2.Port).
+                     options(lazyload('*')).all())
+            vrf_name = None
+            for port in ports:
+                if port['id'] == port_id:
+                    net_mapping = db_mixin._get_network_mapping(
+                        session, port['network_id'])
+                    vrf_name = net_mapping.vrf_name
+                    break
+            haip_ip = db.HAIPAddressToPortAssociation.ha_ip_address
+            haip_port_id = db.HAIPAddressToPortAssociation.port_id
+            session.query(db.HAIPAddressToPortAssociation).filter(
+                haip_ip == ipaddress).filter(
+                haip_port_id == port_id).update(
+                {'vrf': vrf_name})
