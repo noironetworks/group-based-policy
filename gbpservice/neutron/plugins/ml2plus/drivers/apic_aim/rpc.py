@@ -124,6 +124,7 @@ EndpointAapInfo = namedtuple(
 EndpointOwnedIpInfo = namedtuple(
     'EndpointOwnedIpInfo',
     ['ip_address',
+     'vrf',
      'actual_port_id'])
 
 EndpointExternalNetworkInfo = namedtuple(
@@ -680,6 +681,7 @@ class ApicRpcHandlerMixin(object):
     def _query_endpoint_haip_owned_ip_info(self, session, port_id, network_id):
         query = BAKERY(lambda s: s.query(
             db.HAIPAddressToPortAssociation.ha_ip_address,
+            db.HAIPAddressToPortAssociation.vrf,
             models_v2.IPAllocation.port_id,
         ))
         query += lambda q: q.outerjoin(
