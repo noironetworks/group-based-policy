@@ -3735,8 +3735,11 @@ class TestPolicyTarget(AIMBaseTestCase,
         # set new owner
         self.mech_driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h1')
-        obj = self.mech_driver.get_port_for_ha_ipaddress(
-            '1.2.3.4', net_id)
+        mapping = self.mech_driver._get_network_mapping(
+            self.db_session, net_id)
+        vrf_name = mapping.vrf_name
+        obj = self.mech_driver.get_port_for_ha_ipaddress_and_vrf(
+            '1.2.3.4', vrf_name, net_id)
 
         self.assertEqual(pt1['port_id'], obj['port_id'])
         self.mech_driver._notify_port_update.assert_called_with(
@@ -3747,8 +3750,8 @@ class TestPolicyTarget(AIMBaseTestCase,
         ip_owner_info['port'] = pt2['port_id']
         self.mech_driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h2')
-        obj = self.mech_driver.get_port_for_ha_ipaddress(
-            '1.2.3.4', net_id)
+        obj = self.mech_driver.get_port_for_ha_ipaddress_and_vrf(
+            '1.2.3.4', vrf_name, net_id)
         self.assertEqual(pt2['port_id'], obj['port_id'])
         exp_calls = [
             mock.call(mock.ANY, pt1['port_id']),
@@ -5735,7 +5738,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         self.mech_driver.update_ip_owner(ip_owner_info)
         # Call RPC sent by the agent to get the details for p1
         details = self.mech_driver.get_gbp_details(
-            self._neutron_admin_context, device='tap%s' % p1['id'],
+            self._neutron_admin_context, device='tap%s' % t2p1['id'],
             host='h1')
 
         # response should be a list containing both configured and owned AAPs.
@@ -5773,7 +5776,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         self.mech_driver.update_ip_owner(ip_owner_info)
         # Call RPC sent by the agent to get the details for p2
         details = self.mech_driver.get_gbp_details(
-            self._neutron_admin_context, device='tap%s' % p2['id'],
+            self._neutron_admin_context, device='tap%s' % t2p2['id'],
             host='h2')
         expected_aaps2 = _get_expected_aaps(allow_addr, owned_addr[1])
 
@@ -5819,17 +5822,18 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         self.l3_plugin.add_router_interface(
             self._neutron_admin_context, t2rtr['id'],
             {'subnet_id': t2sub2['id']})
-        fip1 = self._make_floatingip(self.fmt, net_ext['id'],
-                                     port_id=p3['id'])['floatingip']
-        self._make_floatingip(self.fmt, t2net_ext['id'], port_id=t2p3['id'])
-        fip2 = self._make_floatingip(self.fmt, net_ext['id'],
-                                     port_id=p4['id'])['floatingip']
-        self._make_floatingip(self.fmt, t2net_ext['id'], port_id=t2p4['id'])
+        fip1 = self._make_floatingip(self.fmt, t2net_ext['id'],
+                                     port_id=t2p3['id'])['floatingip']
+        fip2 = self._make_floatingip(self.fmt, t2net_ext['id'],
+                                     port_id=t2p4['id'])['floatingip']
+        details = self.mech_driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % t2p1['id'],
+            host='h1')
+        self.assertEqual(1, len(details['floating_ip']))
+        self._verify_fip_details(details, fip1, 't2', 'EXT-l1')
         details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % p1['id'],
             host='h1')
-        self.assertEqual(1, len(details['floating_ip']))
-        self._verify_fip_details(details, fip1, 't1', 'EXT-l1')
         self._verify_ip_mapping_details(details,
             'uni:tn-t1:out-l1:instP-n1', 't1', 'EXT-l1')
         self._verify_host_snat_ip_details(details,
@@ -5837,10 +5841,13 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             ext_net1_sub1['network_id'])
 
         details = self.mech_driver.get_gbp_details(
-            self._neutron_admin_context, device='tap%s' % p2['id'],
+            self._neutron_admin_context, device='tap%s' % t2p2['id'],
             host='h2')
         self.assertEqual(1, len(details['floating_ip']))
-        self._verify_fip_details(details, fip2, 't1', 'EXT-l1')
+        self._verify_fip_details(details, fip2, 't2', 'EXT-l1')
+        details = self.mech_driver.get_gbp_details(
+            self._neutron_admin_context, device='tap%s' % p2['id'],
+            host='h2')
         self._verify_ip_mapping_details(details,
             'uni:tn-t1:out-l1:instP-n1', 't1', 'EXT-l1')
         self._verify_host_snat_ip_details(details,
