@@ -98,9 +98,10 @@ class HAIPAddressToPortAssociation(model_base.BASEV2):
 
     ha_ip_address = sa.Column(sa.String(64), nullable=False,
                               primary_key=True)
+    vrf = sa.Column(sa.String(64), nullable=False, primary_key=True)
     port_id = sa.Column(sa.String(64), sa.ForeignKey('ports.id',
                                                      ondelete='CASCADE'),
-                        nullable=False, primary_key=True)
+                        nullable=False)
 
 
 class VMName(model_base.BASEV2):
@@ -326,19 +327,19 @@ class DbMixin(object):
 
     # HAIPAddressToPortAssociation functions.
 
-    def _get_ha_ipaddress(self, port_id, ipaddress, session=None):
+    def _get_ha_ipaddress(self, ipaddress, vrf, session=None):
         session = session or db_api.get_reader_session()
 
         query = BAKERY(lambda s: s.query(
             HAIPAddressToPortAssociation))
         query += lambda q: q.filter_by(
-            port_id=sa.bindparam('port_id'),
-            ha_ip_address=sa.bindparam('ipaddress'))
+            ha_ip_address=sa.bindparam('ipaddress'),
+            vrf=sa.bindparam('vrf'))
         return query(session).params(
-            port_id=port_id, ipaddress=ipaddress).first()
+            ipaddress=ipaddress, vrf=vrf).first()
 
-    def get_port_for_ha_ipaddress(self, ipaddress, network_id,
-                                  session=None):
+    def get_port_for_ha_ipaddress_and_vrf(self, ipaddress, vrf, network_id,
+                                          session=None):
         """Returns the Neutron Port ID for the HA IP Addresss."""
         session = session or db_api.get_reader_session()
         query = BAKERY(lambda s: s.query(
@@ -348,11 +349,12 @@ class DbMixin(object):
             models_v2.Port.id == HAIPAddressToPortAssociation.port_id)
         query += lambda q: q.filter(
             HAIPAddressToPortAssociation.ha_ip_address ==
-            sa.bindparam('ipaddress'))
+            sa.bindparam('ipaddress'),
+            HAIPAddressToPortAssociation.vrf == sa.bindparam('vrf'))
         query += lambda q: q.filter(
             models_v2.Port.network_id == sa.bindparam('network_id'))
         port_ha_ip = query(session).params(
-            ipaddress=ipaddress, network_id=network_id).first()
+            ipaddress=ipaddress, vrf=vrf, network_id=network_id).first()
         return port_ha_ip
 
     def get_ha_ipaddresses_for_port(self, port_id, session=None):
@@ -369,22 +371,29 @@ class DbMixin(object):
         # REVISIT: Do the sorting in the UT?
         return sorted([x['ha_ip_address'] for x in objs])
 
-    def set_port_id_for_ha_ipaddress(self, port_id, ipaddress, session=None):
+    def update_port_id_for_ha_ipaddress(self, port_id, ipaddress, vrf,
+                                        session=None):
         """Stores a Neutron Port Id as owner of HA IP Addr (idempotent API)."""
         session = session or db_api.get_writer_session()
         try:
             with session.begin(subtransactions=True):
-                obj = self._get_ha_ipaddress(port_id, ipaddress, session)
+                obj = self._get_ha_ipaddress(ipaddress, vrf, session)
                 if obj:
+                    haip_ip = HAIPAddressToPortAssociation.ha_ip_address
+                    haip_vrf = HAIPAddressToPortAssociation.vrf
+                    session.query(HAIPAddressToPortAssociation).filter(
+                        haip_ip == ipaddress).filter(
+                        haip_vrf == vrf).update(
+                        {'port_id': port_id})
                     return obj
                 else:
                     obj = HAIPAddressToPortAssociation(
-                        port_id=port_id, ha_ip_address=ipaddress)
+                        port_id=port_id, ha_ip_address=ipaddress, vrf=vrf)
                     session.add(obj)
                     return obj
         except db_exc.DBDuplicateEntry:
             LOG.debug('Duplicate IP ownership entry for tuple %s',
-                      (port_id, ipaddress))
+                      (ipaddress, vrf))
 
     def delete_port_id_for_ha_ipaddress(self, port_id, ipaddress,
                                         session=None):
@@ -433,18 +442,22 @@ class DbMixin(object):
             if not ipa:
                 continue
             try:
-                # REVISIT: Why isn't this a single transaction at the
-                # top-level, so that the port itself is guaranteed to
-                # still exist.
                 session = db_api.get_writer_session()
                 with session.begin(subtransactions=True):
-                    old_owner = self.get_port_for_ha_ipaddress(
-                        ipa, network_id or port['network_id'], session=session)
-                    self.set_port_id_for_ha_ipaddress(port_id, ipa, session)
-                    if old_owner and old_owner['port_id'] != port_id:
-                        self.delete_port_id_for_ha_ipaddress(
-                            old_owner['port_id'], ipa, session=session)
-                        ports_to_update.add(old_owner['port_id'])
+                    net_mapping = self._get_network_mapping(
+                        session, port['network_id'])
+                    vrf_name = net_mapping.vrf_name
+                    old_owner = self.get_port_for_ha_ipaddress_and_vrf(
+                        ipa, vrf_name,
+                        network_id or port['network_id'],
+                        session=session)
+                    old_owner_port_id = None
+                    if old_owner:
+                        old_owner_port_id = old_owner['port_id']
+                    self.update_port_id_for_ha_ipaddress(
+                        port_id, ipa, vrf_name, session)
+                    if old_owner_port_id and old_owner_port_id != port_id:
+                        ports_to_update.add(old_owner_port_id)
             except db_exc.DBReferenceError as dbe:
                 LOG.debug("Ignoring FK error for port %s: %s", port_id, dbe)
         return ports_to_update
