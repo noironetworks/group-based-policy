@@ -5127,6 +5127,50 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         for sg_rule in [sg_rule1, sg_rule2]:
             self._check_sg_rule(sg['id'], sg_rule)
 
+    def test_ha_ip_vrf_name_insertion(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        sub = self._make_subnet(self.fmt, net, '10.0.0.1', '10.0.0.0/24')[
+            'subnet']
+        allow_addr = [{'ip_address': '1.2.3.250',
+                       'mac_address': '00:00:00:AA:AA:AA'},
+                      {'ip_address': '1.2.3.251',
+                       'mac_address': '00:00:00:BB:BB:BB'}]
+        owned_addr = ['1.2.3.250', '1.2.3.251']
+        # create 2 ports configured with the same allowed-addresses
+        p1 = self._make_port(self.fmt, net['network']['id'],
+                             arg_list=('allowed_address_pairs',),
+                             device_owner='compute:',
+                             fixed_ips=[{'subnet_id': sub['id']}],
+                             allowed_address_pairs=allow_addr)['port']
+        self._bind_port_to_host(p1['id'], 'h1')
+        net_mapping = self._get_network_mapping(
+            self.db_session, p1['network_id'])
+        vrf1 = net_mapping.vrf_name
+        ip_owner_info = {'port': p1['id'],
+                         'ip_address_v4': owned_addr[0],
+                         'network_id': p1['network_id']}
+        self.update_ip_owner(ip_owner_info)
+        with self.db_session.begin(subtransactions=True):
+            obj = self.get_port_for_ha_ipaddress_and_vrf(
+                owned_addr[0], vrf1, p1['network_id'], session=self.db_session)
+            # check HAIP object details
+            self.assertEqual(obj['port_id'], p1['id'])
+            self.assertEqual(obj['ha_ip_address'], owned_addr[0])
+            self.assertEqual(obj['vrf'], vrf1)
+            # Wipe out vrf from HAIP object
+            haip_ip = db.HAIPAddressToPortAssociation.ha_ip_address
+            haip_port_id = db.HAIPAddressToPortAssociation.port_id
+            self.db_session.query(db.HAIPAddressToPortAssociation).filter(
+                haip_ip == owned_addr[0]).filter(
+                haip_port_id == p1['id']).update(
+                {'vrf': ''})
+            # check that vrf value is wiped from the object
+            self.assertEqual(obj['vrf'], '')
+            # perform data migration
+            data_migrations.do_ha_ip_vrf_name_insertion(self.db_session)
+            # check that vrf value is again added correctly to the obj
+            self.assertEqual(obj['vrf'], vrf1)
+
 
 class TestPortBinding(ApicAimTestCase):
 
@@ -6351,74 +6395,88 @@ class TestPortToHAIPAddressBinding(ApicAimTestCase):
         self.port1_2 = self.plugin.create_port(self.context, self.port1_2_data)
         self.port2 = self.plugin.create_port(self.context, self.port2_data)
         self.port_haip = db.DbMixin()
+        self.net1_mapping = self.port_haip._get_network_mapping(
+            self.db_session, self.port1['network_id'])
+        self.net2_mapping = self.port_haip._get_network_mapping(
+            self.db_session, self.port2['network_id'])
+        self.vrf1 = self.net1_mapping.vrf_name
+        self.vrf2 = self.net2_mapping.vrf_name
         self.port_haip.plugin = self.plugin
 
-    def test_set_and_get_port_to_ha_ip_binding(self):
+    def test_update_and_get_port_to_ha_ip_binding(self):
         # Test new HA IP address to port binding can be created
-        obj = self.port_haip.set_port_id_for_ha_ipaddress(
-            self.port1['id'], self.ha_ip1)
+        obj = self.port_haip.update_port_id_for_ha_ipaddress(
+            self.port1['id'], self.ha_ip1, 'vrf1')
         self.assertEqual(self.port1['id'], obj['port_id'])
         self.assertEqual(self.ha_ip1, obj['ha_ip_address'])
         # In this test case we also test that same HA IP address can be set/get
         # for two different ports in different networks
-        obj = self.port_haip.set_port_id_for_ha_ipaddress(
-            self.port2['id'], self.ha_ip1)
+        obj = self.port_haip.update_port_id_for_ha_ipaddress(
+            self.port2['id'], self.ha_ip1, 'vrf2')
         self.assertEqual(self.port2['id'], obj['port_id'])
         self.assertEqual(self.ha_ip1, obj['ha_ip_address'])
         # Test get
-        obj = self.port_haip.get_port_for_ha_ipaddress(
-            self.ha_ip1, self.port1['network_id'])
+        obj = self.port_haip.get_port_for_ha_ipaddress_and_vrf(
+            self.ha_ip1, 'vrf1', self.port1['network_id'])
         self.assertEqual(self.port1['id'], obj['port_id'])
-        obj = self.port_haip.get_port_for_ha_ipaddress(
-            self.ha_ip1, self.port2['network_id'])
+        obj = self.port_haip.get_port_for_ha_ipaddress_and_vrf(
+            self.ha_ip1, 'vrf2', self.port2['network_id'])
         self.assertEqual(self.port2['id'], obj['port_id'])
 
     def test_port_to_multiple_ha_ip_binding(self):
-        self.port_haip.set_port_id_for_ha_ipaddress(self.port1['id'],
-                                                    self.ha_ip1)
-        self.port_haip.set_port_id_for_ha_ipaddress(self.port1['id'],
-                                                    self.ha_ip2)
-        obj = self.port_haip.get_port_for_ha_ipaddress(
-            self.ha_ip1, self.port1['network_id'])
+        self.port_haip.update_port_id_for_ha_ipaddress(self.port1['id'],
+                                                       self.ha_ip1,
+                                                       self.vrf1)
+        self.port_haip.update_port_id_for_ha_ipaddress(self.port1['id'],
+                                                       self.ha_ip2,
+                                                       self.vrf1)
+        obj = self.port_haip.get_port_for_ha_ipaddress_and_vrf(
+            self.ha_ip1, self.vrf1, self.port1['network_id'])
         self.assertEqual(self.port1['id'], obj['port_id'])
-        obj = self.port_haip.get_port_for_ha_ipaddress(
-            self.ha_ip2, self.port1['network_id'])
+        obj = self.port_haip.get_port_for_ha_ipaddress_and_vrf(
+            self.ha_ip2, self.vrf1, self.port1['network_id'])
         self.assertEqual(self.port1['id'], obj['port_id'])
 
     def test_delete_port_for_ha_ip_binding(self):
-        self.port_haip.set_port_id_for_ha_ipaddress(self.port1['id'],
-                                                    self.ha_ip1)
+        self.port_haip.update_port_id_for_ha_ipaddress(self.port1['id'],
+                                                       self.ha_ip1,
+                                                       self.vrf1)
         result = self.port_haip.delete_port_id_for_ha_ipaddress(
             self.port1['id'], self.ha_ip1)
         self.assertEqual(1, result)
-        obj = self.port_haip.get_port_for_ha_ipaddress(
-            self.ha_ip1, self.port2['network_id'])
+        obj = self.port_haip.get_port_for_ha_ipaddress_and_vrf(
+            self.ha_ip1, self.vrf2, self.port2['network_id'])
         self.assertIsNone(obj)
 
     def test_get_ha_ip_addresses_for_port(self):
-        self.port_haip.set_port_id_for_ha_ipaddress(self.port1['id'],
-                                                    self.ha_ip1)
-        self.port_haip.set_port_id_for_ha_ipaddress(self.port1['id'],
-                                                    self.ha_ip2)
+        self.port_haip.update_port_id_for_ha_ipaddress(self.port1['id'],
+                                                       self.ha_ip1,
+                                                       self.vrf1)
+        self.port_haip.update_port_id_for_ha_ipaddress(self.port1['id'],
+                                                       self.ha_ip2,
+                                                       self.vrf1)
         ha_ips = self.port_haip.get_ha_ipaddresses_for_port(self.port1['id'])
         self.assertEqual(sorted([self.ha_ip1, self.ha_ip2]), ha_ips)
 
     def test_idempotent(self):
-        self.port_haip.set_port_id_for_ha_ipaddress(self.port1['id'],
-                                                    self.ha_ip1)
-        obj = self.port_haip.set_port_id_for_ha_ipaddress(self.port1['id'],
-                                                          self.ha_ip1)
+        self.port_haip.update_port_id_for_ha_ipaddress(self.port1['id'],
+                                                       self.ha_ip1,
+                                                       self.vrf1)
+        obj = self.port_haip.update_port_id_for_ha_ipaddress(self.port1['id'],
+                                                             self.ha_ip1,
+                                                             self.vrf1)
         self.assertEqual(self.port1['id'], obj['port_id'])
         self.assertEqual(self.ha_ip1, obj['ha_ip_address'])
 
-    def test_set_non_existing_port(self):
+    def test_update_non_existing_port(self):
         self.assertRaises(exc.DBReferenceError,
-                          self.port_haip.set_port_id_for_ha_ipaddress,
-                          "fake", self.ha_ip1)
+                          self.port_haip.update_port_id_for_ha_ipaddress,
+                          "fake", self.ha_ip1, "fake")
 
     def test_delete_non_existing_entry(self):
-        self.port_haip.set_port_id_for_ha_ipaddress(self.port1['id'],
-                                                    self.ha_ip1)
+        self.port_haip.update_port_id_for_ha_ipaddress(self.port1['id'],
+                                                       self.ha_ip1,
+                                                       self.vrf1)
         result = self.port_haip.delete_port_id_for_ha_ipaddress(
             self.port1['id'], "fake")
         self.assertEqual(0, result)
@@ -6432,8 +6490,8 @@ class TestPortToHAIPAddressBinding(ApicAimTestCase):
 
         # set new owner
         ports = self.port_haip.update_ip_owner(ip_owner_info)
-        obj = self.port_haip.get_port_for_ha_ipaddress(
-            self.ha_ip1, self.port1['network_id'])
+        obj = self.port_haip.get_port_for_ha_ipaddress_and_vrf(
+            self.ha_ip1, self.vrf1, self.port1['network_id'])
         self.assertEqual(self.port1['id'], obj['port_id'])
         self.assertTrue(self.port1['id'] in ports)
 
@@ -6445,8 +6503,8 @@ class TestPortToHAIPAddressBinding(ApicAimTestCase):
 
         ip_owner_info['port'] = port3['id']
         ports = self.port_haip.update_ip_owner(ip_owner_info)
-        obj = self.port_haip.get_port_for_ha_ipaddress(
-            self.ha_ip1, port3['network_id'])
+        obj = self.port_haip.get_port_for_ha_ipaddress_and_vrf(
+            self.ha_ip1, self.vrf2, port3['network_id'])
         self.assertEqual(port3['id'], obj['port_id'])
 
     def test_ip_replaced(self):
@@ -6474,20 +6532,20 @@ class TestPortToHAIPAddressBinding(ApicAimTestCase):
         self.port_haip.update_ip_owner(ip_owner_info)
         # Verify still one entry exists
         dump = self.port_haip.get_ha_port_associations()
-        self.assertEqual(2, len(dump))
+        self.assertEqual(1, len(dump))
 
     def test_duplicate_entry_handled_gracefully(self):
-        self.port_haip.set_port_id_for_ha_ipaddress(
-            self.port1['id'], self.ha_ip1)
+        self.port_haip.update_port_id_for_ha_ipaddress(
+            self.port1['id'], self.ha_ip1, self.vrf1)
         # Set this twice, without hijacking the query
-        obj = self.port_haip.set_port_id_for_ha_ipaddress(
-            self.port1['id'], self.ha_ip1)
+        obj = self.port_haip.update_port_id_for_ha_ipaddress(
+            self.port1['id'], self.ha_ip1, self.vrf1)
         self.assertEqual(obj.port_id, self.port1['id'])
         self.assertEqual(obj.ha_ip_address, self.ha_ip1)
         # Now simulate null return from query
         self.port_haip._get_ha_ipaddress = mock.Mock(return_value=None)
-        obj = self.port_haip.set_port_id_for_ha_ipaddress(
-            self.port1['id'], self.ha_ip1)
+        obj = self.port_haip.update_port_id_for_ha_ipaddress(
+            self.port1['id'], self.ha_ip1, self.vrf1)
         self.assertIsNone(obj)
 
 
@@ -12109,7 +12167,10 @@ class TestOpflexRpc(ApicAimTestCase):
         self.driver.ip_address_owner_update(
             n_context.get_admin_context(), ip_owner_info=ip_owner_info,
             host='h1')
-        obj = self.driver.get_port_for_ha_ipaddress('1.2.3.4', net_id)
+        mapping = self.driver._get_network_mapping(self.db_session, net_id)
+        vrf_name = mapping.vrf_name
+        obj = self.driver.get_port_for_ha_ipaddress_and_vrf(
+            '1.2.3.4', vrf_name, net_id)
         self.assertEqual(port1_id, obj['port_id'])
         self.driver._notify_port_update.assert_called_with(
             mock.ANY, port1_id)
@@ -12120,7 +12181,8 @@ class TestOpflexRpc(ApicAimTestCase):
         self.driver.ip_address_owner_update(
             n_context.get_admin_context(), ip_owner_info=ip_owner_info,
             host='h2')
-        obj = self.driver.get_port_for_ha_ipaddress('1.2.3.4', net_id)
+        obj = self.driver.get_port_for_ha_ipaddress_and_vrf(
+            '1.2.3.4', vrf_name, net_id)
         self.assertEqual(port2_id, obj['port_id'])
         exp_calls = [
             mock.call(mock.ANY, port1_id),
