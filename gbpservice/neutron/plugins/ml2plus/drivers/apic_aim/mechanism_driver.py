@@ -113,6 +113,7 @@ UNROUTED_VRF_NAME = 'UnroutedVRF'
 COMMON_TENANT_NAME = 'common'
 ROUTER_SUBJECT_NAME = 'route'
 DEFAULT_SG_NAME = 'DefaultSecurityGroup'
+SYSTEM_SG_NAME = 'SystemSecurityGroup'
 L3OUT_NODE_PROFILE_NAME = 'NodeProfile'
 L3OUT_IF_PROFILE_NAME = 'IfProfile'
 L3OUT_IF_PROFILE_NAME6 = 'IfProfile6'
@@ -4467,6 +4468,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     @property
     def _default_sg_name(self):
         return self.apic_system_id + '_' + DEFAULT_SG_NAME
+
+    @property
+    def _system_sg_name(self):
+        return self.apic_system_id + '_' + SYSTEM_SG_NAME
 
     def _ensure_default_vrf(self, aim_ctx, attrs):
         vrf = self.aim.get(aim_ctx, attrs)
