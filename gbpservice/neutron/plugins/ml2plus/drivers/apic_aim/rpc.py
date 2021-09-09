@@ -1128,7 +1128,8 @@ class ApicRpcHandlerMixin(object):
         return (
             [{'policy-space': self.name_mapper.project(None, sg.project_id),
               'name': sg.sg_id} for sg in info['sg_info']] +
-            [{'policy-space': 'common', 'name': self._default_sg_name}])
+            [{'policy-space': 'common', 'name': self._default_sg_name}] +
+            [{'policy-space': 'common', 'name': self._system_sg_name}])
 
     def _build_qos_details(self, info):
         return (
