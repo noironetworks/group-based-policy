@@ -20,7 +20,6 @@ from neutron.db import dns_db
 from neutron.db import extraroute_db
 from neutron.db import l3_gwmode_db
 from neutron.db.models import l3 as l3_db
-from neutron.db import models_v2
 from neutron.quota import resource_registry
 from neutron_lib.api.definitions import l3 as l3_def
 from neutron_lib.api.definitions import portbindings
@@ -159,6 +158,22 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                                     results, None)
         return results
 
+    def validate_snat_extension(self, context, gw_info):
+        for fixed in gw_info['external_fixed_ips']:
+            sub = None
+            try:
+                sub = self._core_plugin.get_subnet(context,
+                                                   fixed['subnet_id'])
+            except exceptions.SubnetNotFound:
+                pass
+
+            if (sub and sub['network_id'] != gw_info['network_id']):
+                raise exceptions.SubnetNotFound(subnet_id=fixed['subnet_id'])
+
+            # subnet should be used for snat ip only
+            if (sub and sub['apic:snat_subnet_only'] is True):
+                raise (aim_exceptions.SnatPoolCannotBeUsedForGatewayIp())
+
     # Overwrite the upstream implementation to take advantage
     # of the bulk extension support.
     @db_api.retry_if_session_inactive()
@@ -177,42 +192,61 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
                                                 page_reverse=page_reverse)
         return self._make_routers_dict(routers_db, fields)
 
+    def _check_snat_subnets(self, context, gw_info, router, method, *args):
+        result = None
+        self._core_plugin._get_network(context, gw_info['network_id'])
+        if ('external_fixed_ips' in gw_info):
+            # Check to make sure they haven't picked a subnet
+            # that has an extension set to disallow it.
+            self.validate_snat_extension(context, gw_info)
+        else:
+            # No subnet set, so check to see if should be allocating one
+            # from non-SNAT subnets.
+            subnets_in_nw = self._core_plugin.get_subnets_by_network(context,
+                gw_info['network_id'])
+            for ext_sn in subnets_in_nw:
+                if (ext_sn['apic:snat_subnet_only'] is False):
+                    fixed_ips = [{'subnet_id': ext_sn['id']}]
+                    gw_info.update({'external_fixed_ips': fixed_ips})
+                    router['router'].update({EXTERNAL_GW_INFO: gw_info})
+                    try:
+                        result = method(*args)
+                        break
+                    except exceptions.IpAddressGenerationFailure:
+                        LOG.info('No more IP addresses available '
+                                 'in subnet %s for gateway', ext_sn)
+        return result
+
     # REVISIT: Eliminate this wrapper?
     @n_utils.transaction_guard
     def create_router(self, context, router):
+        method = super(ApicL3Plugin, self).create_router
+        args = (context, router)
         LOG.debug("APIC AIM L3 Plugin creating router: %s", router)
         # REVISIT: Do this in MD by registering for
         # ROUTER.BEFORE_CREATE event.
         self._md.ensure_tenant(context, router['router']['tenant_id'])
 
+        result = None
         current = router['router']
         gw_info = (current[EXTERNAL_GW_INFO] if EXTERNAL_GW_INFO in current
                    else lib_constants.ATTR_NOT_SPECIFIED)
-        if (gw_info and gw_info != lib_constants.ATTR_NOT_SPECIFIED):
-            if 'external_fixed_ips' in gw_info and 'network_id' in gw_info:
-                for fixed in gw_info['external_fixed_ips']:
-                    # query for the subnet on the network
-                    query = model_query.get_collection_query(context,
-                                                             models_v2.Subnet)
-                    query = query.filter(models_v2.Subnet.network_id ==
-                                         gw_info['network_id'])
-                    query = query.filter(models_v2.Subnet.id ==
-                                fixed['subnet_id'])
-                    sub = query.one_or_none()
-                    # subnet should be used for snat ip only
-                    if (sub and
-                        sub['aim_extension_mapping']['snat_subnet_only'] is
-                        True):
-                        raise (aim_exceptions.
-                               SnatPoolCannotBeUsedForGatewayIp())
-        return super(ApicL3Plugin, self).create_router(context, router)
+        if (gw_info and gw_info != lib_constants.ATTR_NOT_SPECIFIED and
+                'network_id' in gw_info):
+            result = self._check_snat_subnets(context, gw_info, router,
+                                              method, *args)
+        if result:
+            return result
+        else:
+            return method(context, router)
 
     # REVISIT: Eliminate this wrapper?
     @n_utils.transaction_guard
     def update_router(self, context, id, router):
+        method = super(ApicL3Plugin, self).update_router
+        args = (context, id, router)
         original = self.get_router(context, id)
         current = router['router']
-
         original_gw_info = (original[EXTERNAL_GW_INFO]
                             if EXTERNAL_GW_INFO in original
                             else lib_constants.ATTR_NOT_SPECIFIED)
@@ -225,62 +259,26 @@ class ApicL3Plugin(common_db_mixin.CommonDbMixin,
 
         # User is deleting the gateway info
         if (not current_gw_info and original_gw_info):
-            return super(ApicL3Plugin, self).update_router(context, id, router)
+            return method(context, id, router)
 
         # User is updating info other than gateway info
         if (current_gw_info == original_gw_info):
-            return super(ApicL3Plugin, self).update_router(context, id, router)
+            return method(context, id, router)
 
         # No gw info yet / gw info is being updated
+        result = None
         if ((current_gw_info and
-                current_gw_info != lib_constants.ATTR_NOT_SPECIFIED) and
+             current_gw_info != lib_constants.ATTR_NOT_SPECIFIED) and
             (not original_gw_info or
-                original_gw_info == lib_constants.ATTR_NOT_SPECIFIED)):
-            if 'network_id' in current_gw_info:
-                # query for all the subnets on the network
-                query = model_query.get_collection_query(context,
-                                                         models_v2.Subnet)
-                query = query.filter(models_v2.Subnet.network_id ==
-                                     current_gw_info['network_id'])
-                subnets_in_nw = query.all()
-
-                if ('external_fixed_ips' in current_gw_info):
-                    for fixed in current_gw_info['external_fixed_ips']:
-                        query = query.filter(models_v2.Subnet.id ==
-                                             fixed['subnet_id'])
-                        sn = query.one_or_none()
-                        if (sn and
-                            sn['aim_extension_mapping']['snat_subnet_only']
-                            is True):
-                            raise (aim_exceptions.
-                                   SnatPoolCannotBeUsedForGatewayIp())
-                    return (super(ApicL3Plugin, self).update_router(
-                                                        context, id, router))
-                else:
-                    # find a subnet in the network and set as fixed_ip
-                    result = None
-                    for ext_sn in subnets_in_nw:
-                        if (ext_sn['aim_extension_mapping']['snat_subnet_only']
-                                is False):
-                            fixed_ips = [{'subnet_id': ext_sn['id']}]
-                            current_gw_info.update(
-                                {'external_fixed_ips': fixed_ips})
-                            router['router'].update(
-                                {EXTERNAL_GW_INFO: current_gw_info})
-                            try:
-                                result = (super(
-                                    ApicL3Plugin, self).update_router
-                                                    (context, id, router))
-                                break
-                            except exceptions.IpAddressGenerationFailure:
-                                LOG.info('No more IP addresses available '
-                                         'in subnet %s for gateway', ext_sn)
-                    if not result:
-                        raise exceptions.IpAddressGenerationFailure(
-                                net_id=current_gw_info['network_id'])
-                    else:
-                        return result
-        return super(ApicL3Plugin, self).update_router(context, id, router)
+             original_gw_info == lib_constants.ATTR_NOT_SPECIFIED or
+             original_gw_info != current_gw_info) and ('network_id' in
+             current_gw_info)):
+            result = self._check_snat_subnets(context, current_gw_info,
+                                              router, method, *args)
+        if result:
+            return result
+        else:
+            return method(context, id, router)
 
     # REVISIT: Eliminate this wrapper?
     @n_utils.transaction_guard
