@@ -46,6 +46,7 @@ from neutron.tests.unit.plugins.ml2 import test_tracked_resources as tr_res
 from neutron_lib.api.definitions import portbindings
 from neutron_lib import constants as n_constants
 from neutron_lib import context as n_context
+from neutron_lib import exceptions as n_exceptions
 from neutron_lib import fixture
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
@@ -12243,7 +12244,6 @@ class TestUpdateRouterSubnet(ApicAimTestCase):
     def test_update_gateway_no_extension(self):
         # create an external network
         ext_net = self._make_ext_network('ext-net1')
-
         # create a snat subnet on the network without new extension
         snat_sub = self._make_subnet(
             self.fmt, {'network': ext_net}, '200.100.100.1',
@@ -12255,7 +12255,6 @@ class TestUpdateRouterSubnet(ApicAimTestCase):
         # create a floating IP subnet on the same network too
         self._make_subnet(self.fmt, {'network': ext_net}, '250.100.100.1',
             '250.100.100.0/29')['subnet']
-
         # create a router and update the router gateway without fixed subnet
         router = self._make_router(
             self.fmt, self._tenant_id, 'router1')['router']
@@ -12263,6 +12262,7 @@ class TestUpdateRouterSubnet(ApicAimTestCase):
         data = {'router': {'external_gateway_info':
                            {'network_id': ext_net['id']}
                            }}
+
         router = self._update('routers', router_id, data)['router']
 
         self.assertIsNotNone(netaddr.IPAddress(router['external_gateway_info']
@@ -12405,3 +12405,52 @@ class TestUpdateRouterSubnet(ApicAimTestCase):
         data = {'router': {'external_gateway_info': {}}}
         router = self._update('routers', router_id, data)['router']
         self.assertIsNone(router['external_gateway_info'])
+
+    def test_router_add_gateway_invalid_network(self):
+        # Test adding gateway with invalid network for router
+        ext_net = self._make_ext_network('ext-net1')
+
+        # create a snat subnet on the network
+        self._make_subnet(self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/29')['subnet']
+
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1')['router']
+
+        data = {'router': {'external_gateway_info':
+                           {'network_id': router['id'],
+                            }
+                           }
+                }
+        self.assertRaises(n_exceptions.NetworkNotFound,
+                          self.l3_plugin.update_router,
+                          n_context.get_admin_context(),
+                          router['id'],
+                          data)
+
+    def test_create_router_netid_only(self):
+        ext_net = self._make_ext_network('ext-net1')
+        # create a snat subnet on the network
+        snat_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '200.100.100.1',
+            '200.100.100.0/29')['subnet']
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_POOL: True}})
+
+        self._update('subnets', snat_sub['id'],
+                     {'subnet': {SNAT_SUBNET_ONLY: True}})
+
+        # create a floating IP subnet on the same network too
+        fip_sub = self._make_subnet(
+            self.fmt, {'network': ext_net}, '250.100.100.1',
+            '250.100.100.0/29')['subnet']
+        # create a router with fixed subnet
+        router = self._make_router(
+                    self.fmt, self._tenant_id, 'router1',
+                    external_gateway_info={'network_id': ext_net['id']}
+                                )['router']
+
+        self._check_ip_in_cidr(router
+            ['external_gateway_info']['external_fixed_ips'][0]['ip_address'],
+            fip_sub['cidr'])
