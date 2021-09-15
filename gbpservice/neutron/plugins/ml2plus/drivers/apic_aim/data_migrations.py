@@ -437,11 +437,12 @@ def do_ha_ip_vrf_name_insertion(session):
     with session.begin(subtransactions=True):
         objs = (session.query(db.HAIPAddressToPortAssociation).
                 options(lazyload('*')).all())
+        port_ids = [obj['port_id'] for obj in objs]
+        ports = (session.query(models_v2.Port).
+                 filter(models_v2.Port.id.in_(port_ids)).all())
         for obj in objs:
             port_id = obj['port_id']
             ipaddress = obj['ha_ip_address']
-            ports = (session.query(models_v2.Port).
-                     options(lazyload('*')).all())
             vrf_name = None
             for port in ports:
                 if port['id'] == port_id:
@@ -455,3 +456,6 @@ def do_ha_ip_vrf_name_insertion(session):
                 haip_ip == ipaddress).filter(
                 haip_port_id == port_id).update(
                 {'vrf': vrf_name})
+
+    alembic_util.msg(
+        "Finished vrf name insertion for HA IP table.")
