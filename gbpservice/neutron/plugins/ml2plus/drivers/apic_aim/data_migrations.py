@@ -86,6 +86,12 @@ NetworkMapping = sa.Table(
         sa.Column('vrf_tenant_name', sa.String(64), nullable=True))
 
 
+HAIPAddressToPortAssociation = sa.Table(
+        'apic_ml2_ha_ipaddress_to_port_owner', sa.MetaData(),
+        sa.Column('ha_ip_address', sa.String(64), nullable=False),
+        sa.Column('port_id', sa.String(64), nullable=False))
+
+
 class DefunctAddressScopeExtensionDb(model_base.BASEV2):
     # REVISIT: This DB model class is used only for the
     # apic_aim_persist data migration, after which this table is
@@ -418,11 +424,40 @@ def do_sg_rule_remote_group_id_insertion(session):
         "Finished remote_group_id insertion for SG rules.")
 
 
-def do_ha_ip_vrf_name_insertion(session):
+def do_ha_ip_duplicate_entries_removal(session):
     alembic_util.msg(
-        "Starting vrf name insertion for HA IP table.")
+        "Starting duplicate entries removal for HA IP table.")
 
-    db_mixin = db.DbMixin()
+    with session.begin(subtransactions=True):
+        haip_ip = HAIPAddressToPortAssociation.c.ha_ip_address
+        haip_port_id = HAIPAddressToPortAssociation.c.port_id
+        port_and_haip_dbs = (session.query(models_v2.Port,
+                             HAIPAddressToPortAssociation).join(
+                             HAIPAddressToPortAssociation,
+                             haip_port_id == models_v2.Port.id))
+        net_to_ha_ip_dict = {}
+        for port_db, ha_ip, port_id in port_and_haip_dbs:
+            ha_ip_dict = net_to_ha_ip_dict.setdefault(
+                port_db.network_id, {})
+            ha_ip_dict.setdefault(
+                ha_ip, []).append(tuple((ha_ip, port_id)))
+        for haip_dict in net_to_ha_ip_dict.values():
+            for ha_ip in haip_dict.keys():
+                if len(haip_dict[ha_ip]) > 1:
+                    for (haip, portid) in haip_dict[ha_ip]:
+                        delete_q = HAIPAddressToPortAssociation.delete().where(
+                            haip_ip == haip).where(
+                            haip_port_id == portid)
+                        session.execute(delete_q)
+
+    alembic_util.msg(
+        "Finished duplicate entries removal for HA IP table.")
+
+
+def do_ha_ip_network_id_insertion(session):
+    alembic_util.msg(
+        "Starting network id insertion for HA IP table.")
+
     with session.begin(subtransactions=True):
         objs = (session.query(db.HAIPAddressToPortAssociation).
                 options(lazyload('*')).all())
@@ -432,19 +467,17 @@ def do_ha_ip_vrf_name_insertion(session):
         for obj in objs:
             port_id = obj['port_id']
             ipaddress = obj['ha_ip_address']
-            vrf_name = None
+            net_id = None
             for port in ports:
                 if port['id'] == port_id:
-                    net_mapping = db_mixin._get_network_mapping(
-                        session, port['network_id'])
-                    vrf_name = net_mapping.vrf_name
+                    net_id = port['network_id']
                     break
             haip_ip = db.HAIPAddressToPortAssociation.ha_ip_address
             haip_port_id = db.HAIPAddressToPortAssociation.port_id
             session.query(db.HAIPAddressToPortAssociation).filter(
                 haip_ip == ipaddress).filter(
                 haip_port_id == port_id).update(
-                {'vrf': vrf_name})
+                {'network_id': net_id})
 
     alembic_util.msg(
-        "Finished vrf name insertion for HA IP table.")
+        "Finished network id insertion for HA IP table.")
