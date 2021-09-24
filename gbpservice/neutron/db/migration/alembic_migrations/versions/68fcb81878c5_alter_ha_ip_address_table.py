@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-"""Alter HA IP address to Port ID association table to add VRF entry
+"""Alter HA IP address to Port ID association table to add network id entry
 Revision ID: 68fcb81878c5
 Revises: f8dc1eb9deaf
 Create Date: 2015-10-19 02:08:54.252877
@@ -28,20 +28,6 @@ from sqlalchemy.engine import reflection
 
 def upgrade():
 
-    inspector = reflection.Inspector.from_engine(op.get_bind())
-    pk_constraint = inspector.get_pk_constraint(
-            'apic_ml2_ha_ipaddress_to_port_owner')
-    op.drop_constraint(
-        pk_constraint['name'],
-        table_name='apic_ml2_ha_ipaddress_to_port_owner',
-        type_='primary')
-    op.add_column('apic_ml2_ha_ipaddress_to_port_owner',
-                  sa.Column('vrf', sa.String(length=64), nullable=False))
-    op.create_primary_key(
-        constraint_name='apic_ml2_ha_ipaddress_to_port_owner_pk',
-        table_name='apic_ml2_ha_ipaddress_to_port_owner',
-        columns=['ha_ip_address', 'vrf'])
-
     bind = op.get_bind()
     insp = sa.engine.reflection.Inspector.from_engine(bind)
     if 'apic_ml2_ha_ipaddress_to_port_owner' in insp.get_table_names():
@@ -50,12 +36,41 @@ def upgrade():
                 data_migrations)
 
             session = sa.orm.Session(bind=bind, autocommit=True)
-            data_migrations.do_ha_ip_vrf_name_insertion(session)
+            data_migrations.do_ha_ip_duplicate_entries_removal(session)
         except ImportError:
             util.warn("AIM schema present, but failed to import AIM libraries"
-                      " - HA IP vrf name not inserted.")
+                      " - HA IP duplicate entries removal not completed.")
         except Exception as e:
-            util.warn("Caught exception inserting HA IP vrf name: %s"
+            util.warn("Caught exception while HA IP duplicates removal: %s"
+                      % e)
+
+        inspector = reflection.Inspector.from_engine(op.get_bind())
+        pk_constraint = inspector.get_pk_constraint(
+                'apic_ml2_ha_ipaddress_to_port_owner')
+        op.drop_constraint(
+            pk_constraint['name'],
+            table_name='apic_ml2_ha_ipaddress_to_port_owner',
+            type_='primary')
+        op.add_column('apic_ml2_ha_ipaddress_to_port_owner',
+                      sa.Column('network_id',
+                                sa.String(length=36),
+                                nullable=False))
+        op.create_primary_key(
+            constraint_name='apic_ml2_ha_ipaddress_to_port_owner_pk',
+            table_name='apic_ml2_ha_ipaddress_to_port_owner',
+            columns=['ha_ip_address', 'network_id'])
+
+        try:
+            from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+                data_migrations)
+
+            session = sa.orm.Session(bind=bind, autocommit=True)
+            data_migrations.do_ha_ip_network_id_insertion(session)
+        except ImportError:
+            util.warn("AIM schema present, but failed to import AIM libraries"
+                      " - HA IP network id not inserted.")
+        except Exception as e:
+            util.warn("Caught exception inserting HA IP network id: %s"
                       % e)
 
 
