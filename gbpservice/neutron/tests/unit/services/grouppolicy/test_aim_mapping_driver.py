@@ -3742,11 +3742,8 @@ class TestPolicyTarget(AIMBaseTestCase,
         # set new owner
         self.mech_driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h1')
-        mapping = self.mech_driver._get_network_mapping(
-            self.db_session, net_id)
-        vrf_name = mapping.vrf_name
-        obj = self.mech_driver.get_port_for_ha_ipaddress_and_vrf(
-            '1.2.3.4', vrf_name, net_id)
+        obj = self.mech_driver.get_port_for_ha_ipaddress(
+            '1.2.3.4', net_id)
 
         self.assertEqual(pt1['port_id'], obj['port_id'])
         self.mech_driver._notify_port_update.assert_called_with(
@@ -3757,8 +3754,8 @@ class TestPolicyTarget(AIMBaseTestCase,
         ip_owner_info['port'] = pt2['port_id']
         self.mech_driver.ip_address_owner_update(self._context,
             ip_owner_info=ip_owner_info, host='h2')
-        obj = self.mech_driver.get_port_for_ha_ipaddress_and_vrf(
-            '1.2.3.4', vrf_name, net_id)
+        obj = self.mech_driver.get_port_for_ha_ipaddress(
+            '1.2.3.4', net_id)
         self.assertEqual(pt2['port_id'], obj['port_id'])
         exp_calls = [
             mock.call(mock.ANY, pt1['port_id']),
