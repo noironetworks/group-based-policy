@@ -33,6 +33,33 @@ class TestAttributeConverters(base.BaseTestCase):
         self.assertIsInstance(apic_ext.convert_apic_vlan(2), int)
         self.assertIsNone(apic_ext.convert_apic_vlan(None))
 
+    def test_convert_apic_none_to_empty_list(self):
+        test_none = None
+        expt_list = []
+        self.assertItemsEqual(
+                apic_ext.convert_apic_none_to_empty_list(
+                    test_none), expt_list)
+
+        expt_list = ['value1', 'value2', 'value3']
+        test_list_str = "['value1', 'value2', 'value3']"
+        self.assertItemsEqual(
+                apic_ext.convert_apic_none_to_empty_list(
+                    test_list_str), expt_list)
+
+        self.assertItemsEqual(
+                apic_ext.convert_apic_none_to_empty_list(
+                    expt_list), expt_list)
+
+        expt_list = [{'key1': 'value1'}, {'key2': 'value2'}]
+        test_dict_list_str = "[{'key1': 'value1'}, {'key2': 'value2'}]"
+        self.assertItemsEqual(
+                apic_ext.convert_apic_none_to_empty_list(
+                    test_dict_list_str), expt_list)
+
+        self.assertItemsEqual(
+                apic_ext.convert_apic_none_to_empty_list(
+                    expt_list), expt_list)
+
     def test_convert_nested_domain_allowed_vlans(self):
         test_dict_str = "{'vlans_list': [2, 3, 4], " + (
                         "'vlan_ranges': [{'start': 6, 'end': 9}, ") + (
