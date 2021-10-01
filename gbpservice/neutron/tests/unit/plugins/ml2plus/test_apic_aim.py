@@ -1436,6 +1436,42 @@ class TestAimMapping(ApicAimTestCase):
         self._delete('networks', net_id)
         self._check_network_deleted(net)
 
+    def test_network_lifecycle_with_string_attr(self):
+        # Test create.
+        kwargs = {'apic:extra_provided_contracts': "['ep1', 'ep2']",
+                  'apic:extra_consumed_contracts': "['ec1', 'ec2']",
+                  'apic:epg_contract_masters': """[{'app_profile_name': 'ap1',
+                                                 'name': 'epg1'},
+                                                {'app_profile_name': 'ap2',
+                                                 'name': 'epg2'}]""",
+                  'apic:policy_enforcement_pref': 'enforced'}
+        net = self._make_network(
+            self.fmt, 'net1', True, arg_list=tuple(list(kwargs.keys())),
+            **kwargs)['network']
+        net_id = net['id']
+        self._check_network(net)
+
+        # Test show.
+        net = self._show('networks', net_id)['network']
+        self._check_network(net)
+
+        # Test update.
+        data = {'network':
+                {'name': 'newnamefornet',
+                 'apic:extra_provided_contracts': "['ep2', 'ep3']",
+                 'apic:extra_consumed_contracts': "['ec2', 'ec3']",
+                 'apic:epg_contract_masters': """[{'app_profile_name': 'ap1',
+                                                'name': 'epg2'},
+                                               {'app_profile_name': 'ap3',
+                                                'name': 'epg2'}]""",
+                 'apic:policy_enforcement_pref': 'enforced'}}
+        net = self._update('networks', net_id, data)['network']
+        self._check_network(net)
+
+        # Test delete.
+        self._delete('networks', net_id)
+        self._check_network_deleted(net)
+
     def test_network_preexisting_bd(self):
         # Test create with non-existing BD.
         bd_dn = 'uni/tn-%s/BD-net_%s' % (self.t1_aname, _uuid())
