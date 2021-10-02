@@ -176,6 +176,14 @@ def convert_apic_vlan(value):
         return int(value)
 
 
+def convert_apic_none_to_empty_list(value):
+    if value is None:
+        return []
+    if isinstance(value, str) or isinstance(value, six.string_types):
+        value = ast.literal_eval(value)
+    return value
+
+
 def convert_nested_domain_allowed_vlans(value):
     if value is None:
         return
@@ -237,7 +245,7 @@ PORT_ATTRIBUTES = {
     ERSPAN_CONFIG: {
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': None,
-        'convert_to': conv.convert_none_to_empty_list,
+        'convert_to': convert_apic_none_to_empty_list,
         'validate': {'type:apic_erspan_configs': None},
     },
 }
@@ -305,19 +313,19 @@ NET_ATTRIBUTES = {
     EXTRA_PROVIDED_CONTRACTS: {
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': None,
-        'convert_to': conv.convert_none_to_empty_list,
+        'convert_to': convert_apic_none_to_empty_list,
         'validate': {'type:list_of_unique_strings': None},
     },
     EXTRA_CONSUMED_CONTRACTS: {
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': None,
-        'convert_to': conv.convert_none_to_empty_list,
+        'convert_to': convert_apic_none_to_empty_list,
         'validate': {'type:list_of_unique_strings': None},
     },
     EPG_CONTRACT_MASTERS: {
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': None,
-        'convert_to': conv.convert_none_to_empty_list,
+        'convert_to': convert_apic_none_to_empty_list,
         'validate': {'type:list_of_any_key_specs_or_none':
                      EPG_CONTRACT_MASTER_KEY_SPECS},
     },
@@ -356,7 +364,7 @@ EXT_NET_ATTRIBUTES = {
         # Restrict external traffic to specified addresses
         'allow_put': True, 'allow_post': True,
         'is_visible': True, 'default': ['0.0.0.0/0'],
-        'convert_to': conv.convert_none_to_empty_list,
+        'convert_to': convert_apic_none_to_empty_list,
         'validate': {'type:subnet_list': None},
     },
 }
