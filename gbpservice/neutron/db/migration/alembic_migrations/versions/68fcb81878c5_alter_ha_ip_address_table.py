@@ -31,25 +31,18 @@ def upgrade():
     bind = op.get_bind()
     insp = sa.engine.reflection.Inspector.from_engine(bind)
     if 'apic_ml2_ha_ipaddress_to_port_owner' in insp.get_table_names():
-
-        op.add_column('apic_ml2_ha_ipaddress_to_port_owner',
-                      sa.Column('network_id',
-                                sa.String(length=36),
-                                nullable=False))
         try:
             from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
                 data_migrations)
 
             session = sa.orm.Session(bind=bind, autocommit=True)
-            with session.begin(subtransactions=True):
-                data_migrations.do_ha_ip_duplicate_entries_removal(session)
-                data_migrations.do_ha_ip_network_id_insertion(session)
+            data_migrations.do_ha_ip_duplicate_entries_removal(session)
         except ImportError:
             util.warn("AIM schema present, but failed to import AIM libraries"
                       " - HA IP duplicate entries removal not completed.")
         except Exception as e:
-            util.warn("Caught exception while migrating data in %s: %s"
-                      % ('apic_ml2_ha_ipaddress_to_port_owner', e))
+            util.warn("Caught exception while HA IP duplicates removal: %s"
+                      % e)
 
         inspector = reflection.Inspector.from_engine(op.get_bind())
         pk_constraint = inspector.get_pk_constraint(
@@ -58,10 +51,27 @@ def upgrade():
             pk_constraint['name'],
             table_name='apic_ml2_ha_ipaddress_to_port_owner',
             type_='primary')
+        op.add_column('apic_ml2_ha_ipaddress_to_port_owner',
+                      sa.Column('network_id',
+                                sa.String(length=36),
+                                nullable=False))
         op.create_primary_key(
             constraint_name='apic_ml2_ha_ipaddress_to_port_owner_pk',
             table_name='apic_ml2_ha_ipaddress_to_port_owner',
             columns=['ha_ip_address', 'network_id'])
+
+        try:
+            from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
+                data_migrations)
+
+            session = sa.orm.Session(bind=bind, autocommit=True)
+            data_migrations.do_ha_ip_network_id_insertion(session)
+        except ImportError:
+            util.warn("AIM schema present, but failed to import AIM libraries"
+                      " - HA IP network id not inserted.")
+        except Exception as e:
+            util.warn("Caught exception inserting HA IP network id: %s"
+                      % e)
 
 
 def downgrade():
