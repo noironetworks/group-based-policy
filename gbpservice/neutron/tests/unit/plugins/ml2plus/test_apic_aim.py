@@ -5253,15 +5253,6 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
             self.assertEqual(obj['port_id'], p1['id'])
             self.assertEqual(obj['ha_ip_address'], owned_addr[0])
             self.assertEqual(obj['network_id'], p1['network_id'])
-            # Wipe out network_id from HAIP object
-            haip_ip = db.HAIPAddressToPortAssociation.ha_ip_address
-            haip_port_id = db.HAIPAddressToPortAssociation.port_id
-            self.db_session.query(db.HAIPAddressToPortAssociation).filter(
-                haip_ip == owned_addr[0]).filter(
-                haip_port_id == p1['id']).update(
-                {'network_id': ''})
-            # check that network id value is wiped from the object
-            self.assertEqual(obj['network_id'], '')
             # perform data migration
             data_migrations.do_ha_ip_network_id_insertion(self.db_session)
             # check that network id value is again added correctly to the obj
