@@ -42,7 +42,6 @@ from sqlalchemy.orm import lazyload
 
 from gbpservice.neutron.extensions import cisco_apic as ext
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
-from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 
 
 # The following definitions have been taken from commit:
@@ -86,10 +85,14 @@ NetworkMapping = sa.Table(
         sa.Column('vrf_tenant_name', sa.String(64), nullable=True))
 
 
+# This is neeeded in order to make aueries against the table
+# prior to the pirmary key change in the schema (the ORM is defined
+# with the new primary keys, so it can't be used).
 HAIPAddressToPortAssociation = sa.Table(
         'apic_ml2_ha_ipaddress_to_port_owner', sa.MetaData(),
         sa.Column('ha_ip_address', sa.String(64), nullable=False),
-        sa.Column('port_id', sa.String(64), nullable=False))
+        sa.Column('port_id', sa.String(64), nullable=False),
+        sa.Column('network_id', sa.String(36), nullable=False))
 
 
 class DefunctAddressScopeExtensionDb(model_base.BASEV2):
@@ -428,15 +431,17 @@ def do_ha_ip_duplicate_entries_removal(session):
     alembic_util.msg(
         "Starting duplicate entries removal for HA IP table.")
 
+    # Define these for legibility/convenience.
+    haip_ip = HAIPAddressToPortAssociation.c.ha_ip_address
+    haip_port_id = HAIPAddressToPortAssociation.c.port_id
+
     with session.begin(subtransactions=True):
-        haip_ip = HAIPAddressToPortAssociation.c.ha_ip_address
-        haip_port_id = HAIPAddressToPortAssociation.c.port_id
         port_and_haip_dbs = (session.query(models_v2.Port,
                              HAIPAddressToPortAssociation).join(
                              HAIPAddressToPortAssociation,
                              haip_port_id == models_v2.Port.id))
         net_to_ha_ip_dict = {}
-        for port_db, ha_ip, port_id in port_and_haip_dbs:
+        for port_db, ha_ip, port_id, network_id in port_and_haip_dbs:
             ha_ip_dict = net_to_ha_ip_dict.setdefault(
                 port_db.network_id, {})
             ha_ip_dict.setdefault(
@@ -458,26 +463,24 @@ def do_ha_ip_network_id_insertion(session):
     alembic_util.msg(
         "Starting network id insertion for HA IP table.")
 
+    # Define these for legibility/convenience.
+    haip_ip = HAIPAddressToPortAssociation.c.ha_ip_address
+    haip_port_id = HAIPAddressToPortAssociation.c.port_id
+
     with session.begin(subtransactions=True):
-        objs = (session.query(db.HAIPAddressToPortAssociation).
-                options(lazyload('*')).all())
-        port_ids = [obj['port_id'] for obj in objs]
-        ports = (session.query(models_v2.Port).
-                 filter(models_v2.Port.id.in_(port_ids)).all())
-        for obj in objs:
-            port_id = obj['port_id']
-            ipaddress = obj['ha_ip_address']
-            net_id = None
-            for port in ports:
-                if port['id'] == port_id:
-                    net_id = port['network_id']
-                    break
-            haip_ip = db.HAIPAddressToPortAssociation.ha_ip_address
-            haip_port_id = db.HAIPAddressToPortAssociation.port_id
-            session.query(db.HAIPAddressToPortAssociation).filter(
-                haip_ip == ipaddress).filter(
-                haip_port_id == port_id).update(
-                {'network_id': net_id})
+        haip_ip = HAIPAddressToPortAssociation.c.ha_ip_address
+        haip_port_id = HAIPAddressToPortAssociation.c.port_id
+        port_and_haip_dbs = (session.query(models_v2.Port,
+                             HAIPAddressToPortAssociation).join(
+                             HAIPAddressToPortAssociation,
+                             haip_port_id == models_v2.Port.id))
+
+        for port_db, ha_ip, port_id, network_id in port_and_haip_dbs:
+            update_q = HAIPAddressToPortAssociation.update().where(
+                haip_ip == ha_ip).where(
+                        haip_port_id == port_id).values(
+                                {'network_id': port_db.network_id})
+            session.execute(update_q)
 
     alembic_util.msg(
         "Finished network id insertion for HA IP table.")
