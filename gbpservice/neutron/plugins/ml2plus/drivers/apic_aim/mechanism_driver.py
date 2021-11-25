@@ -274,7 +274,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         "faults and loss of connectivity, so please eliminate "
                         "any existing overlap and set this option to False "
                         "(the default) as soon as possible.")
-        self.host_id = 'id-%s' % net.get_hostname()
+        self.host_id = 'id-%s-%s' % (net.get_hostname(), str(os.getpid()))
         self._setup_nova_vm_update()
         self._ensure_static_resources()
         trunk_driver.register()
