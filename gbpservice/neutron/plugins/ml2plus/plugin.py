@@ -111,8 +111,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                                       **kwargs):
         if 'payload' in kwargs:
             context = kwargs['payload'].context
-            security_group = kwargs['payload'].desired_state
-            original_security_group = kwargs['payload'].states[0]
+            if event == events.PRECOMMIT_UPDATE:
+                security_group = kwargs['payload'].desired_state
+                original_security_group = kwargs['payload'].states[0]
+            else:
+                security_group = kwargs['payload'].states[0]
+                original_security_group = kwargs['payload'].desired_state
         else:
             context = kwargs.get('context')
             security_group = kwargs.get('security_group')
@@ -142,18 +146,30 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
                        [events.PRECOMMIT_CREATE, events.PRECOMMIT_DELETE])
     def _handle_security_group_rule_change(self, resource, event, trigger,
                                            **kwargs):
-        context = kwargs.get('context')
+        if 'payload' in kwargs:
+            context = kwargs['payload'].context
+        else:
+            context = kwargs.get('context')
         if event == events.PRECOMMIT_CREATE:
-            sg_rule = kwargs.get('security_group_rule')
+            if 'payload' in kwargs:
+                sg_rule = kwargs['payload'].states[0]
+            else:
+                sg_rule = kwargs.get('security_group_rule')
             mech_context = driver_context.SecurityGroupRuleContext(
                 self, context, sg_rule)
             self.mechanism_manager.create_security_group_rule_precommit(
                 mech_context)
             return
         if event == events.PRECOMMIT_DELETE:
-            sg_rule = {'id': kwargs.get('security_group_rule_id'),
-                       'security_group_id': kwargs.get('security_group_id'),
-                       'tenant_id': context.project_id}
+            if 'payload' in kwargs:
+                sg_rule = {'id': kwargs['payload'].resource_id,
+                           'security_group_id':
+                               kwargs['payload'].metadata['security_group_id'],
+                           'tenant_id': context.project_id}
+            else:
+                sg_rule = {'id': kwargs.get('security_group_rule_id'),
+                        'security_group_id': kwargs.get('security_group_id'),
+                        'tenant_id': context.project_id}
             mech_context = driver_context.SecurityGroupRuleContext(
                 self, context, sg_rule)
             self.mechanism_manager.delete_security_group_rule_precommit(

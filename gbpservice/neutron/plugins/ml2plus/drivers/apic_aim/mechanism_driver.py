@@ -1904,19 +1904,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.aim.update(aim_ctx, vrf, display_name=dname)
 
     @registry.receives(resources.ROUTER, [events.PRECOMMIT_CREATE])
-    def _create_router_precommit(self, resource, event, trigger, context,
-                                 router, router_id, router_db):
+    def _create_router_precommit(self, resource, event, trigger, payload):
+        context = payload.context
+        router = payload.states
+        router_id = payload.resource_id
+
         LOG.debug("APIC AIM MD creating router: %s", router)
 
         session = context.session
         aim_ctx = aim_context.AimContext(session)
 
         # Persist extension attributes.
-        self.l3_plugin.set_router_extn_db(session, router_id, router)
+        self.l3_plugin.set_router_extn_db(session, router_id, router[0])
 
-        contract, subject = self._map_router(session, router)
+        contract, subject = self._map_router(session, router[0])
 
-        dname = aim_utils.sanitize_display_name(router['name'])
+        dname = aim_utils.sanitize_display_name(router[0]['name'])
 
         contract.display_name = dname
         self.aim.create(aim_ctx, contract)
@@ -2034,8 +2037,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self._add_postcommit_port_notifications(context, affected_port_ids)
 
     @registry.receives(resources.ROUTER, [events.PRECOMMIT_DELETE])
-    def _delete_router_precommit(self, resource, event, trigger, context,
-                                 router_db, router_id):
+    def _delete_router_precommit(self, resource, event, trigger, payload):
+        context = payload.context
+        router_id = payload.resource_id
+        router_db = payload.states[0]
+
         LOG.debug("APIC AIM MD deleting router: %s", router_id)
 
         session = context.session
@@ -3046,9 +3052,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     # orig_binding and new_binding kwargs, and it is generated with
     # those args from _commit_port_binding.
     @registry.receives(resources.PORT, [events.BEFORE_UPDATE])
-    def _before_update_port(self, resource, event, trigger, context,
-                            port, original_port,
+    def _before_update_port(self, resource, event, trigger, payload,
                             orig_binding=None, new_binding=None):
+        context = payload.context
+        original_port = payload.states[0]
+        port = payload.states[1]
+        if payload.metadata:
+            orig_binding = payload.metadata['orig_binding']
+            new_binding = payload.metadata['new_binding']
+
         if self._is_port_bound(original_port) and 'fixed_ips' in port:
             # When a bound port is updated with a subnet, if the port
             # is on a SVI network, we need to ensure that the SVI ports
@@ -5547,7 +5559,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                        [events.AFTER_CREATE, events.AFTER_DELETE])
     def _after_subport_event(self, resource, event, trunk_plugin, payload):
         context = payload.context
-        subports = payload.subports
+        subports = payload.metadata['subports']
         first_subport_id = subports[0].port_id
         # This is only needed for baremetal VNIC types, as they don't
         # have agents to perform port binding.
@@ -5567,7 +5579,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             owner = trunk_consts.TRUNK_SUBPORT_OWNER
         subport_ids = [subport.port_id for subport in subports]
         profile = parent_port[portbindings.PROFILE] if parent_port else None
-        self._update_trunk_status_and_subports(context, payload.trunk_id,
+        self._update_trunk_status_and_subports(context, payload.resource_id,
                                                host_id, subport_ids, owner,
                                                binding_profile=profile)
 
