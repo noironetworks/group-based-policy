@@ -247,7 +247,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                 updaters[instance['id']]['plumbing_info'] = (
                     driver.get_plumbing_info(node_context))
         # Update the nodes
-        for update in updaters.values():
+        for update in list(updaters.values()):
             try:
                 update['driver'].update(update['context'])
             except exc.NodeDriverError as ex:
@@ -383,7 +383,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                 context,
                 self.get_servicechain_instance(context, instance_id),
                 'update')
-        for update in updaters.values():
+        for update in list(updaters.values()):
             try:
                 update['driver'].policy_target_group_updated(
                         update['context'],
@@ -398,7 +398,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         updaters = self._get_scheduled_drivers(
             context, self.get_servicechain_instance(context, instance_id),
             'update')
-        for update in updaters.values():
+        for update in list(updaters.values()):
             try:
                 getattr(update['driver'],
                         'update_policy_target_' + action)(
@@ -412,7 +412,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         updaters = self._get_scheduled_drivers(
             context, self.get_servicechain_instance(context, instance_id),
             'update')
-        for update in updaters.values():
+        for update in list(updaters.values()):
             try:
                 getattr(update['driver'],
                         'update_node_consumer_ptg_' + action)(
@@ -434,7 +434,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
         """
         sci = self.get_servicechain_instance(context, servicechain_instance_id)
         updaters = self._get_scheduled_drivers(context, sci, 'update')
-        for update in updaters.values():
+        for update in list(updaters.values()):
             try:
                 getattr(update['driver'],
                         'notify_chain_parameters_updated')(update['context'])
@@ -526,7 +526,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                       'status_details': 'node deployment in progress'}
             if deployers:
                 try:
-                    for deploy in deployers.values():
+                    for deploy in list(deployers.values()):
                         driver = deploy['driver']
                         nodes_status.append(driver.get_status(
                             deploy['context']))
@@ -535,7 +535,7 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
                         result['status'] = 'ERROR'
                         result['status_details'] = 'node deployment failed'
                     elif node_status.count('ACTIVE') == len(
-                            deployers.values()):
+                            list(deployers.values())):
                         result['status'] = 'ACTIVE'
                         result['status_details'] = 'node deployment completed'
                 except Exception as exc:
@@ -548,19 +548,19 @@ class NodeCompositionPlugin(servicechain_db.ServiceChainDbPlugin,
 
     def _deploy_servicechain_nodes(self, context, deployers):
         self.plumber.plug_services(context, list(deployers.values()))
-        for deploy in deployers.values():
+        for deploy in list(deployers.values()):
             driver = deploy['driver']
             driver.create(deploy['context'])
 
     def _update_servicechain_nodes(self, context, updaters):
-        for update in updaters.values():
+        for update in list(updaters.values()):
             driver = update['driver']
             driver.update(update['context'])
 
     def _destroy_servicechain_nodes(self, context, destroyers):
         # Actual node disruption
         try:
-            for destroy in destroyers.values():
+            for destroy in list(destroyers.values()):
                 driver = destroy['driver']
                 try:
                     driver.delete(destroy['context'])

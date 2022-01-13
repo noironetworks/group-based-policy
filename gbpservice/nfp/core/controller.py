@@ -139,7 +139,7 @@ class NfpService(object):
         return event
 
     # REVISIT (mak): spacing=0, caller must explicitly specify
-    def poll_event(self, event, spacing=2, max_times=sys.maxint):
+    def poll_event(self, event, spacing=2, max_times=sys.maxsize):
         """To poll for an event.
 
             As a base class, it only does the polling
@@ -441,7 +441,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
 
     def report_state(self):
         """Invoked by report_task to report states of all agents. """
-        for value in self._rpc_agents.values():
+        for value in list(self._rpc_agents.values()):
             for agent in value['agents']:
                 agent.report_state()
 
@@ -457,7 +457,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
         graph_nodes = []
         for parent, childs in six.iteritems(graph):
             puuid = parent.desc.uuid
-            assert puuid not in graph_sig.keys(), (
+            assert puuid not in list(graph_sig.keys()), (
                 "Event - %s is already root of subgraph - %s" % (
                     puuid, str(graph_sig[puuid])))
             graph_sig[puuid] = []
@@ -516,7 +516,7 @@ class NfpController(nfp_launcher.NfpLauncher, NfpService):
             LOG.debug(message)
             self._manager.process_events([event])
 
-    def poll_event(self, event, spacing=2, max_times=sys.maxint):
+    def poll_event(self, event, spacing=2, max_times=sys.maxsize):
         """Post a poll event into the system.
 
             Core will poll for this event to timeout, after

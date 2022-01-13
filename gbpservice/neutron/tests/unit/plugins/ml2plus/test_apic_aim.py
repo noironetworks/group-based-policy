@@ -177,7 +177,7 @@ class FakeProjectManager(object):
 
     def __init__(self):
         self._projects = {k: FakeProject(k, v)
-                          for k, v in TEST_TENANT_NAMES.items()}
+                          for k, v in list(TEST_TENANT_NAMES.items())}
 
     def list(self):
         return list(self._projects.values())
@@ -5435,7 +5435,7 @@ class TestPortBinding(ApicAimTestCase):
         net1 = self._make_network(self.fmt, 'net1', True,
                                 arg_list=self.extension_attributes,
                                 **{'apic:svi': 'True',
-                                'provider:network_type': u'vlan',
+                                'provider:network_type': 'vlan',
                                 'apic:bgp_enable': 'True',
                                 'apic:bgp_asn': '2'})['network']
 
@@ -5560,7 +5560,7 @@ class TestPortBinding(ApicAimTestCase):
         net1 = self._make_network(self.fmt, 'net1', True,
                                 arg_list=self.extension_attributes,
                                 **{'apic:svi': 'True',
-                                'provider:network_type': u'vlan',
+                                'provider:network_type': 'vlan',
                                 'apic:bgp_enable': 'True',
                                 'apic:bgp_asn': '2'})['network']
 
@@ -5762,7 +5762,7 @@ class TestPortBinding(ApicAimTestCase):
 
         net = self._make_network(self.fmt, 'net1', True,
             arg_list=self.extension_attributes,
-            **{'apic:svi': 'True', 'provider:network_type': u'vlan'})
+            **{'apic:svi': 'True', 'provider:network_type': 'vlan'})
 
         self._make_subnet(self.fmt, net, '10.0.1.1', '10.0.1.0/24')
         port = self._make_port(self.fmt, net['network']['id'])['port']
@@ -5871,14 +5871,14 @@ class TestPortBinding(ApicAimTestCase):
         self._test_bind_baremetal()
 
     def test_bind_baremetal_vlan(self):
-        self._test_bind_baremetal(network_type=u'vlan', physnet=u'physnet2')
+        self._test_bind_baremetal(network_type='vlan', physnet='physnet2')
 
     def test_bind_baremetal_vlan_svi(self):
-        self._test_bind_baremetal(network_type=u'vlan',
-                                  is_svi=True, physnet=u'physnet2')
+        self._test_bind_baremetal(network_type='vlan',
+                                  is_svi=True, physnet='physnet2')
 
-    def _test_bind_baremetal(self, network_type=u'opflex', is_svi=False,
-                             physnet=u'physnet1'):
+    def _test_bind_baremetal(self, network_type='opflex', is_svi=False,
+                             physnet='physnet1'):
         # Do positive and negative port binding testing, using the
         # different information in the binding profile.
         def validate_binding(port):
@@ -6121,11 +6121,11 @@ class TestPortBinding(ApicAimTestCase):
                                               **kwargs)['port']
         if parent_net_type == 'opflex':
             access_vlan = self._check_binding(parent_port['id'],
-                expected_binding_info=[(u'apic_aim', u'opflex'),
-                                       (u'apic_aim', u'vlan')])
+                expected_binding_info=[('apic_aim', 'opflex'),
+                                       ('apic_aim', 'vlan')])
         else:
             access_vlan = self._check_binding(parent_port['id'],
-                expected_binding_info=[(u'apic_aim', u'vlan')])
+                expected_binding_info=[('apic_aim', 'vlan')])
             self.assertEqual(access_vlan,
                              net1['network']['provider:segmentation_id'])
         epg = self._net_2_epg(net1['network'])
@@ -6156,14 +6156,14 @@ class TestPortBinding(ApicAimTestCase):
             bottom_bound_physnet = baremetal_physnet
             if subport_net_type == 'vlan':
                 if inherit:
-                    expected_binding_info = [(u'apic_aim', u'vlan')]
+                    expected_binding_info = [('apic_aim', 'vlan')]
                     bottom_bound_physnet = subport_physnet
                 else:
-                    expected_binding_info = [(u'apic_aim', u'vlan'),
-                                             (u'apic_aim', u'vlan')]
+                    expected_binding_info = [('apic_aim', 'vlan'),
+                                             ('apic_aim', 'vlan')]
             else:
-                expected_binding_info = [(u'apic_aim', u'opflex'),
-                                         (u'apic_aim', u'vlan')]
+                expected_binding_info = [('apic_aim', 'opflex'),
+                                         ('apic_aim', 'vlan')]
             self._check_binding(subport_net1_port['id'],
                 top_bound_physnet=subport_physnet,
                 bottom_bound_physnet=bottom_bound_physnet,
@@ -6323,11 +6323,11 @@ class TestPortBinding(ApicAimTestCase):
             access_vlan = self._check_binding(parent_port['id'],
                 top_bound_physnet=baremetal_physnet,
                 bottom_bound_physnet=baremetal_physnet,
-                expected_binding_info=[(u'apic_aim', u'opflex'),
-                                       (u'apic_aim', u'vlan')])
+                expected_binding_info=[('apic_aim', 'opflex'),
+                                       ('apic_aim', 'vlan')])
         else:
             access_vlan = self._check_binding(parent_port['id'],
-                expected_binding_info=[(u'apic_aim', u'vlan')])
+                expected_binding_info=[('apic_aim', 'vlan')])
             self.assertEqual(access_vlan,
                              net1['network']['provider:segmentation_id'])
         self.assertEqual(kwargs['binding:profile'],
@@ -7700,7 +7700,7 @@ class TestExtensionAttributes(ApicAimTestCase):
                 new_resources = []
                 for res in resources:
                     res_dict = {}
-                    for k, v in res.members.items():
+                    for k, v in list(res.members.items()):
                         if k in res.user_attributes():
                             if isinstance(v, list):
                                 v = v.sort() or []
@@ -12053,7 +12053,7 @@ class TestOpflexRpc(ApicAimTestCase):
             path='topology/pod-1/paths-102/pathep-[eth1/8]')
         self.aim_mgr.create(aim_ctx, hlink_1)
 
-        kwargs = {'provider:network_type': u'vlan'}
+        kwargs = {'provider:network_type': 'vlan'}
         if apic_svi:
             kwargs.update({'apic:svi': 'True'})
 
@@ -12099,7 +12099,7 @@ class TestOpflexRpc(ApicAimTestCase):
             path='topology/pod-1/paths-102/pathep-[eth1/8]')
         self.aim_mgr.create(aim_ctx, hlink_1)
 
-        kwargs = {'provider:network_type': u'vlan'}
+        kwargs = {'provider:network_type': 'vlan'}
         if apic_svi:
             kwargs.update({'apic:svi': 'True'})
 
