@@ -70,18 +70,18 @@ if six.PY3:
     unicode = str
 
 ML2PLUS_PLUGIN = 'gbpservice.neutron.plugins.ml2plus.plugin.Ml2PlusPlugin'
-DEFAULT_FILTER_ENTRY = {'arp_opcode': u'unspecified',
-                        'dest_from_port': u'unspecified',
-                        'dest_to_port': u'unspecified',
-                        'ether_type': u'unspecified',
+DEFAULT_FILTER_ENTRY = {'arp_opcode': 'unspecified',
+                        'dest_from_port': 'unspecified',
+                        'dest_to_port': 'unspecified',
+                        'ether_type': 'unspecified',
                         'fragment_only': False,
-                        'icmpv4_type': u'unspecified',
-                        'icmpv6_type': u'unspecified',
-                        'ip_protocol': u'unspecified',
-                        'source_from_port': u'unspecified',
-                        'source_to_port': u'unspecified',
+                        'icmpv4_type': 'unspecified',
+                        'icmpv6_type': 'unspecified',
+                        'ip_protocol': 'unspecified',
+                        'source_from_port': 'unspecified',
+                        'source_to_port': 'unspecified',
                         'stateful': False,
-                        'tcp_flags': u'unspecified'}
+                        'tcp_flags': 'unspecified'}
 AGENT_TYPE = ocst.AGENT_TYPE_OPFLEX_OVS
 AGENT_CONF = {'alive': True, 'binary': 'somebinary',
               'topic': 'sometopic', 'agent_type': AGENT_TYPE,
@@ -110,7 +110,7 @@ CONS = 'apic:external_consumed_contracts'
 
 def aim_object_to_dict(obj):
     result = {}
-    for key, value in obj.__dict__.items():
+    for key, value in list(obj.__dict__.items()):
         if key in obj.user_attributes():
             result[key] = value
     return result
@@ -2304,7 +2304,7 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
         # Verify that implicit subnetpools exist for each address family,
         # and that the PTG was allocated a subnet with a prefix from
         # each address family
-        for ip_version in self.ip_dict.keys():
+        for ip_version in list(self.ip_dict.keys()):
             family_subnets = []
             for subnet_id in ptg['subnets']:
                 req = self.new_show_request('subnets', subnet_id, fmt=self.fmt)
@@ -2341,7 +2341,7 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
 
         self._verify_implicit_subnets_in_ptg(ptg, l3p)
         self._test_policy_target_group_aim_mappings(ptg, prs_lists, l2p,
-            num_address_families=len(self.ip_dict.keys()))
+            num_address_families=len(list(self.ip_dict.keys())))
 
         new_name = 'new name'
         new_prs_lists = self._get_provided_consumed_prs_lists()
@@ -2353,7 +2353,7 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
                                        'scope'})['policy_target_group']
 
         self._test_policy_target_group_aim_mappings(ptg, new_prs_lists, l2p,
-            num_address_families=len(self.ip_dict.keys()))
+            num_address_families=len(list(self.ip_dict.keys())))
 
         self.delete_policy_target_group(ptg_id, expected_res_status=204)
         self.show_policy_target_group(ptg_id, expected_res_status=404)
@@ -2384,7 +2384,7 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=200)
         self._verify_implicit_subnets_in_ptg(ptg)
         self._validate_router_interface_created(
-            num_address_families=len(self.ip_dict.keys()))
+            num_address_families=len(list(self.ip_dict.keys())))
 
         ptg_name = ptg['name']
         aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
@@ -2449,7 +2449,7 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
 
     def _create_explicit_subnetpools(self):
         vrf_dn = None
-        for ip_version in self.ip_dict.keys():
+        for ip_version in list(self.ip_dict.keys()):
             ascp = self._make_address_scope_for_vrf(vrf_dn,
                 ip_version, name='as1v' + str(ip_version))
             ascp = ascp['address_scope']
@@ -2470,24 +2470,24 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
     def test_create_ptg_explicit_subnetpools(self):
         self._create_explicit_subnetpools()
         kwargs = {'name': "l3p1", 'ip_pool': None}
-        for ip_version in self.ip_dict.keys():
+        for ip_version in list(self.ip_dict.keys()):
             kwargs[self.ip_dict[ip_version]['subnetpools_id_key']] = [sp['id']
                 for sp in self.ip_dict[ip_version]['subnetpools']]
-        if len(self.ip_dict.keys()) == 1:
+        if len(list(self.ip_dict.keys())) == 1:
             kwargs['ip_version'] = list(self.ip_dict.keys())[0]
         else:
             kwargs['ip_version'] = 46
         l3p = self.create_l3_policy(**kwargs)['l3_policy']
-        for ip_version in self.ip_dict.keys():
+        for ip_version in list(self.ip_dict.keys()):
             self.assertEqual(self.ip_dict[ip_version]['address_scope']['id'],
                 l3p[self.ip_dict[ip_version]['address_scope_id_key']])
         subnetpool_prefixes = []
-        for ip_version in self.ip_dict.keys():
+        for ip_version in list(self.ip_dict.keys()):
             cidrlist = self.ip_dict[ip_version]['cidrs']
             subnetpool_prefixes.extend([cidr for cidr, _ in cidrlist])
         self._validate_create_l3_policy(
             l3p, subnetpool_prefixes=subnetpool_prefixes)
-        for ip_version in self.ip_dict.keys():
+        for ip_version in list(self.ip_dict.keys()):
             sp_key = self.ip_dict[ip_version]['subnetpools_id_key']
             self.assertEqual(len(self.ip_dict[ip_version]['subnetpools']),
                              len(l3p[sp_key]))
@@ -2538,14 +2538,14 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
         # Implicitly created subnet should not be deleted
         self._verify_implicit_subnets_in_ptg(ptg)
         self._validate_router_interface_created(
-            num_address_families=len(self.ip_dict.keys()))
+            num_address_families=len(list(self.ip_dict.keys())))
 
     def test_delete_ptg_after_router_interface_delete(self):
         ptg = self.create_policy_target_group(
             name="ptg1")['policy_target_group']
         ptg_id = ptg['id']
         self._validate_router_interface_created(
-            num_address_families=len(self.ip_dict.keys()))
+            num_address_families=len(list(self.ip_dict.keys())))
 
         router_id = self._l3_plugin.get_routers(self._context)[0]['id']
         subnet_id = self._plugin.get_subnets(self._context)[0]['id']
@@ -4046,8 +4046,8 @@ class TestPolicyRuleBase(AIMBaseTestCase):
         self.assertItemsEqual(
             aim_object_to_dict(expected_filter_entry),
             # special processing to convert unicode to str
-            dict((str(k), str(v)) for k, v in aim_object_to_dict(
-                                                    filter_entry).items()))
+            dict((str(k), str(v)) for k, v in list(aim_object_to_dict(
+                                                    filter_entry).items())))
 
     def _validate_1_to_many_reverse_filter_entries(
             self, policy_rule, afilter, filter_entries):
@@ -4055,7 +4055,7 @@ class TestPolicyRuleBase(AIMBaseTestCase):
             policy_rule['policy_classifier_id'])['policy_classifier']
         expected_entries = alib.get_filter_entries_for_policy_classifier(pc)
 
-        for e_name, value in expected_entries['reverse_rules'].items():
+        for e_name, value in list(expected_entries['reverse_rules'].items()):
             expected_filter_entry = self.driver._aim_filter_entry(
                     self._neutron_context.session, afilter, e_name,
                     alib.map_to_aim_filter_entry(value))
@@ -4065,8 +4065,8 @@ class TestPolicyRuleBase(AIMBaseTestCase):
             self.assertItemsEqual(
                     aim_object_to_dict(expected_filter_entry),
                     # special processing to convert unicode to str
-                    dict((str(k), str(v)) for k, v in aim_object_to_dict(
-                        filter_entry).items()))
+                    dict((str(k), str(v)) for k, v in list(aim_object_to_dict(
+                        filter_entry).items())))
 
     def _test_policy_rule_aim_mapping(self, policy_rule):
         aim_filter_name = str(self.name_mapper.policy_rule(

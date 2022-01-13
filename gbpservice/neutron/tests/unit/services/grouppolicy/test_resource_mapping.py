@@ -12,7 +12,6 @@
 # limitations under the License.
 
 import copy
-import itertools
 
 from unittest import mock
 
@@ -194,11 +193,11 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         # attributes containing a colon should be passed with
         # a double underscore
         try:
-            new_args = dict(itertools.izip(map(lambda x: x.replace('__', ':'),
-                                               kwargs), kwargs.values()))
+            new_args = dict(zip([x.replace('__', ':')
+                            for x in kwargs], list(kwargs.values())))
         except AttributeError:
-            new_args = dict(zip(map(lambda x: x.replace('__', ':'),
-                                    kwargs), kwargs.values()))
+            new_args = dict(list(zip([x.replace('__', ':')
+                            for x in kwargs], list(kwargs.values()))))
         arg_list = new_args.pop('arg_list', ()) + (external_net.EXTERNAL,)
         return super(ResourceMappingTestCase, self)._create_network(
             fmt, name, admin_state_up, arg_list=arg_list, **new_args)

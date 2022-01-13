@@ -10,8 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import commands
 import logging
+import subprocess
 import sys
 
 from libs import config_libs
@@ -34,7 +34,7 @@ class test_gbp_ri_func_2(object):
         level=logging.WARNING)
     _log = logging.getLogger(__name__)
     cmd = 'rm /tmp/test_gbp_ri_func_2.log'
-    commands.getoutput(cmd)
+    subprocess.getoutput(cmd)
     hdlr = logging.FileHandler('/tmp/test_gbp_ri_func_2.log')
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     hdlr.setFormatter(formatter)
@@ -68,7 +68,7 @@ class test_gbp_ri_func_2(object):
                     (obj))
         if fail != 0:
             self._log.info("\n## TESTCASE_GBP_RI_FUNC_2: FAILED")
-            commands.report_results('test_gbp_ri_func_2', 'test_results.txt')
+            subprocess.report_results('test_gbp_ri_func_2', 'test_results.txt')
             sys.exit(1)
 
     def run(self):

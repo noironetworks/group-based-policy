@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import commands
+import subprocess
 import subprocess
 import sys
 
@@ -24,7 +24,7 @@ def main():
     cmd_list = ["sudo sh -c 'cat /dev/null > test_results_admin.txt'",
                 "sudo chmod 777 test_results_admin.txt "]
     for cmd in cmd_list:
-        commands.getoutput(cmd)
+        subprocess.getoutput(cmd)
     test_list = ['tc_gbp_pr_pc_pa_shared_func.py',
                  'tc_gbp_prs_pr_shared_func.py']
     for test in test_list:
@@ -35,10 +35,10 @@ def main():
     contents = results_file.read()
     results_file.close()
     print(contents)
-    print("\n\nTotal Number of Shared Resource TestCases Executed= %s" % (
-        contents.count("_SHARED_")))
-    print("\n\nNumber of TestCases Passed= %s" % (contents.count("PASSED")))
-    print("\n\nNumber of TestCases Failed= %s" % (contents.count("FAILED")))
+    print(("\n\nTotal Number of Shared Resource TestCases Executed= %s" % (
+        contents.count("_SHARED_"))))
+    print(("\n\nNumber of TestCases Passed= %s" % (contents.count("PASSED"))))
+    print(("\n\nNumber of TestCases Failed= %s" % (contents.count("FAILED"))))
     if contents.count("FAILED") > 0:
         sys.exit(1)
     else:

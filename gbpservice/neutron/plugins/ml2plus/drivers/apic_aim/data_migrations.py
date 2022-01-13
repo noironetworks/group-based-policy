@@ -142,7 +142,7 @@ def do_apic_aim_persist_migration(session):
             # class. We work around this for now by using the dict members.
             # This should be removed once the model class is fixed upstream.
             scope_dict = {}
-            for k, v in scope_db.__dict__.items():
+            for k, v in list(scope_db.__dict__.items()):
                 if k == '_sa_instance_state':
                     continue
                 if k == 'shared_':
@@ -457,8 +457,8 @@ def do_ha_ip_duplicate_entries_removal(session):
                 port_db.network_id, {})
             ha_ip_dict.setdefault(
                 ha_ip, []).append(tuple((ha_ip, port_id)))
-        for haip_dict in net_to_ha_ip_dict.values():
-            for ha_ip in haip_dict.keys():
+        for haip_dict in list(net_to_ha_ip_dict.values()):
+            for ha_ip in list(haip_dict.keys()):
                 if len(haip_dict[ha_ip]) > 1:
                     for (haip, portid) in haip_dict[ha_ip]:
                         delete_q = HAIPAddressToPortAssociation.delete().where(

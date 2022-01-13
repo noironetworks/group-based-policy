@@ -628,7 +628,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
             if operation == lb_const.CREATE:
                 driver_name = data['driver_name']
                 driver_id = driver_name + service_vendor
-                if (driver_id) not in self.drivers.keys():
+                if (driver_id) not in list(self.drivers.keys()):
                     msg = ('No device driver on agent: %s.' % (driver_name))
                     LOG.error(msg)
                     self.plugin_rpc.update_status(
@@ -860,7 +860,7 @@ class LBaaSV2EventHandler(agent_base.AgentBaseEventHandler,
                              spacing=60)
     def collect_stats_v2(self, ev):
         for pool_id, driver_name in \
-                LBaaSV2EventHandler.instance_mapping.items():
+                list(LBaaSV2EventHandler.instance_mapping.items()):
             driver_id = lb_const.SERVICE_TYPE + driver_name
             driver = self.drivers[driver_id]
             try:
