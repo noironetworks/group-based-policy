@@ -229,7 +229,7 @@ def _find_routers_via_routes_for_floatingip(self, context, internal_port,
             cidr_nexthops[cidr].append(route['nexthop'])
         smallest_cidr = netaddr.smallest_matching_cidr(
             internal_ip_address,
-            cidr_nexthops.keys())
+            list(cidr_nexthops.keys()))
         if not smallest_cidr:
             continue
         # validate that there exists a path to "internal_port"

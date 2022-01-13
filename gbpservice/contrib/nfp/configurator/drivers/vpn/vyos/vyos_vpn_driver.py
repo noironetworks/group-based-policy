@@ -942,9 +942,9 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
             'aes-256': "aes256",
             'aes-192': "aes256"}
 
-        if ike_enc_algo in algos.keys():
+        if ike_enc_algo in list(algos.keys()):
             ike_enc_algo = algos[ike_enc_algo]
-        if ipsec_enc_algo in algos.keys():
+        if ipsec_enc_algo in list(algos.keys()):
             ipsec_enc_algo = algos[ipsec_enc_algo]
 
         conn['ikepolicy']['encryption_algorithm'] = ike_enc_algo
@@ -1418,10 +1418,10 @@ class VpnaasIpsecDriver(VpnGenericConfigDriver):
             reason = resource_data.get('reason')
             rsrc = resource_data.get('rsrc_type')
 
-            if rsrc not in self.handlers.keys():
+            if rsrc not in list(self.handlers.keys()):
                 raise UnknownResourceException(rsrc=rsrc)
 
-            if reason not in self.handlers[rsrc].keys():
+            if reason not in list(self.handlers[rsrc].keys()):
                 raise UnknownReasonException(reason=reason)
 
             self.handlers[rsrc][reason](context, resource_data)
