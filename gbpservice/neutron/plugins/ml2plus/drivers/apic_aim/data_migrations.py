@@ -446,8 +446,8 @@ def do_ha_ip_duplicate_entries_removal(session):
                 port_db.network_id, {})
             ha_ip_dict.setdefault(
                 ha_ip, []).append(tuple((ha_ip, port_id)))
-        for haip_dict in net_to_ha_ip_dict.values():
-            for ha_ip in haip_dict.keys():
+        for haip_dict in list(net_to_ha_ip_dict.values()):
+            for ha_ip in list(haip_dict.keys()):
                 if len(haip_dict[ha_ip]) > 1:
                     for (haip, portid) in haip_dict[ha_ip]:
                         delete_q = HAIPAddressToPortAssociation.delete().where(

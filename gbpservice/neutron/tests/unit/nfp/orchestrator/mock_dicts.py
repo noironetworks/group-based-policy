@@ -101,153 +101,153 @@ class DummyDictionaries(object):
     }
 
     DEFAULT_FW_CONFIG = {
-        u'heat_template_version': u'2013-05-23',
-        u'description': u'Template to deploy firewall',
-        u'resources': {
-            u'sc_firewall_rule3': {
-                u'type': u'OS::Neutron::FirewallRule',
-                u'properties': {
-                    u'action': u'allow',
-                    u'destination_port': u'82',
-                    u'protocol': u'tcp', u'name': u'Rule_3'
+        'heat_template_version': '2013-05-23',
+        'description': 'Template to deploy firewall',
+        'resources': {
+            'sc_firewall_rule3': {
+                'type': 'OS::Neutron::FirewallRule',
+                'properties': {
+                    'action': 'allow',
+                    'destination_port': '82',
+                    'protocol': 'tcp', 'name': 'Rule_3'
                 }
             },
-            u'sc_firewall_rule2': {
-                u'type': u'OS::Neutron::FirewallRule',
-                u'properties': {
-                    u'action': u'allow',
-                    u'destination_port': u'81',
-                    u'protocol': u'tcp', u'name': u'Rule_2'
+            'sc_firewall_rule2': {
+                'type': 'OS::Neutron::FirewallRule',
+                'properties': {
+                    'action': 'allow',
+                    'destination_port': '81',
+                    'protocol': 'tcp', 'name': 'Rule_2'
                 }
             },
-            u'sc_firewall_rule1': {
-                u'type': u'OS::Neutron::FirewallRule',
-                u'properties': {
-                    u'action': u'allow',
-                    u'destination_port': u'80',
-                    u'protocol': u'tcp',
-                    u'name': u'Rule_1'
+            'sc_firewall_rule1': {
+                'type': 'OS::Neutron::FirewallRule',
+                'properties': {
+                    'action': 'allow',
+                    'destination_port': '80',
+                    'protocol': 'tcp',
+                    'name': 'Rule_1'
                 }
             },
-            u'sc_firewall_rule0': {
-                u'type': u'OS::Neutron::FirewallRule',
-                u'properties': {
-                    u'action': u'allow',
-                    u'destination_port': u'22',
-                    u'protocol': u'tcp', u'name': u'Rule_0'
+            'sc_firewall_rule0': {
+                'type': 'OS::Neutron::FirewallRule',
+                'properties': {
+                    'action': 'allow',
+                    'destination_port': '22',
+                    'protocol': 'tcp', 'name': 'Rule_0'
                 }
             },
-            u'sc_firewall_rule4': {
-                u'type': u'OS::Neutron::FirewallRule',
-                u'properties': {
-                    u'action': u'allow',
-                    u'protocol': u'icmp',
-                    u'name': u'Rule_4'
+            'sc_firewall_rule4': {
+                'type': 'OS::Neutron::FirewallRule',
+                'properties': {
+                    'action': 'allow',
+                    'protocol': 'icmp',
+                    'name': 'Rule_4'
                 }
             },
-            u'sc_firewall_policy': {
-                u'type': u'OS::Neutron::FirewallPolicy',
-                u'properties': {
-                    u'name': u'',
-                    u'firewall_rules': [
-                         {u'get_resource': u'sc_firewall_rule0'},
-                         {u'get_resource': u'sc_firewall_rule1'},
-                         {u'get_resource': u'sc_firewall_rule2'},
-                         {u'get_resource': u'sc_firewall_rule3'},
-                         {u'get_resource': u'sc_firewall_rule4'}]
+            'sc_firewall_policy': {
+                'type': 'OS::Neutron::FirewallPolicy',
+                'properties': {
+                    'name': '',
+                    'firewall_rules': [
+                         {'get_resource': 'sc_firewall_rule0'},
+                         {'get_resource': 'sc_firewall_rule1'},
+                         {'get_resource': 'sc_firewall_rule2'},
+                         {'get_resource': 'sc_firewall_rule3'},
+                         {'get_resource': 'sc_firewall_rule4'}]
                 }
             },
-            u'sc_firewall': {
-                u'type': u'OS::Neutron::Firewall',
-                u'properties': {
-                    u'firewall_policy_id': {
-                         u'get_resource': u'sc_firewall_policy'
+            'sc_firewall': {
+                'type': 'OS::Neutron::Firewall',
+                'properties': {
+                    'firewall_policy_id': {
+                         'get_resource': 'sc_firewall_policy'
                     },
-                    u'name': u'serviceVM_infra_FW',
-                    u'description': {u'insert_type': u'east_west'}
+                    'name': 'serviceVM_infra_FW',
+                    'description': {'insert_type': 'east_west'}
                 }
             }
         }
     }
 
     DEFAULT_VPN_CONFIG = {
-        u'resources': {
-            u'IKEPolicy': {
-                u'type': u'OS::Neutron::IKEPolicy',
-                u'properties': {
-                    u'name': u'IKEPolicy',
-                    u'auth_algorithm': u'sha1',
-                    u'encryption_algorithm': u'3des',
-                    u'pfs': u'group5',
-                    u'lifetime': {
-                        u'units': u'seconds',
-                        u'value': 3600
+        'resources': {
+            'IKEPolicy': {
+                'type': 'OS::Neutron::IKEPolicy',
+                'properties': {
+                    'name': 'IKEPolicy',
+                    'auth_algorithm': 'sha1',
+                    'encryption_algorithm': '3des',
+                    'pfs': 'group5',
+                    'lifetime': {
+                        'units': 'seconds',
+                        'value': 3600
                     },
-                    u'ike_version': u'v1',
-                    u'phase1_negotiation_mode': u'main'
+                    'ike_version': 'v1',
+                    'phase1_negotiation_mode': 'main'
                 }
             },
-            u'VPNService': {
-                u'type': u'OS::Neutron::VPNService',
-                u'properties': {
-                    u'router_id': {
-                        u'get_param': u'RouterId'
+            'VPNService': {
+                'type': 'OS::Neutron::VPNService',
+                'properties': {
+                    'router_id': {
+                        'get_param': 'RouterId'
                     },
-                    u'subnet_id': {
-                        u'get_param': u'Subnet'
+                    'subnet_id': {
+                        'get_param': 'Subnet'
                     },
-                    u'admin_state_up': u'true',
-                    u'description': {
-                        u'get_param': u'ServiceDescription'
+                    'admin_state_up': 'true',
+                    'description': {
+                        'get_param': 'ServiceDescription'
                     },
-                    u'name': u'VPNService'
+                    'name': 'VPNService'
                 }
             },
-            u'site_to_site_connection1': {
-                u'type': u'OS::Neutron::IPsecSiteConnection',
-                u'properties': {
-                    u'psk': u'secret',
-                    u'initiator': u'bi-directional',
-                    u'name': u'site_to_site_connection1',
-                    u'admin_state_up': u'true',
+            'site_to_site_connection1': {
+                'type': 'OS::Neutron::IPsecSiteConnection',
+                'properties': {
+                    'psk': 'secret',
+                    'initiator': 'bi-directional',
+                    'name': 'site_to_site_connection1',
+                    'admin_state_up': 'true',
                     'description':
-                        u'fip=1.103.1.20;tunnel_local_cidr=11.0.1.0/24;\
+                        'fip=1.103.1.20;tunnel_local_cidr=11.0.1.0/24;\
                         user_access_ip=1.103.2.20;fixed_ip=192.168.0.3;\
                         standby_fip=1.103.1.21;service_vendor=vyos;\
                         stitching_cidr=192.168.0.0/28;\
                         stitching_gateway=192.168.0.1;mgmt_gw_ip=120.0.0.1',
-                    u'peer_cidrs': [u'11.0.0.0/24'],
-                    u'mtu': 1500,
-                    u'ikepolicy_id': {
-                        u'get_resource': u'IKEPolicy'
+                    'peer_cidrs': ['11.0.0.0/24'],
+                    'mtu': 1500,
+                    'ikepolicy_id': {
+                        'get_resource': 'IKEPolicy'
                     },
-                    u'dpd': {
-                        u'interval': 30,
-                        u'actions': u'hold',
-                        u'timeout': 120
+                    'dpd': {
+                        'interval': 30,
+                        'actions': 'hold',
+                        'timeout': 120
                     },
-                    u'vpnservice_id': {
-                        u'get_resource': u'VPNService'
+                    'vpnservice_id': {
+                        'get_resource': 'VPNService'
                     },
-                    u'peer_address': u'1.103.2.88',
-                    u'peer_id': u'1.103.2.88',
-                    u'ipsecpolicy_id': {
-                        u'get_resource': u'IPsecPolicy'
+                    'peer_address': '1.103.2.88',
+                    'peer_id': '1.103.2.88',
+                    'ipsecpolicy_id': {
+                        'get_resource': 'IPsecPolicy'
                     }
                 }
             },
-            u'IPsecPolicy': {
-                u'type': u'OS::Neutron::IPsecPolicy',
-                u'properties': {
-                    u'name': u'IPsecPolicy',
-                    u'transform_protocol': u'esp',
-                    u'auth_algorithm': u'sha1',
-                    u'encapsulation_mode': u'tunnel',
-                    u'encryption_algorithm': u'3des',
-                    u'pfs': u'group5',
-                    u'lifetime': {
-                        u'units': u'seconds',
-                        u'value': 3600
+            'IPsecPolicy': {
+                'type': 'OS::Neutron::IPsecPolicy',
+                'properties': {
+                    'name': 'IPsecPolicy',
+                    'transform_protocol': 'esp',
+                    'auth_algorithm': 'sha1',
+                    'encapsulation_mode': 'tunnel',
+                    'encryption_algorithm': '3des',
+                    'pfs': 'group5',
+                    'lifetime': {
+                        'units': 'seconds',
+                        'value': 3600
                     }
                 }
             }
@@ -255,17 +255,17 @@ class DummyDictionaries(object):
     }
 
     appended_sc_firewall_policy = {
-        u'type': u'OS::Neutron::FirewallPolicy',
-        u'properties': {
-            u'name': u'',
-            u'firewall_rules': [
+        'type': 'OS::Neutron::FirewallPolicy',
+        'properties': {
+            'name': '',
+            'firewall_rules': [
                 {
-                    u'get_resource': u'sc_firewall_rule0'
+                    'get_resource': 'sc_firewall_rule0'
                 },
-                {u'get_resource': u'sc_firewall_rule1'},
-                {u'get_resource': u'sc_firewall_rule2'},
-                {u'get_resource': u'sc_firewall_rule3'},
-                {u'get_resource': u'sc_firewall_rule4'},
+                {'get_resource': 'sc_firewall_rule1'},
+                {'get_resource': 'sc_firewall_rule2'},
+                {'get_resource': 'sc_firewall_rule3'},
+                {'get_resource': 'sc_firewall_rule4'},
                 {'get_resource': 'node_driver_rule_2b86019a-45f7-44_1'},
                 {'get_resource': 'node_driver_rule_2b86019a-45f7-44_2'},
                 {'get_resource': 'node_driver_rule_2b86019a-45f7-44_3'},
@@ -276,29 +276,29 @@ class DummyDictionaries(object):
     }
 
     updated_sc_firewall_policy = {
-        u'type': u'OS::Neutron::FirewallPolicy',
-        u'properties': {
-            u'name': u'-fw_redirect',
-            u'firewall_rules': [
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_1'},
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_2'},
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_3'},
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_4'},
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_5'},
+        'type': 'OS::Neutron::FirewallPolicy',
+        'properties': {
+            'name': '-fw_redirect',
+            'firewall_rules': [
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_1'},
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_2'},
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_3'},
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_4'},
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_5'},
             ]
         }
     }
 
     updated_template_sc_firewall_policy = {
-        u'type': u'OS::Neutron::FirewallPolicy',
-        u'properties': {
-            u'name': u'',
-            u'firewall_rules': [
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_1'},
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_2'},
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_3'},
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_4'},
-                {'get_resource': u'node_driver_rule_af6a8a58-1e25-49_5'},
+        'type': 'OS::Neutron::FirewallPolicy',
+        'properties': {
+            'name': '',
+            'firewall_rules': [
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_1'},
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_2'},
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_3'},
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_4'},
+                {'get_resource': 'node_driver_rule_af6a8a58-1e25-49_5'},
             ]
         }
     }
@@ -319,188 +319,188 @@ class DummyDictionaries(object):
 
     port_info = {
         'port': {
-            u'status': u'ACTIVE',
-            u'binding:host_id': u'LibertyCompute',
-            u'name': u'',
-            u'allowed_address_pairs': [],
-            u'admin_state_up': True,
-            u'network_id': u'2286b432-a443-4cd3-be49-e354f531abe3',
-            u'dns_name': u'',
-            u'extra_dhcp_opts': [],
-            u'mac_address': u'fa:16:3e:43:34:33',
-            u'dns_assignment': [
-                {u'hostname': u'host-42-0-0-13',
-                 u'ip_address': u'42.0.0.13',
-                 u'fqdn': u'host-42-0-0-13.openstacklocal.'
+            'status': 'ACTIVE',
+            'binding:host_id': 'LibertyCompute',
+            'name': '',
+            'allowed_address_pairs': [],
+            'admin_state_up': True,
+            'network_id': '2286b432-a443-4cd3-be49-e354f531abe3',
+            'dns_name': '',
+            'extra_dhcp_opts': [],
+            'mac_address': 'fa:16:3e:43:34:33',
+            'dns_assignment': [
+                {'hostname': 'host-42-0-0-13',
+                 'ip_address': '42.0.0.13',
+                 'fqdn': 'host-42-0-0-13.openstacklocal.'
                  }],
-            u'binding:vif_details': {
-                u'port_filter': True,
-                u'ovs_hybrid_plug': True
+            'binding:vif_details': {
+                'port_filter': True,
+                'ovs_hybrid_plug': True
             },
-            u'binding:vif_type': u'ovs',
-            u'device_owner': u'compute:nova',
-            u'tenant_id': u'f6b09b7a590642d8ac6de73df0ab0686',
-            u'binding:profile': {},
-            u'binding:vnic_type': u'normal',
-            u'fixed_ips': [
-                {u'subnet_id': u'b31cdafe-bdf3-4c19-b768-34d623d77d6c',
-                 u'ip_address': u'42.0.0.13'}],
-            u'id': u'dde7d849-4c7c-4b48-8c21-f3f52c646fbe',
-            u'security_groups': [u'ad3b95a4-b5ce-4a95-9add-6ef2ee797e72'],
-            u'device_id': u'36e9a6d9-ea04-4627-93c5-6f708368c070'
+            'binding:vif_type': 'ovs',
+            'device_owner': 'compute:nova',
+            'tenant_id': 'f6b09b7a590642d8ac6de73df0ab0686',
+            'binding:profile': {},
+            'binding:vnic_type': 'normal',
+            'fixed_ips': [
+                {'subnet_id': 'b31cdafe-bdf3-4c19-b768-34d623d77d6c',
+                 'ip_address': '42.0.0.13'}],
+            'id': 'dde7d849-4c7c-4b48-8c21-f3f52c646fbe',
+            'security_groups': ['ad3b95a4-b5ce-4a95-9add-6ef2ee797e72'],
+            'device_id': '36e9a6d9-ea04-4627-93c5-6f708368c070'
         }
     }
     provider_ptg = {
-        u'shared': False,
-        u'subnets': [u'a2702d68-6deb-425c-a266-e27b349e00ce'],
-        u'proxy_group_id': None,
-        u'description': u'',
-        u'consumed_policy_rule_sets': [],
-        u'network_service_policy_id': u'0cdf2cba-90f8-44da-84a5-876e582f6e35',
-        u'tenant_id': u'8ae6701128994ab281dde6b92207bb19',
-        u'service_management': False,
-        u'provided_policy_rule_sets': ['7d4b1ef2-eb80-415d-ad13-abf0ea0c52f3'],
-        u'policy_targets': [
+        'shared': False,
+        'subnets': ['a2702d68-6deb-425c-a266-e27b349e00ce'],
+        'proxy_group_id': None,
+        'description': '',
+        'consumed_policy_rule_sets': [],
+        'network_service_policy_id': '0cdf2cba-90f8-44da-84a5-876e582f6e35',
+        'tenant_id': '8ae6701128994ab281dde6b92207bb19',
+        'service_management': False,
+        'provided_policy_rule_sets': ['7d4b1ef2-eb80-415d-ad13-abf0ea0c52f3'],
+        'policy_targets': [
             {'name': 'provider_0132c_00b93',
              'port_id': 'dde7d849-4c7c-4b48-8c21-f3f52c646fbe'}],
-        u'proxy_type': None,
-        u'proxied_group_id': None,
-        u'l2_policy_id': u'120aa972-1b58-418d-aa5b-1d2f96612c49',
-        u'id': u'af6a8a58-1e25-49c4-97a3-d5f50b3aa04b',
-        u'name': u'fw_redirect'
+        'proxy_type': None,
+        'proxied_group_id': None,
+        'l2_policy_id': '120aa972-1b58-418d-aa5b-1d2f96612c49',
+        'id': 'af6a8a58-1e25-49c4-97a3-d5f50b3aa04b',
+        'name': 'fw_redirect'
     }
 
     consumer_ptg = {
-        u'shared': False,
-        u'subnets': [u'a2702d68-6deb-425c-a266-e27b349e00ce'],
-        u'proxy_group_id': None,
-        u'description': u'',
-        u'consumed_policy_rule_sets': ['7d4b1ef2-eb80-415d-ad13-abf0ea0c52f3'],
-        u'network_service_policy_id': u'0cdf2cba-90f8-44da-84a5-876e582f6e35',
-        u'tenant_id': u'8ae6701128994ab281dde6b92207bb19',
-        u'service_management': False,
-        u'provided_policy_rule_sets': [],
-        u'policy_targets': [
+        'shared': False,
+        'subnets': ['a2702d68-6deb-425c-a266-e27b349e00ce'],
+        'proxy_group_id': None,
+        'description': '',
+        'consumed_policy_rule_sets': ['7d4b1ef2-eb80-415d-ad13-abf0ea0c52f3'],
+        'network_service_policy_id': '0cdf2cba-90f8-44da-84a5-876e582f6e35',
+        'tenant_id': '8ae6701128994ab281dde6b92207bb19',
+        'service_management': False,
+        'provided_policy_rule_sets': [],
+        'policy_targets': [
             {'name': 'provider_0132c_00b93',
              'port_id': 'dde7d849-4c7c-4b48-8c21-f3f52c646fbe'}],
-        u'proxy_type': None,
-        u'proxied_group_id': None,
-        u'l2_policy_id': u'120aa972-1b58-418d-aa5b-1d2f96612c49',
-        u'id': u'af6a8a58-1e25-49c4-97a3-d5f50b3aa04b',
-        u'name': u'fw_redirect'
+        'proxy_type': None,
+        'proxied_group_id': None,
+        'l2_policy_id': '120aa972-1b58-418d-aa5b-1d2f96612c49',
+        'id': 'af6a8a58-1e25-49c4-97a3-d5f50b3aa04b',
+        'name': 'fw_redirect'
     }
 
     l3_policies = {
-        u'l3_policies': [
-            {u'tenant_id': '8ae6701128994ab281dde6b92207bb19',
-             u'name': u'remote-vpn-client-pool-cidr-l3policy'}]
+        'l3_policies': [
+            {'tenant_id': '8ae6701128994ab281dde6b92207bb19',
+             'name': 'remote-vpn-client-pool-cidr-l3policy'}]
     }
 
     policy_rule_sets = {
-        u'policy_rule_sets': [
-            {u'id': u'7d4b1ef2-eb80-415d-ad13-abf0ea0c52f3',
-             u'name': u'fw_redirect',
-             u'policy_rules': [u'493788ad-2b9a-47b1-b04d-9096d4057fb5'],
-             u'tenant_id': u'8ae6701128994ab281dde6b92207bb19',
-             u'shared': False,
-             u'consuming_policy_target_groups':
-             [u'af6a8a58-1e25-49c4-97a3-d5f50b3aa04b'],
-             u'consuming_external_policies': None}]
+        'policy_rule_sets': [
+            {'id': '7d4b1ef2-eb80-415d-ad13-abf0ea0c52f3',
+             'name': 'fw_redirect',
+             'policy_rules': ['493788ad-2b9a-47b1-b04d-9096d4057fb5'],
+             'tenant_id': '8ae6701128994ab281dde6b92207bb19',
+             'shared': False,
+             'consuming_policy_target_groups':
+             ['af6a8a58-1e25-49c4-97a3-d5f50b3aa04b'],
+             'consuming_external_policies': None}]
     }
 
     policy_rules = {
-        u'policy_rules': [
-            {u'id': u'493788ad-2b9a-47b1-b04d-9096d4057fb5',
-             u'name': u'fw_redirect',
-             u'policy_actions': [u'0bab5fa6-4f89-4e15-8363-dacc7d825466'],
-             u'policy_classifier_id': u'8e5fc80f-7544-484c-82d0-2a5794c10664',
-             u'tenant_id': u'8ae6701128994ab281dde6b92207bb19',
-             u'shared': False}]
+        'policy_rules': [
+            {'id': '493788ad-2b9a-47b1-b04d-9096d4057fb5',
+             'name': 'fw_redirect',
+             'policy_actions': ['0bab5fa6-4f89-4e15-8363-dacc7d825466'],
+             'policy_classifier_id': '8e5fc80f-7544-484c-82d0-2a5794c10664',
+             'tenant_id': '8ae6701128994ab281dde6b92207bb19',
+             'shared': False}]
     }
 
     policy_actions = {
-        u'policy_actions': [
-            {u'id': u'0bab5fa6-4f89-4e15-8363-dacc7d825466',
-             u'name': u'fw_redirect',
-             u'action_value': u'1e83b288-4b56-4851-83e2-69c4365aa8e5',
-             u'action_type': u'redirect',
-             u'tenant_id': u'8ae6701128994ab281dde6b92207bb19',
-             u'shared': False}]
+        'policy_actions': [
+            {'id': '0bab5fa6-4f89-4e15-8363-dacc7d825466',
+             'name': 'fw_redirect',
+             'action_value': '1e83b288-4b56-4851-83e2-69c4365aa8e5',
+             'action_type': 'redirect',
+             'tenant_id': '8ae6701128994ab281dde6b92207bb19',
+             'shared': False}]
     }
 
     policy_target_groups = {
-        u'policy_target_groups': [
-            {u'shared': False,
-             u'subnets': [u'a2702d68-6deb-425c-a266-e27b349e00ce'],
-             u'proxy_group_id': None,
-             u'description': u'',
-             u'consumed_policy_rule_sets': [],
-             u'network_service_policy_id':
-             u'0cdf2cba-90f8-44da-84a5-876e582f6e35',
-             u'tenant_id': u'8ae6701128994ab281dde6b92207bb19',
-             u'service_management': False,
-             u'provided_policy_rule_sets':
+        'policy_target_groups': [
+            {'shared': False,
+             'subnets': ['a2702d68-6deb-425c-a266-e27b349e00ce'],
+             'proxy_group_id': None,
+             'description': '',
+             'consumed_policy_rule_sets': [],
+             'network_service_policy_id':
+             '0cdf2cba-90f8-44da-84a5-876e582f6e35',
+             'tenant_id': '8ae6701128994ab281dde6b92207bb19',
+             'service_management': False,
+             'provided_policy_rule_sets':
                  ['7d4b1ef2-eb80-415d-ad13-abf0ea0c52f3'],
-             u'policy_targets': [
+             'policy_targets': [
                  {'name': 'provider_0132c_00b93',
                   'port_id': 'dde7d849-4c7c-4b48-8c21-f3f52c646fbe'}],
-             u'proxy_type': None,
-             u'proxied_group_id': None,
-             u'l2_policy_id': u'120aa972-1b58-418d-aa5b-1d2f96612c49',
-             u'id': u'af6a8a58-1e25-49c4-97a3-d5f50b3aa04b',
-             u'name': u'fw_redirect'}]
+             'proxy_type': None,
+             'proxied_group_id': None,
+             'l2_policy_id': '120aa972-1b58-418d-aa5b-1d2f96612c49',
+             'id': 'af6a8a58-1e25-49c4-97a3-d5f50b3aa04b',
+             'name': 'fw_redirect'}]
     }
 
     subnet_info = {
-        u'subnet': {
-            u'name': u'lb-subnet',
-            u'enable_dhcp': True,
-            u'network_id': u'2286b432-a443-4cd3-be49-e354f531abe3',
-            u'tenant_id': u'f6b09b7a590642d8ac6de73df0ab0686',
-            u'dns_nameservers': [],
-            u'ipv6_ra_mode': None,
-            u'allocation_pools': [{
-                u'start': u'42.0.0.2', u'end': u'42.0.0.254'}],
-            u'gateway_ip': u'42.0.0.1',
-            u'ipv6_address_mode': None,
-            u'ip_version': 4,
-            u'host_routes': [],
-            u'cidr': u'42.0.0.0/24',
-            u'id': u'b31cdafe-bdf3-4c19-b768-34d623d77d6c',
-            u'subnetpool_id': None
+        'subnet': {
+            'name': 'lb-subnet',
+            'enable_dhcp': True,
+            'network_id': '2286b432-a443-4cd3-be49-e354f531abe3',
+            'tenant_id': 'f6b09b7a590642d8ac6de73df0ab0686',
+            'dns_nameservers': [],
+            'ipv6_ra_mode': None,
+            'allocation_pools': [{
+                'start': '42.0.0.2', 'end': '42.0.0.254'}],
+            'gateway_ip': '42.0.0.1',
+            'ipv6_address_mode': None,
+            'ip_version': 4,
+            'host_routes': [],
+            'cidr': '42.0.0.0/24',
+            'id': 'b31cdafe-bdf3-4c19-b768-34d623d77d6c',
+            'subnetpool_id': None
         }
     }
 
     subnets_info = {
-        u'subnets': [
-            {u'name': u'lb-subnet',
-             u'enable_dhcp': True,
-             u'network_id': u'2286b432-a443-4cd3-be49-e354f531abe3',
-             u'tenant_id': u'f6b09b7a590642d8ac6de73df0ab0686',
-             u'dns_nameservers': [],
-             u'ipv6_ra_mode': None,
-             u'allocation_pools': [{
-                 u'start': u'42.0.0.2', u'end': u'42.0.0.254'}],
-             u'gateway_ip': u'42.0.0.1',
-             u'ipv6_address_mode': None,
-             u'ip_version': 4,
-             u'host_routes': [],
-             u'cidr': u'42.0.0.0/24',
-             u'id': u'b31cdafe-bdf3-4c19-b768-34d623d77d6c',
-             u'subnetpool_id': None}]
+        'subnets': [
+            {'name': 'lb-subnet',
+             'enable_dhcp': True,
+             'network_id': '2286b432-a443-4cd3-be49-e354f531abe3',
+             'tenant_id': 'f6b09b7a590642d8ac6de73df0ab0686',
+             'dns_nameservers': [],
+             'ipv6_ra_mode': None,
+             'allocation_pools': [{
+                 'start': '42.0.0.2', 'end': '42.0.0.254'}],
+             'gateway_ip': '42.0.0.1',
+             'ipv6_address_mode': None,
+             'ip_version': 4,
+             'host_routes': [],
+             'cidr': '42.0.0.0/24',
+             'id': 'b31cdafe-bdf3-4c19-b768-34d623d77d6c',
+             'subnetpool_id': None}]
     }
 
-    external_policies = {u'external_policies': {}}
+    external_policies = {'external_policies': {}}
 
     fw_template_properties = {
-        'fw_rule_keys': [u'sc_firewall_rule3', u'sc_firewall_rule2',
-                         u'sc_firewall_rule1', u'sc_firewall_rule0',
-                         u'sc_firewall_rule4'],
-        'name': u'2b8',
+        'fw_rule_keys': ['sc_firewall_rule3', 'sc_firewall_rule2',
+                         'sc_firewall_rule1', 'sc_firewall_rule0',
+                         'sc_firewall_rule4'],
+        'name': '2b8',
         'properties_key': 'properties',
         'resources_key': 'resources',
         'is_template_aws_version': False,
-        'fw_policy_key': u'sc_firewall_policy'
+        'fw_policy_key': 'sc_firewall_policy'
     }
 
     fw_scn_config = "{\"heat_template_version\": \"2013-05-23\",\
@@ -586,49 +586,49 @@ class DummyDictionaries(object):
         \":\"VPNService\"}}, \"type\":\"OS::Neutron::IPsecSiteConnection\"}}}"
 
     service_profile = {
-        u'service_flavor': u'vyos',
-        u'service_type': u'FIREWALL'
+        'service_flavor': 'vyos',
+        'service_type': 'FIREWALL'
     }
 
     vpn_service_profile = {
-        u'service_flavor': u'vyos',
-        u'service_type': u'VPN'
+        'service_flavor': 'vyos',
+        'service_type': 'VPN'
     }
 
     lbv2_service_profile = {
-        u'service_flavor': u'haproxy',
-        u'service_type': u'LOADBALANCERV2'
+        'service_flavor': 'haproxy',
+        'service_type': 'LOADBALANCERV2'
     }
 
     fw_service_chain_node = {
-        u'id': u'012345678919',
-        u'name': u'scn_fw',
-        u'config': fw_scn_config
+        'id': '012345678919',
+        'name': 'scn_fw',
+        'config': fw_scn_config
     }
 
     vpn_service_chain_node = {
-        u'id': u'012345678919',
-        u'name': u'scn_vpn',
-        u'config': vpn_scn_config
+        'id': '012345678919',
+        'name': 'scn_vpn',
+        'config': vpn_scn_config
     }
 
     lbv2_service_chain_node = {
-        u'id': u'012345678919',
-        u'name': u'scn_lb',
-        u'config': lbv2_scn_config
+        'id': '012345678919',
+        'name': 'scn_lb',
+        'config': lbv2_scn_config
     }
 
     service_chain_instance = {
-        u'id': u'7834569034456677',
-        u'name': u'sci_fw'
+        'id': '7834569034456677',
+        'name': 'sci_fw'
     }
 
     consumer_port = {
-        u'fixed_ips': [{
-            u'ip_address': u'11.0.3.4',
-            u'subnet_id': u'9876256378888333'
+        'fixed_ips': [{
+            'ip_address': '11.0.3.4',
+            'subnet_id': '9876256378888333'
         }],
-        u'id': u'af6a8a58-1e25-49c4-97a3-d5f50b3aa04b'
+        'id': 'af6a8a58-1e25-49c4-97a3-d5f50b3aa04b'
     }
 
     network_function_details = {

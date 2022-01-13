@@ -54,7 +54,7 @@ NEW_STATUS_DETAILS = 'new_status_details'
 
 
 def get_status_for_test(self, context):
-    resource_name = [item for item in context.__dict__.keys()
+    resource_name = [item for item in list(context.__dict__.keys())
      if item.startswith('_original')][0][len('_original'):]
     getattr(context, resource_name)['status'] = NEW_STATUS
     getattr(context, resource_name)['status_details'] = NEW_STATUS_DETAILS
@@ -69,7 +69,7 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
             gp_plugin = GP_PLUGIN_KLASS
         ml2_opts = ml2_options or {'mechanism_drivers': ['openvswitch'],
                                    'extension_drivers': ['port_security']}
-        for opt, val in ml2_opts.items():
+        for opt, val in list(ml2_opts.items()):
             cfg.CONF.set_override(opt, val, 'ml2')
         core_plugin = core_plugin or test_plugin.PLUGIN_NAME
         super(GroupPolicyPluginTestBase, self).setUp(core_plugin=core_plugin,
