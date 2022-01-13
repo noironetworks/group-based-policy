@@ -38,7 +38,7 @@ def get_obj_from_stack(cls):
     i = 1
     try:
         while True:
-            for val in sys._getframe(i).f_locals.values():
+            for val in list(sys._getframe(i).f_locals.values()):
                 if isinstance(val, cls):
                     return val
             i = i + 1
@@ -86,7 +86,7 @@ def admin_context(context):
 def deep_sort(obj):
     if isinstance(obj, dict):
         obj = OrderedDict(sorted(obj.items()))
-        for k, v in obj.items():
+        for k, v in list(obj.items()):
             if isinstance(v, dict) or isinstance(v, list):
                 obj[k] = deep_sort(v)
 

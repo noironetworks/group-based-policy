@@ -732,7 +732,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
         return (
             any(context.current[a] != context.original[a] for a in attrs) or
             any(param_curr.get(x) != param_orig.get(x) for x in
-                sfc_cts.AIM_PPG_PARAMS.keys()))
+                list(sfc_cts.AIM_PPG_PARAMS.keys())))
 
     def _should_regenerate_pc(self, context):
         attrs = ['flow_classifiers', 'port_pair_groups', 'name']
@@ -747,7 +747,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
             any(current[x] != original[x] for x in
                 sfc_cts.AIM_FLC_PARAMS + ['name']) or
             any(l7_curr[x] != l7_orig[x] for x in
-                sfc_cts.AIM_FLC_L7_PARAMS.keys()))
+                list(sfc_cts.AIM_FLC_L7_PARAMS.keys())))
 
     def _get_ppg_device_cluster(self, session, ppg, tenant):
         tenant_aid = tenant
@@ -928,7 +928,7 @@ class SfcAIMDriver(SfcAIMDriverBase):
             for ppg_id in ppg_ids:
                 for chain in self._get_chains_by_ppg_ids(context, [ppg_id]):
                     chains[chain['id']] = chain
-        for chain in chains.values():
+        for chain in list(chains.values()):
             flowcs, ppgs = self._get_pc_flowcs_and_ppgs(context, chain)
             self._validate_port_chain(context, chain, flowcs, ppgs)
 
