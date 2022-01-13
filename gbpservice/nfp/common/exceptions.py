@@ -53,7 +53,7 @@ class NFPException(Exception):
             except AttributeError:
                 pass
 
-        for k, v in self.kwargs.items():
+        for k, v in list(self.kwargs.items()):
             if isinstance(v, Exception):
                 self.kwargs[k] = six.text_type(v)
 
@@ -66,7 +66,7 @@ class NFPException(Exception):
                 # kwargs doesn't match a variable in the message
                 # log the issue and the kwargs
                 LOG.exception('Exception in string format operation')
-                for name, value in kwargs.items():
+                for name, value in list(kwargs.items()):
                     LOG.error("%(name)s: %(value)s",
                               {'name': name, 'value': value})
                 if CONF.fatal_exception_format_errors:

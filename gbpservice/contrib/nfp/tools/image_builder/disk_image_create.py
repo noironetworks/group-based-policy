@@ -134,8 +134,8 @@ def dib():
     # wily support is removed from ubuntu 'current' release,
     # download/copy to loation as expected by diskimage-builder
     if conf['ubuntu_release']['release'] == "wily":
-        import commands
-        commands.getoutput("mkdir -p %s" % dib['cache_dir'])
+        import subprocess
+        subprocess.getoutput("mkdir -p %s" % dib['cache_dir'])
         wily_SHA256SUMS = "%s/SHA256SUMS.ubuntu.wily.amd64" % dib['cache_dir']
         if not os.path.isfile(wily_SHA256SUMS):
             ret = subprocess.call(["wget", "http://cloud-images-archive.ubuntu.com/releases/wily/release-20160715/SHA1SUMS", "-r", "-O", wily_SHA256SUMS])
@@ -155,14 +155,14 @@ def dib():
     if not os.path.isdir(out_dir):
         os.makedirs(out_dir)
     os.chdir(out_dir)
-    print("DIB-ARGS: ", dib_args)
+    print(("DIB-ARGS: ", dib_args))
     ret = subprocess.call(dib_args)
     if not ret:
         output_path = os.path.realpath('./')
-        print("Output path: ", output_path)
+        print(("Output path: ", output_path))
         output_image = output_path + '/' + image_name + '.qcow2'
 
-        print("Image location: %s" % output_image)
+        print(("Image location: %s" % output_image))
         with open("%s/last_built_image_path" % output_path, "w") as f:
             f.write(output_image)
 

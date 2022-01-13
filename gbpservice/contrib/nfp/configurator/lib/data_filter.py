@@ -34,7 +34,7 @@ class Filter(object):
         """
         filters = {}
         try:
-            for fk, fv in msg['args'].items():
+            for fk, fv in list(msg['args'].items()):
                 if dict == type(fv):
                     filters = fv
                     break
@@ -69,7 +69,7 @@ class Filter(object):
 
         """
 
-        for fk, fv in filters.items():
+        for fk, fv in list(filters.items()):
             for d in data[:]:
                 if d.get(fk) is None:
                     data.remove(d)
@@ -221,7 +221,7 @@ class Filter(object):
             siteconn['ipsecpolicy'] = ipsecpolicy
             vpnserviceid = vpnservice['id']
 
-            if vpnserviceid not in vpnservices.keys():
+            if vpnserviceid not in list(vpnservices.keys()):
                 vpnservices[vpnserviceid] = \
                     {'service': vpnservice, 'siteconns': []}
 
@@ -236,4 +236,4 @@ class Filter(object):
         As of now, passing everything.
         """
 
-        return vpnservices.values()
+        return list(vpnservices.values())
