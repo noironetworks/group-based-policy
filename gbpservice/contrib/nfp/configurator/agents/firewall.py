@@ -282,7 +282,7 @@ class FWaasEventHandler(nfp_api.NfpEventHandler):
         result = []
         for d1 in unique_rules:
             for d2 in rules:
-                if d1.viewitems() <= d2.viewitems():
+                if d1.items() <= d2.items():
                     result.append(d2)
                     break
         result.sort(key=operator.itemgetter('position'))

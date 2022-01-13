@@ -290,29 +290,29 @@ class VPNTestData(object):
         }]
 
         self.ipsec_site_connection_delete = [{
-            u'status': u'INIT',
-            u'psk': u'secret',
-            u'initiator': u'bi-directional',
-            u'name': u'site_to_site_connection1',
-            u'admin_state_up': True,
-            u'tenant_id': u'564aeb9ebd694468bfb79a69da887419',
-            u'auth_mode': u'psk',
-            u'peer_cidrs': [u'11.0.0.0/24'],
-            u'mtu': 1500,
-            u'ikepolicy_id': (
-                u'7a88b9f4-70bf-4184-834d-6814f264d331'),
-            u'vpnservice_id': (
-                u'3d453be6-7ddc-4812-a4a7-3299f9d3d29e'),
-            u'dpd': {u'action': u'hold',
-                     u'interval': 30,
-                     u'timeout': 120},
-            u'route_mode': u'static',
-            u'ipsecpolicy_id': (
-                u'03839460-1519-46ab-a073-b74314c06ec3'),
-            u'peer_address': u'1.103.2.2',
-            u'peer_id': u'1.103.2.2',
-                        u'id': u'4dae3c91-0d0a-4ba5-9269-d0deab653316',
-                        u'description': ";".join(self.ipsec_delete),
+            'status': 'INIT',
+            'psk': 'secret',
+            'initiator': 'bi-directional',
+            'name': 'site_to_site_connection1',
+            'admin_state_up': True,
+            'tenant_id': '564aeb9ebd694468bfb79a69da887419',
+            'auth_mode': 'psk',
+            'peer_cidrs': ['11.0.0.0/24'],
+            'mtu': 1500,
+            'ikepolicy_id': (
+                '7a88b9f4-70bf-4184-834d-6814f264d331'),
+            'vpnservice_id': (
+                '3d453be6-7ddc-4812-a4a7-3299f9d3d29e'),
+            'dpd': {'action': 'hold',
+                    'interval': 30,
+                    'timeout': 120},
+            'route_mode': 'static',
+            'ipsecpolicy_id': (
+                '03839460-1519-46ab-a073-b74314c06ec3'),
+            'peer_address': '1.103.2.2',
+            'peer_id': '1.103.2.2',
+            'id': '4dae3c91-0d0a-4ba5-9269-d0deab653316',
+            'description': ";".join(self.ipsec_delete),
         }]
 
         self.ikepolicies = [{
@@ -344,24 +344,24 @@ class VPNTestData(object):
         self.context = {
             'domain': None,
             'project_name': None,
-            'tenant_name': u'services',
+            'tenant_name': 'services',
             'project_domain': None,
             'timestamp': '2016-03-03 09:19:05.381231',
-            'auth_token': u'0711af29a389492cb799e096a003a760',
+            'auth_token': '0711af29a389492cb799e096a003a760',
             'resource_uuid': None,
             'is_admin': True,
-            'user': u'19e278f3c3fa43e3964b057bc73cf7d7',
+            'user': '19e278f3c3fa43e3964b057bc73cf7d7',
             'tenant_id': '9f1663d116f74a01991ad66aaa8756c5',
             'read_only': False,
             'project_id': 'b',
             'user_id': 'a',
             'show_deleted': False,
-            'roles': [u'admin', u'heat_stack_owner'],
+            'roles': ['admin', 'heat_stack_owner'],
             'user_identity': 'a b - - -',
-            'tenant_id': u'9f1663d116f74a01991ad66aaa8756c5',
-            'request_id': u'req-da8765fb-4eb4-4f4f-9ebb-843ad1d752bd',
+            'tenant_id': '9f1663d116f74a01991ad66aaa8756c5',
+            'request_id': 'req-da8765fb-4eb4-4f4f-9ebb-843ad1d752bd',
             'user_domain': None,
-            'user_name': u'neutron',
+            'user_name': 'neutron',
             'agent_info': {'context': {},
                            'resource': {}},
             "resource_data": {
@@ -483,36 +483,36 @@ class VPNTestData(object):
         '''
 
         return {
-            u'rsrc_type': u'ipsec_site_connection',
-            u'rsrc_id': u'4dae3c91-0d0a-4ba5-9269-d0deab653316',
-            u'resource': {
-                u'status': u'INIT',
-                u'psk': u'secret',
-                u'initiator': u'bi-directional',
-                u'name': u'site_to_site_connection1',
-                u'admin_state_up': True,
-                u'tenant_id': u'564aeb9ebd694468bfb79a69da887419',
-                u'auth_mode': u'psk',
-                u'peer_cidrs': [u'11.0.0.0/24'],
-                u'mtu': 1500,
-                u'ikepolicy_id': (
-                        u'7a88b9f4-70bf-4184-834d-6814f264d331'),
-                u'vpnservice_id': (
-                    u'3d453be6-7ddc-4812-a4a7-3299f9d3d29e'),
-                u'dpd': {u'action': u'hold',
-                         u'interval': 30,
-                         u'timeout': 120},
-                u'route_mode': u'static',
-                u'ipsecpolicy_id': (
-                    u'03839460-1519-46ab-a073-b74314c06ec3'),
-                u'peer_address': u'1.103.2.2',
-                u'peer_id': u'1.103.2.2',
-                u'id': u'4dae3c91-0d0a-4ba5-9269-d0deab653315',
-                u'description': ";".join(self.ipsec_delete),
+            'rsrc_type': 'ipsec_site_connection',
+            'rsrc_id': '4dae3c91-0d0a-4ba5-9269-d0deab653316',
+            'resource': {
+                'status': 'INIT',
+                'psk': 'secret',
+                'initiator': 'bi-directional',
+                'name': 'site_to_site_connection1',
+                'admin_state_up': True,
+                'tenant_id': '564aeb9ebd694468bfb79a69da887419',
+                'auth_mode': 'psk',
+                'peer_cidrs': ['11.0.0.0/24'],
+                'mtu': 1500,
+                'ikepolicy_id': (
+                        '7a88b9f4-70bf-4184-834d-6814f264d331'),
+                'vpnservice_id': (
+                    '3d453be6-7ddc-4812-a4a7-3299f9d3d29e'),
+                'dpd': {'action': 'hold',
+                        'interval': 30,
+                        'timeout': 120},
+                'route_mode': 'static',
+                'ipsecpolicy_id': (
+                    '03839460-1519-46ab-a073-b74314c06ec3'),
+                'peer_address': '1.103.2.2',
+                'peer_id': '1.103.2.2',
+                'id': '4dae3c91-0d0a-4ba5-9269-d0deab653315',
+                'description': ";".join(self.ipsec_delete),
             },
-            u'svc_type': u'ipsec',
-            u'service_vendor': u'vyos',
-            u'reason': u'delete',
+            'svc_type': 'ipsec',
+            'service_vendor': 'vyos',
+            'reason': 'delete',
         }
 
     def _update_ipsec_site_conn_obj(self):
@@ -521,36 +521,36 @@ class VPNTestData(object):
         '''
 
         return {
-            u'rsrc_type': u'ipsec_site_connection',
-            u'rsrc_id': u'4dae3c91-0d0a-4ba5-9269-d0deab653316',
-            u'resource': {
-                u'status': u'INIT',
-                u'psk': u'secret',
-                u'initiator': u'bi-directional',
-                u'name': u'site_to_site_connection1',
-                u'admin_state_up': True,
-                u'tenant_id': u'564aeb9ebd694468bfb79a69da887419',
-                u'auth_mode': u'psk',
-                u'peer_cidrs': [u'11.0.0.0/24'],
-                u'mtu': 1500,
-                u'ikepolicy_id': (
-                        u'7a88b9f4-70bf-4184-834d-6814f264d331'),
-                u'vpnservice_id': (
-                    u'3d453be6-7ddc-4812-a4a7-3299f9d3d29e'),
-                u'dpd': {u'action': u'hold',
-                         u'interval': 30,
-                         u'timeout': 120},
-                u'route_mode': u'static',
-                u'ipsecpolicy_id': (
-                    u'03839460-1519-46ab-a073-b74314c06ec3'),
-                u'peer_address': u'1.103.2.2',
-                u'peer_id': u'1.103.2.2',
-                u'id': u'4dae3c91-0d0a-4ba5-9269-d0deab653315',
-                u'description': ";".join(self.ipsec_vpn_create),
+            'rsrc_type': 'ipsec_site_connection',
+            'rsrc_id': '4dae3c91-0d0a-4ba5-9269-d0deab653316',
+            'resource': {
+                'status': 'INIT',
+                'psk': 'secret',
+                'initiator': 'bi-directional',
+                'name': 'site_to_site_connection1',
+                'admin_state_up': True,
+                'tenant_id': '564aeb9ebd694468bfb79a69da887419',
+                'auth_mode': 'psk',
+                'peer_cidrs': ['11.0.0.0/24'],
+                'mtu': 1500,
+                'ikepolicy_id': (
+                        '7a88b9f4-70bf-4184-834d-6814f264d331'),
+                'vpnservice_id': (
+                    '3d453be6-7ddc-4812-a4a7-3299f9d3d29e'),
+                'dpd': {'action': 'hold',
+                        'interval': 30,
+                        'timeout': 120},
+                'route_mode': 'static',
+                'ipsecpolicy_id': (
+                    '03839460-1519-46ab-a073-b74314c06ec3'),
+                'peer_address': '1.103.2.2',
+                'peer_id': '1.103.2.2',
+                'id': '4dae3c91-0d0a-4ba5-9269-d0deab653315',
+                'description': ";".join(self.ipsec_vpn_create),
             },
-            u'svc_type': u'ipsec',
-            u'service_vendor': u'vyos',
-            u'reason': u'update',
+            'svc_type': 'ipsec',
+            'service_vendor': 'vyos',
+            'reason': 'update',
         }
 
     def make_resource_data(self, operation=None, service_type=None):

@@ -210,10 +210,10 @@ class ApiManagerMixin(object):
 class GroupPolicyDBTestBase(ApiManagerMixin):
     resource_prefix_map = dict(
         (k, gp_constants.GBP_PREFIXES[constants.SERVICECHAIN])
-        for k in service_chain.RESOURCE_ATTRIBUTE_MAP.keys())
+        for k in list(service_chain.RESOURCE_ATTRIBUTE_MAP.keys()))
     resource_prefix_map.update(dict(
         (k, gp_constants.GBP_PREFIXES[constants.GROUP_POLICY])
-        for k in gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()
+        for k in list(gpolicy.RESOURCE_ATTRIBUTE_MAP.keys())
     ))
 
     fmt = JSON_FORMAT

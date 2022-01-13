@@ -368,11 +368,12 @@ class ServiceChainDbPlugin(schain.ServiceChainPluginBase,
                     if config_params:
                         if not spec_db.config_param_names:
                             spec_db.config_param_names = str(
-                                config_params.keys())
+                                list(config_params.keys()))
                         else:
                             config_param_names = ast.literal_eval(
                                 spec_db.config_param_names)
-                            config_param_names.extend(config_params.keys())
+                            config_param_names.extend(
+                                    list(config_params.keys()))
                             spec_db.config_param_names = str(
                                 config_param_names)
 

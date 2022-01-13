@@ -81,10 +81,10 @@ class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
         fc = context.current
         # Verify L7 params are set
         l7_p = fc['l7_parameters']
-        if any(x for x in sfc_cts.AIM_FLC_L7_PARAMS.keys()
+        if any(x for x in list(sfc_cts.AIM_FLC_L7_PARAMS.keys())
                if not validators.is_attr_set(l7_p.get(x))):
             raise sfc_exc.BadFlowClassifier(
-                params=sfc_cts.AIM_FLC_L7_PARAMS.keys())
+                params=list(sfc_cts.AIM_FLC_L7_PARAMS.keys()))
         # Verify standard params are set
         # TODO(ivar): src and dst prefix are needed only for SVI networks
         if any(x for x in sfc_cts.AIM_FLC_PARAMS
