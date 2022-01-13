@@ -1074,7 +1074,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     context._plugin_context, l2_policy_id)
         l3p = context._plugin.get_l3_policy(context._plugin_context,
                                             l2p['l3_policy_id'])
-        external_segments = l3p.get('external_segments').keys()
+        external_segments = list(l3p.get('external_segments').keys())
         if not external_segments:
             return es_list_with_nat_pools
         external_segments = context._plugin.get_external_segments(
@@ -1231,7 +1231,8 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                         context.current['l2_policy_id'])
                     l3p = context._plugin.get_l3_policy(
                         context._plugin_context, l2p['l3_policy_id'])
-                    external_segments = l3p.get('external_segments').keys()
+                    external_segments = list(
+                            l3p.get('external_segments').keys())
                     if external_segments:
                         external_segments = (
                             context._plugin.get_external_segments(
@@ -1244,8 +1245,8 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     l3ps = context._plugin.get_l3_policies(
                                     context._plugin_context, filter)
                     if l3ps:
-                        external_segments = l3ps[0].get(
-                                                'external_segments').keys()
+                        external_segments = list(l3ps[0].get(
+                                                'external_segments').keys())
                         if external_segments:
                             external_segments = (
                                 context._plugin.get_external_segments(
@@ -1463,7 +1464,7 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         if ip_version == 6 or ip_version == 46:
             ip_dict[6] = {'default_prefixlen': 64}
 
-        for family in ip_dict.keys():
+        for family in list(ip_dict.keys()):
             explicit_scope = l3p_req[self.L3P_ADDRESS_SCOPE_KEYS[family]]
             explicit_pools = l3p_req[self.L3P_SUBNETPOOLS_KEYS[family]]
             default_pool = self._core_plugin.get_default_subnetpool(
@@ -1553,12 +1554,12 @@ class ImplicitResourceOperations(local_api.LocalAPI,
 
     def _delete_l3p_subnetpools_postcommit(self, context):
         subpools = []
-        for sp_key in self.L3P_SUBNETPOOLS_KEYS.values():
+        for sp_key in list(self.L3P_SUBNETPOOLS_KEYS.values()):
             subpools += context.current[sp_key]
         for sp_id in subpools:
             self._cleanup_subnetpool(context._plugin_context, sp_id)
 
-        for ascp_key in self.L3P_ADDRESS_SCOPE_KEYS.values():
+        for ascp_key in list(self.L3P_ADDRESS_SCOPE_KEYS.values()):
             if context.current[ascp_key]:
                 self._cleanup_address_scope(context._plugin_context,
                                             context.current[ascp_key])
@@ -1593,8 +1594,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             l2p = context._plugin.get_l2_policy(
                 context._plugin_context, context.current['l2_policy_id'])
             if l2p['tenant_id'] != context.current['tenant_id']:
-                raise (
-                    exc.
+                raise (exc.
                     CrossTenantPolicyTargetGroupL2PolicyNotSupported())
 
     def _reject_cross_tenant_l2p_l3p(self, context):
@@ -3126,7 +3126,8 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             return routes
 
         add = _routes_from_es_ids(
-            context, added or context.current['external_segments'].keys())
+            context, added or list(
+                context.current['external_segments'].keys()))
         remove = _routes_from_es_ids(context, removed)
 
         self._update_l3p_routes(

@@ -213,7 +213,7 @@ class ValidationManager(object):
     def validate_scope_arguments(self):
         if self.neutron_resources:
             for resource in self.neutron_resources:
-                if resource not in self.neutron_to_aim_mapping.keys():
+                if resource not in list(self.neutron_to_aim_mapping.keys()):
                     err_msg = ("Incorrect resource in the argument: " +
                             str(self.neutron_resources))
                     raise IncorrectResourceError(err_msg)
@@ -222,7 +222,7 @@ class ValidationManager(object):
         aim_tenant_list = set()
 
         project_dict = self.md.project_details_cache.project_details
-        for project_id in project_dict.keys():
+        for project_id in list(project_dict.keys()):
             tenant_name = project_dict[project_id][0]
             if tenant_name in self.tenants:
                 self.tenant_ids.add(project_id)
@@ -261,7 +261,7 @@ class ValidationManager(object):
         elif not replace and key in expected_resources:
             self.output("resource %s already expected" % resource)
             raise InternalValidationError()
-        for attr_name, attr_type in resource.other_attributes.items():
+        for attr_name, attr_type in list(resource.other_attributes.items()):
             attr_type_type = attr_type['type']
             if attr_type_type == 'string':
                 value = getattr(resource, attr_name)
@@ -316,9 +316,9 @@ class ValidationManager(object):
                 instance = expected_instances.get(key)
                 return [instance] if instance else []
             else:
-                return [i for i in expected_instances.values()
+                return [i for i in list(expected_instances.values())
                         if all([getattr(i, k) == v for k, v in
-                                filters.items()])]
+                                list(filters.items())])]
         else:
             return list(expected_instances.values())
 
@@ -342,7 +342,7 @@ class ValidationManager(object):
         self.result = api.VALIDATION_FAILED_BINDING_PORTS
 
     def _validate_aim_resources(self):
-        for resource_class in self._expected_aim_resources.keys():
+        for resource_class in list(self._expected_aim_resources.keys()):
             self._validate_aim_resource_class(resource_class)
 
     def _should_validate_neutron_resource(self, resource):
@@ -375,7 +375,7 @@ class ValidationManager(object):
             self._validate_actual_aim_resource(
                 actual_resource, expected_resource)
 
-        for expected_resource in expected_resources.values():
+        for expected_resource in list(expected_resources.values()):
             if self._should_handle_missing_resource(expected_resource):
                 self._handle_missing_aim_resource(expected_resource)
 
@@ -492,7 +492,7 @@ class ValidationManager(object):
             self.aim_mgr.create(self.actual_aim_ctx, expected_resource)
 
     def _validate_db_instances(self):
-        for db_class in self._expected_db_instances.keys():
+        for db_class in list(self._expected_db_instances.keys()):
             self._validate_db_instance_class(db_class)
 
     def _validate_db_instance_class(self, db_class):
@@ -503,7 +503,7 @@ class ValidationManager(object):
             self._validate_actual_db_instance(
                 actual_instance, expected_instances)
 
-        for expected_instance in expected_instances.values():
+        for expected_instance in list(expected_instances.values()):
             self._handle_missing_db_instance(expected_instance)
 
     def _validate_actual_db_instance(self, actual_instance,
@@ -526,7 +526,8 @@ class ValidationManager(object):
     def _is_db_instance_correct(self, expected_instance, actual_instance):
         expected_values = expected_instance.__dict__
         actual_values = actual_instance.__dict__
-        return all([v == actual_values[k] for k, v in expected_values.items()
+        return all([v == actual_values[k]
+                    for k, v in list(expected_values.items())
                     if not k.startswith('_')])
 
     def _handle_unexpected_db_instance(self, actual_instance):
@@ -582,7 +583,7 @@ class ValidationAimStore(aim_store.AimStore):
                 return [r for r in
                         self._mgr.expected_aim_resources(resource_class)
                         if all([getattr(r, k) == v for k, v in
-                                filters.items()])]
+                                list(filters.items())])]
         else:
             return self._mgr.expected_aim_resources(resource_class)
 
@@ -595,7 +596,7 @@ class ValidationAimStore(aim_store.AimStore):
         assert(False)
 
     def from_attr(self, db_obj, resource_class, attribute_dict):
-        for k, v in attribute_dict.items():
+        for k, v in list(attribute_dict.items()):
             setattr(db_obj, k, v)
 
     def to_attr(self, resource_class, db_obj):

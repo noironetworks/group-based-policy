@@ -10,8 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import commands
 import logging
+import subprocess
 import sys
 
 from libs import config_libs
@@ -418,7 +418,7 @@ class test_gbp_ptg_func(object):
             '\n## Step 3: Delete the neutron port corresponding to the '
             'Policy-Target\n')
         cmd = 'neutron port-delete %s' % (neutron_port_id)
-        if self.gbpcfg.cmd_error_check(commands.getoutput(cmd)) == 0:
+        if self.gbpcfg.cmd_error_check(subprocess.getoutput(cmd)) == 0:
             self._log.info(
                 "\n## Step 3: Deletion of the neutron port corresponding "
                 "to the Policy-Target = Failed")

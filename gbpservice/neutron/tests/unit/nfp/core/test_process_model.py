@@ -201,7 +201,7 @@ class Test_Process_Model(unittest2.TestCase):
         controller.launch(2)
         # Check if 2 workers are created
         workers = controller.get_childrens()
-        pids = workers.keys()
+        pids = list(workers.keys())
         self.assertEqual(len(pids), 2)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
@@ -216,7 +216,7 @@ class Test_Process_Model(unittest2.TestCase):
         controller.launch(4)
         # Check if 4 workers are created
         workers = controller.get_childrens()
-        pids = workers.keys()
+        pids = list(workers.keys())
         self.assertEqual(len(pids), 4)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
@@ -231,7 +231,7 @@ class Test_Process_Model(unittest2.TestCase):
         controller.launch(2)
         controller._update_manager()
         # Check if 2 workers are added to manager
-        pids = controller._manager._resource_map.keys()
+        pids = list(controller._manager._resource_map.keys())
         self.assertEqual(len(pids), 2)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
@@ -258,7 +258,7 @@ class Test_Process_Model(unittest2.TestCase):
 
         # Run one more time and check if it detects the difference
         controller._manager.manager_run()
-        pids = controller._manager._resource_map.keys()
+        pids = list(controller._manager._resource_map.keys())
         self.assertEqual(len(pids), 2)
         if pid not in old_childs:
             self.assertFalse(old_childs[0] in pids)
@@ -532,7 +532,7 @@ class Test_Process_Model(unittest2.TestCase):
         # Update descriptor
         desc = nfp_event.EventDesc(**{})
         setattr(event, 'desc', desc)
-        event.desc.worker = controller.get_childrens().keys()[0]
+        event.desc.worker = list(controller.get_childrens().keys())[0]
 
         ctx = nfp_context.get()
         ctx['log_context']['namespace'] = 'nfp_module'
@@ -711,7 +711,7 @@ class Test_Process_Model(unittest2.TestCase):
         self.controller = controller
 
         # Check if 1 worker is added to manager
-        pids = controller._manager._resource_map.keys()
+        pids = list(controller._manager._resource_map.keys())
         self.assertEqual(len(pids), 1)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
@@ -750,7 +750,7 @@ class Test_Process_Model(unittest2.TestCase):
         self.controller = controller
 
         # Check if 1 worker is added to manager
-        pids = controller._manager._resource_map.keys()
+        pids = list(controller._manager._resource_map.keys())
         self.assertEqual(len(pids), 1)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
@@ -784,7 +784,7 @@ class Test_Process_Model(unittest2.TestCase):
         self.controller = controller
 
         # Check if 1 worker is added to manager
-        pids = controller._manager._resource_map.keys()
+        pids = list(controller._manager._resource_map.keys())
         self.assertEqual(len(pids), 1)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
@@ -828,7 +828,7 @@ class Test_Process_Model(unittest2.TestCase):
         self.controller = controller
 
         # Check if 1 worker is added to manager
-        pids = controller._manager._resource_map.keys()
+        pids = list(controller._manager._resource_map.keys())
         self.assertEqual(len(pids), 1)
         self.assertTrue(pid in range(8888, 9999) for pid in pids)
 
