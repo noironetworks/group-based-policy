@@ -12,7 +12,6 @@
 # limitations under the License.
 
 import copy
-import itertools
 
 import heatclient
 import mock
@@ -90,7 +89,7 @@ class HeatNodeDriverTestCase(
                         "description": "Haproxy pool from template",
                         "lb_algorithm": "ROUND_ROBIN",
                         "protocol": "HTTP",
-                        'listener': {u'get_resource': u'listener'},
+                        'listener': {'get_resource': 'listener'},
                     }
                 },
                 "test_listener": {
@@ -155,9 +154,8 @@ class HeatNodeDriverTestCase(
         """Override the routine for allowing the router:external attribute."""
         # attributes containing a colon should be passed with
         # a double underscore
-        new_args = dict(itertools.izip(map(lambda x: x.replace('__', ':'),
-                                           kwargs),
-                                       kwargs.values()))
+        new_args = dict(zip([x.replace('__', ':') for x in kwargs],
+                        list(kwargs.values())))
         arg_list = new_args.pop('arg_list', ()) + (external_net.EXTERNAL,)
         return super(HeatNodeDriverTestCase, self)._create_network(
             fmt, name, admin_state_up, arg_list=arg_list, **new_args)
@@ -241,7 +239,7 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
                             'admin_state_up': True,
                             'address': member_ip,
                             'protocol_port': {'get_param': 'app_port'},
-                            'pool': {'Ref': u'test_pool'}
+                            'pool': {'Ref': 'test_pool'}
                         }
                     }
                   }
@@ -348,7 +346,7 @@ class TestServiceChainInstance(HeatNodeDriverTestCase):
             self.delete_policy_target(pt['id'])
 
             template_on_delete_pt = copy.deepcopy(expected_stack_template)
-            template_on_delete_pt['Resources'].pop(pool_member.keys()[0])
+            template_on_delete_pt['Resources'].pop(list(pool_member.keys())[0])
             expected_stack_id = stack_id
             expected_stack_params = {}
             stack_update.assert_called_once_with(

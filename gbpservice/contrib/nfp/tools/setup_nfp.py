@@ -5,15 +5,15 @@ import sys
 import os
 import shutil
 import subprocess
-import ConfigParser
-import commands
+import configparser
+import subprocess
 import time
 import platform
-from image_builder import disk_image_create as DIB
+from .image_builder import disk_image_create as DIB
 
 # Defines
 TEMP_WORK_DIR = "tmp"
-CONFIG = ConfigParser.ConfigParser()
+CONFIG = configparser.ConfigParser()
 NEUTRON_CONF = "/etc/neutron/neutron.conf"
 NEUTRON_ML2_CONF = "/etc/neutron/plugins/ml2/ml2_conf.ini"
 FILE_PATH = os.path.dirname(os.path.realpath(__file__))
@@ -71,21 +71,21 @@ args = parser.parse_args()
 
 def check_if_apic_sys():
     global APIC_ENV
-    mech_drivers = commands.getoutput("crudini --get " + NEUTRON_ML2_CONF + " ml2 mechanism_drivers")
+    mech_drivers = subprocess.getoutput("crudini --get " + NEUTRON_ML2_CONF + " ml2 mechanism_drivers")
     if mech_drivers == 'apic_gbp':
         APIC_ENV = True
 
 def set_keystone_authtoken_section():
     global NEUTRON_CONF
     nfp_conf = '/etc/nfp.ini'
-    admin_user = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken username")
-    admin_password = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken password")
-    admin_tenant_name = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken project_name")
-    auth_uri = commands.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken auth_uri")
-    auth_protocol = commands.getoutput("echo " + auth_uri + " | cut -d':' -f1")
-    auth_host = commands.getoutput("echo " + auth_uri + " | cut -d'/' -f3 | cut -d':' -f1")
-    auth_port = commands.getoutput("echo " + auth_uri + " | cut -d'/' -f3 | cut -d':' -f2")
-    auth_version = commands.getoutput("echo " + auth_uri + " | cut -d'/' -f4")
+    admin_user = subprocess.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken username")
+    admin_password = subprocess.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken password")
+    admin_tenant_name = subprocess.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken project_name")
+    auth_uri = subprocess.getoutput("crudini --get " + NEUTRON_CONF + " keystone_authtoken auth_uri")
+    auth_protocol = subprocess.getoutput("echo " + auth_uri + " | cut -d':' -f1")
+    auth_host = subprocess.getoutput("echo " + auth_uri + " | cut -d'/' -f3 | cut -d':' -f1")
+    auth_port = subprocess.getoutput("echo " + auth_uri + " | cut -d'/' -f3 | cut -d':' -f2")
+    auth_version = subprocess.getoutput("echo " + auth_uri + " | cut -d'/' -f4")
     if auth_version == '':
         auth_version = 'v2.0'
     subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken admin_user " + admin_user).split(' '))
@@ -97,18 +97,18 @@ def set_keystone_authtoken_section():
     subprocess.call(("crudini --set " + nfp_conf + " nfp_keystone_authtoken auth_version " + auth_version).split(' '))
 
 def configure_nfp():
-    commands.getoutput("cat /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/bin/nfp.ini >> /etc/nfp.ini")
-    commands.getoutput("mkdir -p /etc/nfp/vyos/")
-    commands.getoutput("cp -r /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/bin/vyos.day0 /etc/nfp/vyos/")
-    commands.getoutput("sed -i 's/\"password\": \"\"/\"password\": \"vyos\"/' /etc/nfp/vyos/vyos.day0")
+    subprocess.getoutput("cat /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/bin/nfp.ini >> /etc/nfp.ini")
+    subprocess.getoutput("mkdir -p /etc/nfp/vyos/")
+    subprocess.getoutput("cp -r /usr/lib/python2.7/site-packages/gbpservice/contrib/nfp/bin/vyos.day0 /etc/nfp/vyos/")
+    subprocess.getoutput("sed -i 's/\"password\": \"\"/\"password\": \"vyos\"/' /etc/nfp/vyos/vyos.day0")
     set_keystone_authtoken_section()
     check_if_apic_sys()
-    curr_service_plugins = commands.getoutput("crudini --get /etc/neutron/neutron.conf DEFAULT service_plugins")
+    curr_service_plugins = subprocess.getoutput("crudini --get /etc/neutron/neutron.conf DEFAULT service_plugins")
     curr_service_plugins_list = curr_service_plugins.split(",")
-    lbaas_enabled = filter(lambda x: 'lbaas' in x, curr_service_plugins_list)
-    vpnaas_enabled = filter(lambda x: 'vpnaas' in x, curr_service_plugins_list)
-    fwaas_enabled = filter(lambda x: 'fwaas' in x, curr_service_plugins_list)
-    firewall_enabled = filter(lambda x: 'firewall' in x, curr_service_plugins_list)
+    lbaas_enabled = [x for x in curr_service_plugins_list if 'lbaas' in x]
+    vpnaas_enabled = [x for x in curr_service_plugins_list if 'vpnaas' in x]
+    fwaas_enabled = [x for x in curr_service_plugins_list if 'fwaas' in x]
+    firewall_enabled = [x for x in curr_service_plugins_list if 'firewall' in x]
     for word in firewall_enabled:
        if word not in fwaas_enabled:
            fwaas_enabled.append(word)
@@ -147,7 +147,7 @@ def configure_nfp():
     subprocess.call(("crudini --set /etc/neutron/neutron.conf DEFAULT service_plugins " + str(new_service_plugins)).split(' '))
 
     #check id gbp-heat is configured, if not configure
-    curr_heat_plugin_dirs = commands.getoutput("crudini --get /etc/heat/heat.conf DEFAULT plugin_dirs")
+    curr_heat_plugin_dirs = subprocess.getoutput("crudini --get /etc/heat/heat.conf DEFAULT plugin_dirs")
     curr_heat_plugin_dirs_list =  curr_heat_plugin_dirs.split(",")
     heat_dirs_to_enable = ["/usr/lib64/heat", "/usr/lib/heat", "/usr/lib/python2.7/site-packages/gbpautomation/heat"]
     for dir in heat_dirs_to_enable:
@@ -171,7 +171,7 @@ def configure_nfp():
 
     # Configure service owner
     subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_user neutron".split(' '))
-    admin_password = commands.getoutput("crudini --get /etc/neutron/neutron.conf keystone_authtoken password")
+    admin_password = subprocess.getoutput("crudini --get /etc/neutron/neutron.conf keystone_authtoken password")
     subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_password".split(' ') + [admin_password])
     subprocess.call("crudini --set /etc/neutron/neutron.conf admin_owned_resources_apic_tscp plumbing_resource_owner_tenant_name services".split(' '))
 
@@ -212,12 +212,12 @@ def get_src_dirs():
     elif os_type in ['centos', 'redhat']:
         src_path = "/usr/lib/python2.7/site-packages/"
     else:
-        print("ERROR: Unsupported Operating System(%s)" % os_type)
+        print(("ERROR: Unsupported Operating System(%s)" % os_type))
         return 1
     for src_dir in src_dirs:
         to_copy = src_path + src_dir
         if not os.path.isdir(to_copy):
-            print("ERROR: directory not found: ", to_copy)
+            print(("ERROR: directory not found: ", to_copy))
             return 1
     # create a tmp directory for creating configurator docker
     subprocess.call(["rm", "-rf", dst_dir])
@@ -228,7 +228,7 @@ def get_src_dirs():
     for src_dir in src_dirs:
         to_copy = src_path + src_dir
         if(subprocess.call(["cp", "-r", to_copy, dst_dir])):
-            print("ERROR: failed to copy %s to ./ directory" % to_copy)
+            print(("ERROR: failed to copy %s to ./ directory" % to_copy))
             return 1
     subprocess.call(["cp", dockerfile, dst_dir])
     subprocess.call(["cp", run_sh, dst_dir])
@@ -271,7 +271,7 @@ def build_configuration_vm():
     if not ret:
         print("ERROR: Failed to create Configurator VM")
     else:
-        print("SUCCESS, created Configurator VM: ", image)
+        print(("SUCCESS, created Configurator VM: ", image))
 
     # clean the scr_dirs copied in PWD
     clean_src_dirs()
@@ -337,7 +337,7 @@ def create_orchestrator_ctl():
     try:
         file = open(orch_ctl_file, 'w+')
     except:
-        print("Error creating " + orch_ctl_file + " file")
+        print(("Error creating " + orch_ctl_file + " file"))
         sys.exit(1)
 
     file.write("[Unit]\nDescription=One Convergence NFP Orchestrator\n")
@@ -362,7 +362,7 @@ def create_orchestrator_ctl():
     try:
         file = open(orch_config_file, 'w+')
     except:
-        print("Error creating " + orch_ctl_file + " file")
+        print(("Error creating " + orch_ctl_file + " file"))
         sys.exit(1)
 
     file.write("[Unit]\nDescription=One Convergence NFP Config Orchestrator")
@@ -402,7 +402,7 @@ def create_nfp_namespace_file():
     try:
         filepx = open(proxy_tool_file, 'w+')
     except:
-        print("Error creating " + proxy_tool_file + " file")
+        print(("Error creating " + proxy_tool_file + " file"))
         sys.exit(1)
     filepx.write("#!/usr/bin/bash\n")
     filepx.write("\nNOVA_CONF=/etc/nova/nova.conf\nNOVA_SESSION=neutron")
@@ -552,7 +552,7 @@ def create_proxy_ctl():
     try:
         filepx = open(proxy_sup_file, 'w+')
     except:
-        print("Error creating " + proxy_sup_file + " file")
+        print(("Error creating " + proxy_sup_file + " file"))
         sys.exit(1)
 
     filepx.write("#!/usr/bin/sh\nNFP_PROXY_AGENT_INI=/etc/nfp.ini")
@@ -567,7 +567,7 @@ def create_proxy_ctl():
     try:
         file = open(proxy_ctl_file, 'w+')
     except:
-        print("Error creating " + proxy_ctl_file + " file")
+        print(("Error creating " + proxy_ctl_file + " file"))
         sys.exit(1)
 
     file.write("[Unit]\nDescription=One Convergence NFP Proxy\n")
@@ -610,7 +610,7 @@ def create_proxy_agent_ctl():
     try:
         file = open(proxy_ctl_file, 'w+')
     except:
-        print("Error creating " + proxy_ctl_file + " file")
+        print(("Error creating " + proxy_ctl_file + " file"))
         sys.exit(1)
 
     file.write("[Unit]\nDescription=One Convergence NFP Proxy Agent")
@@ -657,11 +657,11 @@ def create_nfp_resources():
     get_openstack_creds()
     os.system("gbp l3policy-create default-nfp --ip-pool 172.16.0.0/16"
               " --subnet-prefix-length 20 --proxy-ip-pool=172.17.0.0/16")
-    l3policy_Id = commands.getstatusoutput(
+    l3policy_Id = subprocess.getstatusoutput(
         "gbp l3policy-list | grep '\sdefault-nfp\s' | awk '{print $2}'")[1]
     os.system("gbp l2policy-create --l3-policy " +
               l3policy_Id + " svc_management_ptg")
-    l2policy_Id = commands.getstatusoutput(
+    l2policy_Id = subprocess.getstatusoutput(
         "gbp l2policy-list | grep '\ssvc_management_ptg\s'"
         " | awk '{print $2}'")[1]
     os.system("gbp group-create svc_management_ptg --service_management True"
@@ -683,7 +683,7 @@ def add_nova_key_pair():
 
     configurator_key_name = "configurator_key"
     print("Creating nova keypair for configurator VM.")
-    pem_file_content = commands.getoutput("nova keypair-add" + " " + configurator_key_name)
+    pem_file_content = subprocess.getoutput("nova keypair-add" + " " + configurator_key_name)
     with open("keys/configurator_key.pem", "w") as f:
         f.write(pem_file_content)
     os.chmod("keys/configurator_key.pem", 0o600)
@@ -697,16 +697,16 @@ def launch_configurator():
                   " --disk-format qcow2  --container-format bare"
                   "  --visibility public --file " + args.controller_path)
     else:
-        print("Error " + args.controller_path + " does not exist")
+        print(("Error " + args.controller_path + " does not exist"))
         sys.exit(1)
 
     # add nova keypair for nfp_controller VM.
     configurator_key_name = add_nova_key_pair()
 
-    Port_id = commands.getstatusoutput(
+    Port_id = subprocess.getstatusoutput(
         "gbp policy-target-create --policy-target-group svc_management_ptg"
         " nfp_controllerVM_instance | grep port_id  | awk '{print $4}'")[1]
-    Image_id = commands.getstatusoutput(
+    Image_id = subprocess.getstatusoutput(
         "glance image-list | grep nfp_controller |awk '{print $2}'")[1]
     if Image_id and Port_id:
         os.system("nova boot --flavor m1.medium --image " +
@@ -733,41 +733,41 @@ def clean_up():
     clean up nfp resources
     """
     get_openstack_creds()
-    InstanceId = commands.getstatusoutput(
+    InstanceId = subprocess.getstatusoutput(
         "nova list | grep nfp_controllerVM_instance | awk '{print $2}'")[1]
     if InstanceId:
         os.system("nova delete " + InstanceId)
         time.sleep(10)
 
-    PolicyTargetId = commands.getstatusoutput(
+    PolicyTargetId = subprocess.getstatusoutput(
         "gbp policy-target-list | grep nfp_controllerVM_instance"
         " | awk '{print $2}'")[1]
     if PolicyTargetId:
         os.system("gbp policy-target-delete " + PolicyTargetId)
 
-    ImageId = commands.getstatusoutput(
+    ImageId = subprocess.getstatusoutput(
         "glance image-list | grep nfp_controller | awk '{print $2}'")[1]
     if ImageId:
         os.system("glance image-delete " + ImageId)
 
-    ServiceMGMTId = commands.getstatusoutput(
+    ServiceMGMTId = subprocess.getstatusoutput(
         "gbp group-list | grep '\ssvc_management_ptg\s'"
         " | awk '{print $2}'")[1]
     if ServiceMGMTId:
-        SvcGroupId = commands.getstatusoutput(
+        SvcGroupId = subprocess.getstatusoutput(
             "gbp group-list | grep '\ssvc_management_ptg\s'"
             " | awk '{print $2}'")[1]
-        l2policyId = commands.getstatusoutput(
+        l2policyId = subprocess.getstatusoutput(
             "gbp l2policy-list | grep '\ssvc_management_ptg\s'"
             " | awk '{print $2}'")[1]
-        l3policyId = commands.getstatusoutput(
+        l3policyId = subprocess.getstatusoutput(
             "gbp l3policy-list | grep '\sdefault-nfp\s'"
             " | awk '{print $2}'")[1]
         os.system("gbp group-delete " + SvcGroupId)
         os.system("gbp l2policy-delete " + l2policyId)
         os.system("gbp l3policy-delete " + l3policyId)
 
-    HeatId = commands.getstatusoutput(
+    HeatId = subprocess.getstatusoutput(
         "heat stack-list | grep '\sgbp_services_stack\s'"
         " | awk '{print $2}'")[1]
     if HeatId:

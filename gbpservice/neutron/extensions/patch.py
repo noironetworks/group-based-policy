@@ -158,7 +158,7 @@ def extend_resources(self, version, attr_map):
                 if check_optionals and optional_exts_set - set(processed_exts):
                     continue
                 extended_attrs = ext.get_extended_resources(version)
-                for res, resource_attrs in extended_attrs.items():
+                for res, resource_attrs in list(extended_attrs.items()):
                     res_to_update = attr_map.setdefault(res, {})
                     if self._is_sub_resource(res_to_update):
                         # kentwu: service_profiles defined in servicechain
@@ -200,7 +200,7 @@ def extend_resources(self, version, attr_map):
                       ', '.join(unloadable_extensions))
             self._check_faulty_extensions(unloadable_extensions)
         # Extending extensions' attributes map.
-        for ext in processed_exts.values():
+        for ext in list(processed_exts.values()):
             ext.update_attributes_map(attr_map)
 
 
@@ -232,7 +232,7 @@ def fill_post_defaults(
     :raises: exc_cls If check_allow_post is True and this instance of
         ResourceAttributes doesn't support POST.
     """
-    for attr, attr_vals in self.attributes.items():
+    for attr, attr_vals in list(self.attributes.items()):
         # kentwu: Patch needed for our GBP service_profiles attribute. Since
         # parent and parameters are both sub-resource's attributes picked up
         # from flavor plugin so we can just ignore those. These 2 attributes

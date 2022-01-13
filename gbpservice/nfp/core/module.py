@@ -44,7 +44,7 @@ class _Meta(type):
         except AttributeError:
             cls._poll_desc_table = {}
 
-        for value in cls.__dict__.values():
+        for value in list(cls.__dict__.values()):
             if getattr(value, '_desc', False):
                 desc = value
                 cls._poll_desc_table[desc._event] = desc
