@@ -3196,6 +3196,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         self._send_postcommit_notifications(context._plugin_context)
 
+    def _update_floatingip_status(self, session, port_id):
+        query = (sa.update(l3_db.FloatingIP).
+                where(l3_db.FloatingIP.fixed_port_id == port_id).
+                values(status=n_constants.FLOATINGIP_STATUS_DOWN))
+        session.execute(query)
+
     def delete_port_precommit(self, context):
         port = context.current
         if self._is_port_bound(port):
@@ -3210,6 +3216,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self._delete_erspan_aim_config(context, port)
         self._really_update_sg_rule_with_remote_group_set(
             context, port, port['security_groups'], is_delete=True)
+
+        # Set status of floating ip DOWN.
+        self._update_floatingip_status(
+            context._plugin_context.session, port['id'])
 
         # Handle router gateway port deletion.
         if self._is_port_router_gateway(port):
