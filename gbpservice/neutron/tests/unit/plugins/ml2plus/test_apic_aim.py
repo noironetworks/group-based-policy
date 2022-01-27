@@ -8502,6 +8502,23 @@ class TestExternalConnectivityBase(object):
         self._do_test_multiple_router(use_addr_scope=True,
                                       shared_l3out=True)
 
+    def test_delete_port_assoc_with_floatingip(self):
+        net1 = self._make_network(self.fmt, 'pvt-net1', True)['network']
+        sub1 = self._make_subnet(
+            self.fmt, {'network': net1}, '10.10.1.1', '10.10.1.0/24')
+        with self.port(subnet=sub1) as port:
+            port = self._bind_port_to_host(port['port']['id'], 'host1')
+            port['port']['dns_name'] = ''
+            p = port['port']
+        with self.floatingip_with_assoc(port_id=p['id']) as fip:
+            fip = fip['floatingip']
+            self.assertEqual('ACTIVE', fip['status'])
+            fip = self._show('floatingips', fip['id'])['floatingip']
+            self.assertEqual('ACTIVE', fip['status'])
+            self._delete('ports', p['id'])
+            fip = self._show('floatingips', fip['id'])['floatingip']
+            self.assertEqual('DOWN', fip['status'])
+
     def test_floatingip(self):
         net1 = self._make_network(self.fmt, 'pvt-net1', True)['network']
         sub1 = self._make_subnet(
