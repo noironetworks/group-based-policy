@@ -17,6 +17,9 @@ from gbpclient.v2_0 import client as gbp_client
 from keystoneclient import auth as ksc_auth
 from keystoneclient import session as ksc_session
 from keystoneclient.v3 import client as ksc_client
+from neutron_lib.plugins import directory
+from neutronclient.neutron.v2_0 import purge
+from neutronclient.v2_0 import client as neutron_client
 from oslo_config import cfg
 from oslo_log import log as logging
 
@@ -39,6 +42,9 @@ class ProjectDetailsCache(object):
     def __init__(self):
         self.project_details = {}
         self.keystone = None
+        self.neutron = None
+        self._gbp_plugin = None
+        self._gbp_driver = None
         self.gbp = None
         self.enable_neutronclient_internal_ep_interface = (
             cfg.CONF.ml2_apic_aim.enable_neutronclient_internal_ep_interface)
@@ -61,9 +67,26 @@ class ProjectDetailsCache(object):
         endpoint_type = 'publicURL'
         if self.enable_neutronclient_internal_ep_interface:
             endpoint_type = 'internalURL'
-        self.gbp = gbp_client.Client(session=session,
+        if self.gbp_driver:
+            self.gbp = gbp_client.Client(session=session,
                                      endpoint_type=endpoint_type)
-        LOG.debug("Got gbp client: %s", self.gbp)
+            LOG.debug("Got gbp client: %s", self.gbp)
+        else:
+            self.neutron = neutron_client.Client(session=session,
+                                     endpoint_type=endpoint_type)
+
+    @property
+    def gbp_plugin(self):
+        if not self._gbp_plugin:
+            self._gbp_plugin = directory.get_plugin("GROUP_POLICY")
+        return self._gbp_plugin
+
+    @property
+    def gbp_driver(self):
+        if not self._gbp_driver and self.gbp_plugin:
+            self._gbp_driver = (self.gbp_plugin.policy_driver_manager.
+                                policy_drivers['aim_mapping'].obj)
+        return self._gbp_driver
 
     def ensure_project(self, project_id):
         """Ensure cache contains mapping for project.
@@ -134,8 +157,20 @@ class ProjectDetailsCache(object):
 
         if self.gbp is None:
             self._get_keystone_client()
+        LOG.debug("Calling purge() API")
+        temp_arg = TempArg()
+        temp_arg.tenant = project_id
         if self.gbp:
-            LOG.debug("Calling gbp purge() API")
-            temp_arg = TempArg()
-            temp_arg.tenant = project_id
             self.gbp.purge(temp_arg)
+        else:
+            neutron_purge = PurgeAPI(None, None, self.neutron)
+            neutron_purge.take_action(temp_arg)
+
+
+class PurgeAPI(purge.Purge):
+    def __init__(self, app, app_args, neutron_client):
+        self.neutron_client = neutron_client
+        super(PurgeAPI, self).__init__(app, app_args)
+
+    def get_client(self):
+        return self.neutron_client
