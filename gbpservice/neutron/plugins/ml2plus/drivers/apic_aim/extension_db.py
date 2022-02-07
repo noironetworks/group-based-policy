@@ -424,7 +424,7 @@ class ExtensionDbMixin(object):
             external_network_dn=sa.bindparam('dn'))
         if lock_update:
             # REVISIT: Eliminate locking.
-            query += lambda q: q.with_lockmode('update')
+            query += lambda q: q.with_for_update()
         ids = query(session).params(dn=dn)
 
         return [i[0] for i in ids]
@@ -437,7 +437,7 @@ class ExtensionDbMixin(object):
                 sa.bindparam('dn') + "/%"))
         if lock_update:
             # REVISIT: Eliminate locking.
-            query += lambda q: q.with_lockmode('update')
+            query += lambda q: q.with_for_update()
         ids = query(session).params(dn=dn)
 
         return [i[0] for i in ids]
@@ -451,7 +451,7 @@ class ExtensionDbMixin(object):
             NetworkExtensionDb.svi == true())
         if lock_update:
             # REVISIT: Eliminate locking.
-            query += lambda q: q.with_lockmode('update')
+            query += lambda q: q.with_for_update()
         ids = query(session).params(dn=dn)
 
         return [i[0] for i in ids]
@@ -470,7 +470,7 @@ class ExtensionDbMixin(object):
         query += lambda q: q.distinct()
         if lock_update:
             # REVISIT: Eliminate locking.
-            query += lambda q: q.with_lockmode('update')
+            query += lambda q: q.with_for_update()
         cidrs = query(session).params(dn=dn)
 
         return [c[0] for c in cidrs]

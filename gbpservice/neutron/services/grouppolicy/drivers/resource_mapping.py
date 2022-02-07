@@ -2546,6 +2546,12 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
                 subnet = self._get_subnet(context._plugin_context,
                                           es['subnet_id'])
                 interface_info = {'network_id': subnet['network_id']}
+                router = self._get_router(context._plugin_context,
+                                     router_id)
+                routes = [route for route in router['routes']
+                          if route not in es['external_routes']]
+                self._update_router(context._plugin_context, router_id,
+                                    {'routes': routes})
                 self._remove_router_gw_interface(context._plugin_context,
                                                  router_id, interface_info)
 

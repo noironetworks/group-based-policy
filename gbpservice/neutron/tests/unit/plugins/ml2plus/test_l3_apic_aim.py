@@ -15,7 +15,10 @@
 
 from unittest import mock
 
+from neutron import quota
+from neutron.quota import resource_registry
 from neutron_lib import context
+from oslo_config import cfg
 
 from gbpservice.neutron.services.apic_aim import l3_plugin
 from gbpservice.neutron.tests.unit.services.grouppolicy import (
@@ -127,6 +130,14 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
                                  'subnet_id': subnet['id'],
                                  'floating_network_id': subnet['network_id']}}
         self.handler_mock.reset_mock()
+        quota.QUOTAS._driver = None
+        cfg.CONF.set_override('quota_driver',
+                              'neutron.db.quota.driver.DbQuotaDriver',
+                              group='QUOTAS')
+        self.registry = resource_registry.ResourceRegistry.get_instance()
+        self.registry.register_resource_by_name('floatingip')
+        self.registry.register_resource_by_name('port')
+
         floatingip = self.plugin.create_floatingip(self.context, kwargs)
         internal_ports = self._show('ports',
                                     floatingip['port_id'])['ports']

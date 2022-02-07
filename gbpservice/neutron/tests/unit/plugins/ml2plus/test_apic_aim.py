@@ -57,7 +57,6 @@ from oslo_config import cfg
 from oslo_db import exception as exc
 from oslo_utils import uuidutils
 import six
-from sqlalchemy.orm import exc as sql_exc
 import testtools
 import webob.exc
 
@@ -2532,7 +2531,7 @@ class TestAimMapping(ApicAimTestCase):
             # This should throw an exception as there will be only one
             # entry in this DB table at any given time.
             current_time = datetime.datetime.now()
-            self.assertRaises(sql_exc.FlushError,
+            self.assertRaises(exc.DBDuplicateEntry,
                               self.driver._set_vm_name_update,
                               self.db_session, None, 'host_id1', current_time)
 
