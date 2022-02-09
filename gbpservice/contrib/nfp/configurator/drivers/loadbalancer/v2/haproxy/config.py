@@ -19,6 +19,9 @@ Routines for configuring Octavia Haproxy driver
 
 from oslo_config import cfg
 
+from gbpservice._i18n import _
+
+
 haproxy_amphora_opts = [
     cfg.StrOpt('base_path',
                default='/var/lib/octavia',

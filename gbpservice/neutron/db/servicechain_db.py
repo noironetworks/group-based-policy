@@ -25,6 +25,7 @@ from sqlalchemy.ext.orderinglist import ordering_list
 from sqlalchemy import orm
 from sqlalchemy.orm import exc
 
+from gbpservice._i18n import _
 from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.extensions import servicechain as schain
 from gbpservice.neutron.services.servicechain.common import exceptions as s_exc

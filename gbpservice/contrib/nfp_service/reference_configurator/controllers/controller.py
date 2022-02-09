@@ -21,6 +21,8 @@ import pecan
 from pecan import rest
 import yaml
 
+from gbpservice._i18n import _
+
 LOG = logging.getLogger(__name__)
 SUCCESS = 'SUCCESS'
 FAILED = 'FAILED'
