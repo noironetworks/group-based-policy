@@ -478,19 +478,19 @@ class OrchestrationDriver(object):
         interfaces = device_data.pop('interfaces', None)
         if not interfaces:
             LOG.exception('Failed to get interfaces for device creation.')
-            return None, _, _
+            return None, None, None
 
         image_id = image_id_result.get('result', None)
         if not image_id:
             LOG.error('Failed to get image id for device creation.')
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
-            return None, _, _
+            return None, None, None
 
         if server_grp_id_result and not server_grp_id_result.get('result'):
             LOG.error('Validation failed for Nova anti-affinity '
                       'server group.')
-            return None, _, _
+            return None, None, None
 
         provider_metadata = provider_metadata_result.get('result', None)
         if not provider_metadata:
@@ -562,7 +562,7 @@ class OrchestrationDriver(object):
                       {'data': device_data})
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
-            return None, _
+            return None, None
 
         mgmt_neutron_port_info = port_details_result.get('result', None)
 
@@ -575,7 +575,7 @@ class OrchestrationDriver(object):
                           instance_id)
             self._delete_interfaces(device_data, interfaces,
                                     network_handler=network_handler)
-            return None, _
+            return None, None
         return instance_id, mgmt_neutron_port_info
 
     @_set_network_handler
