@@ -287,18 +287,18 @@ def _validate_gbp_port_range(data, key_specs=None):
         try:
             val = int(p)
             if val <= 0 or val > 65535:
-                msg = _("Invalid port '%s', valid range 0 < port < 65536") % p
+                msg = ("Invalid port '%s', valid range 0 < port < 65536") % p
                 LOG.debug(msg)
                 return msg
             if val <= lower_range:
                 msg_dict = dict(p1=lower_range, p2=val)
-                msg = _("Invalid port range: %(p1)s:%(p2)s, "
-                        "valid range 0 < port1 < port2") % msg_dict
+                msg = ("Invalid port range: %(p1)s:%(p2)s, "
+                       "valid range 0 < port1 < port2") % msg_dict
                 LOG.debug(msg)
                 return msg
             lower_range = val
         except (ValueError, TypeError):
-            msg = _("Port value '%s' is not a valid number") % p
+            msg = ("Port value '%s' is not a valid number") % p
             LOG.debug(msg)
             return msg
 
@@ -316,21 +316,21 @@ def _validate_network_svc_params(data, key_specs=None):
     # The supported values are defined in gp_network_service_param_values,
     # but the values are not validated when the tpye is 'string'.
     if not isinstance(data, list):
-        msg = _("'%s' is not a list") % data
+        msg = ("'%s' is not a list") % data
         LOG.debug(msg)
         return msg
     for d in data:
         if not isinstance(d, dict):
-            msg = _("'%s' is not a dictionary") % d
+            msg = ("'%s' is not a dictionary") % d
             LOG.debug(msg)
             return msg
         if set(d) != set(gp_network_service_param_keys):
             s = ", ".join(set(d) - set(gp_network_service_param_keys))
-            msg = _("Unknown key(s) '%s' in network service params") % s
+            msg = ("Unknown key(s) '%s' in network service params") % s
             LOG.debug(msg)
             return msg
         if d['type'] not in gp_network_service_param_types:
-            msg = _("Network service param type(s) '%s' not supported") % (
+            msg = ("Network service param type(s) '%s' not supported") % (
                 d['type'])
             LOG.debug(msg)
             return msg
@@ -338,8 +338,8 @@ def _validate_network_svc_params(data, key_specs=None):
                              gp_constants.GP_NETWORK_SVC_PARAM_TYPE_QOS_MAX,
                              gp_constants.GP_NETWORK_SVC_PARAM_TYPE_QOS_BURST):
             if d['value'] not in gp_network_service_param_values:
-                msg = _("Network service param value '%s' is not "
-                        "supported") % d['value']
+                msg = ("Network service param value '%s' is not "
+                       "supported") % d['value']
                 LOG.debug(msg)
                 return msg
 
@@ -348,16 +348,16 @@ def _validate_external_dict(data, key_specs=None):
     if data is None:
         return
     if not isinstance(data, dict):
-        msg = _("'%s' is not a dictionary") % data
+        msg = ("'%s' is not a dictionary") % data
         LOG.debug(msg)
         return msg
     for d in data:
         if not uuidutils.is_uuid_like(d):
-            msg = _("'%s' is not a valid UUID") % d
+            msg = ("'%s' is not a valid UUID") % d
             LOG.debug(msg)
             return msg
         if not isinstance(data[d], list):
-            msg = _("'%s' is not a list") % data[d]
+            msg = ("'%s' is not a list") % data[d]
             LOG.debug(msg)
             return msg
 
@@ -365,7 +365,7 @@ def _validate_external_dict(data, key_specs=None):
 def _validate_gbproutes(data, valid_values=None):
     # Shamelessly copied from Neutron, will pass even if nexthop is valid
     if not isinstance(data, list):
-        msg = _("Invalid data format for hostroute: '%s'") % data
+        msg = ("Invalid data format for hostroute: '%s'") % data
         LOG.debug(msg)
         return msg
 
@@ -386,7 +386,7 @@ def _validate_gbproutes(data, valid_values=None):
             LOG.debug(msg)
             return msg
         if hostroute in hostroutes:
-            msg = _("Duplicate hostroute '%s'") % hostroute
+            msg = ("Duplicate hostroute '%s'") % hostroute
             LOG.debug(msg)
             return msg
         hostroutes.append(hostroute)
