@@ -26,6 +26,8 @@ from neutron_lib.api import validators as valid
 from oslo_log import log as logging
 import six
 
+from gbpservice._i18n import _
+
 ALIAS = 'cisco-apic'
 
 DIST_NAMES = 'apic:distinguished_names'
@@ -84,11 +86,11 @@ def _validate_apic_vlan(data, key_specs=None):
         val = int(data)
         if val >= APIC_MIN_VLAN and val <= APIC_MAX_VLAN:
             return
-        msg = _("Invalid value for VLAN: '%s'") % data
+        msg = ("Invalid value for VLAN: '%s'") % data
         LOG.debug(msg)
         return msg
     except (ValueError, TypeError):
-        msg = _("Invalid data format for VLAN: '%s'") % data
+        msg = ("Invalid data format for VLAN: '%s'") % data
         LOG.debug(msg)
         return msg
 
@@ -106,7 +108,7 @@ def _validate_apic_vlan_range(data, key_specs=None):
         if msg:
             return msg
     if int(data[VLAN_RANGE_START]) > int(data[VLAN_RANGE_END]):
-        msg = _("Invalid start, end for VLAN range %s") % data
+        msg = ("Invalid start, end for VLAN range %s") % data
         return msg
 
 
@@ -115,9 +117,9 @@ def _validate_erspan_flow_id(data, key_specs=None):
         return
     msg = valid.validate_non_negative(data)
     if int(data) > 1023:
-        msg = _("ERSPAN flow ID must be less than 1023 (was %s)") % data
+        msg = ("ERSPAN flow ID must be less than 1023 (was %s)") % data
     elif int(data) == 0:
-        msg = _("ERSPAN flow ID must be greater than 0 (was %s)") % data
+        msg = ("ERSPAN flow ID must be greater than 0 (was %s)") % data
     return msg
 
 
@@ -132,7 +134,7 @@ def _validate_erspan_configs(data, valid_values=None):
         otherwise a human readable message indicating why validation failed.
     """
     if not isinstance(data, list):
-        msg = _("Invalid data format for ERSPAN config: '%s'") % data
+        msg = ("Invalid data format for ERSPAN config: '%s'") % data
         LOG.debug(msg)
         return msg
 
@@ -149,7 +151,7 @@ def _validate_erspan_configs(data, valid_values=None):
         if msg:
             return msg
         if erspan_config in erspan_configs:
-            msg = _("Duplicate ERSPAN config '%s'") % erspan_config
+            msg = ("Duplicate ERSPAN config '%s'") % erspan_config
             LOG.debug(msg)
             return msg
         erspan_configs.append(erspan_config)
