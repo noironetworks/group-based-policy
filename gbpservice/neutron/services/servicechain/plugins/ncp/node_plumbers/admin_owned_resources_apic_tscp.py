@@ -16,6 +16,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import excutils
 
+from gbpservice._i18n import _
 from gbpservice.common import utils
 from gbpservice.neutron.services.servicechain.plugins.ncp.node_plumbers \
     import traffic_stitching_plumber as tscp
