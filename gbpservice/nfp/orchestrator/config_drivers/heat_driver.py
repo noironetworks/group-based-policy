@@ -20,6 +20,7 @@ from oslo_config import cfg
 from oslo_serialization import jsonutils
 import yaml
 
+from gbpservice._i18n import _
 from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.servicechain.plugins.ncp import plumber_base

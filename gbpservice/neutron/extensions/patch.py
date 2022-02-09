@@ -27,6 +27,7 @@ from neutron_lib.plugins import directory
 from oslo_log import log
 from oslo_utils import excutils
 
+from gbpservice._i18n import _
 from gbpservice.common import utils as gbp_utils
 from gbpservice.neutron.db import api as db_api
 
