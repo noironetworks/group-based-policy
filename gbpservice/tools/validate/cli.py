@@ -21,6 +21,7 @@ from neutron.common import config
 from neutron import manager
 from neutron_lib.plugins import directory
 
+from gbpservice._i18n import _
 from gbpservice.neutron.services.grouppolicy import (
     group_policy_driver_api as api)
 

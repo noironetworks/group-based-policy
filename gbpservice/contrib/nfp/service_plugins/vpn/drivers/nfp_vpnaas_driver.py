@@ -24,6 +24,7 @@ from neutron_vpnaas.services.vpn.plugin import VPNPlugin
 from neutron_vpnaas.services.vpn.service_drivers import base_ipsec
 import oslo_messaging
 
+from gbpservice._i18n import _
 from gbpservice.contrib.nfp.config_orchestrator.common import topics
 from gbpservice.nfp.core import log as nfp_logging
 

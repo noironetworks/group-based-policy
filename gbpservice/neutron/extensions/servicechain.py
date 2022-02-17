@@ -84,7 +84,7 @@ class PortNotFound(nexc.NotFound):
 
 def _validate_str_list(data, valid_values=None):
     if not isinstance(data, list):
-        msg = _("'%s' is not a list") % data
+        msg = ("'%s' is not a list") % data
         LOG.debug(msg)
         return msg
 
@@ -95,7 +95,7 @@ def _validate_str_list(data, valid_values=None):
             return msg
 
     if len(set(data)) != len(data):
-        msg = _("Duplicate items in the list: '%s'") % ', '.join(data)
+        msg = ("Duplicate items in the list: '%s'") % ', '.join(data)
         LOG.debug(msg)
         return msg
 
