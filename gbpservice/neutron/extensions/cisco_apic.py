@@ -201,8 +201,8 @@ def convert_nested_domain_allowed_vlans(value):
         for vlan_range in value[VLAN_RANGES]:
             for vrng in [VLAN_RANGE_START, VLAN_RANGE_END]:
                 vlan_range[vrng] = convert_apic_vlan(vlan_range[vrng])
-            vlans_list.extend(range(vlan_range[VLAN_RANGE_START],
-                vlan_range[VLAN_RANGE_END] + 1))
+            vlans_list.extend(list(range(vlan_range[VLAN_RANGE_START],
+                vlan_range[VLAN_RANGE_END] + 1)))
     # eliminate duplicates
     vlans_list = list(set(vlans_list))
     # sort

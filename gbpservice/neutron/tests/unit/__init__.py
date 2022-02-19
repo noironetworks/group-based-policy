@@ -42,7 +42,7 @@ orig_warning = resource.LOG.warning
 
 def warning(*args):
     try:
-        for val in sys._getframe(1).f_locals.values():
+        for val in list(sys._getframe(1).f_locals.values()):
             if isinstance(val, resource.TrackedResource) and (
                 sys._getframe(1).f_code.co_name == (
                     'unregister_events')):

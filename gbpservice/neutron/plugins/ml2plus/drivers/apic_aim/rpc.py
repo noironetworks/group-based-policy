@@ -1055,7 +1055,7 @@ class ApicRpcHandlerMixin(object):
         total_ips = sorted(ips + ips_aap)
 
         host_snat_ips = []
-        for ext_net in info['ext_net_info'].values():
+        for ext_net in list(info['ext_net_info'].values()):
             need_snat = False
             for ip in total_ips:
                 if ip not in fip_fixed_ips.get(ext_net.network_id, []):
@@ -1104,7 +1104,7 @@ class ApicRpcHandlerMixin(object):
                  'nat_epg_app_profile': ext_net.epg_app_profile_name,
                  'nat_epg_name': ext_net.epg_name,
                  'nat_epg_tenant': ext_net.epg_tenant_name}
-                for ext_net in info['ext_net_info'].values()
+                for ext_net in list(info['ext_net_info'].values())
                 if ext_net.external_network_dn and
                 ext_net.nat_type == 'distributed' and
                 ext_net.network_id in host_snat_ext_net_ids]
@@ -1158,7 +1158,7 @@ class ApicRpcHandlerMixin(object):
                     (ip.route_destination, ip.route_nexthop))
 
         # Add remaining details to each subnet.
-        for subnet_id, subnet in subnets.items():
+        for subnet_id, subnet in list(subnets.items()):
             dhcp_ips = set()
             dhcp_ports = defaultdict(list)
             for ip in dhcp_ip_info:

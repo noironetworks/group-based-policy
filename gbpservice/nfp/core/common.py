@@ -39,8 +39,8 @@ def _name(obj):
     # If it is callable, then it is a method
     if callable(obj):
         return "{0}.{1}.{2}".format(
-            type(obj.im_self).__module__,
-            type(obj.im_self).__name__,
+            type(obj.__self__).__module__,
+            type(obj.__self__).__name__,
             obj.__name__)
     # If obj is of type class
     elif _is_class(obj):
