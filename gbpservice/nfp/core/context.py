@@ -69,9 +69,9 @@ def init_log_context():
 def init(data=None):
     if not data:
         data = {}
-    if 'log_context' not in data.keys():
+    if 'log_context' not in list(data.keys()):
         data['log_context'] = init_log_context()
-    if 'event_desc' not in data.keys():
+    if 'event_desc' not in list(data.keys()):
         data['event_desc'] = {}
     Context.context = NfpContext(data)
     context = getattr(Context, 'context')

@@ -10,7 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import httplib
+import http.client
 import socket
 import zlib
 
@@ -30,13 +30,13 @@ class RestClientException(exceptions.Exception):
     """ RestClient Exception """
 
 
-class UnixHTTPConnection(httplib.HTTPConnection):
+class UnixHTTPConnection(http.client.HTTPConnection):
 
     """Connection class for HTTP over UNIX domain socket."""
 
     def __init__(self, host, port=None, strict=None, timeout=None,
                  proxy_info=None):
-        httplib.HTTPConnection.__init__(self, host, port, strict)
+        http.client.HTTPConnection.__init__(self, host, port, strict)
         self.timeout = timeout
         self.socket_path = '/var/run/uds_socket'
 

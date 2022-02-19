@@ -10,11 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import commands
 import logging
 import os
 import re
 import string
+import subprocess
 import sys
 
 import six
@@ -75,11 +75,11 @@ class Gbp_Config(object):
         if cmd_val == 2:
             cmd = 'gbp policy-action-update ' + str(name_uuid)
         # Build the cmd string for optional/non-default args/values
-        for arg, value in kwargs.items():
+        for arg, value in list(kwargs.items()):
             cmd = cmd + " --" + ("%s %s" % (arg, value))
         _log.info(cmd)
         # Execute the policy-action-config-cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
         _log.info(cmd_out)
         # Catch for non-exception error strings, even though try clause
         # succeeded
@@ -111,11 +111,11 @@ class Gbp_Config(object):
         if cmd_val == 2:
             cmd = 'gbp policy-classifier-update ' + str(classifier_name)
         # Build the cmd string for optional/non-default args/values
-        for arg, value in kwargs.items():
+        for arg, value in list(kwargs.items()):
             cmd = cmd + " --" + "%s %s" % (arg, value)
 
         # Execute the policy-classifier-config-cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
         # Catch for non-exception error strings, even though try clause
         # succeeded
         if self.cmd_error_check(cmd_out) == 0:
@@ -167,7 +167,7 @@ class Gbp_Config(object):
         if cmd_val == 2:
             cmd = 'gbp %s-update ' % cfgobj_dict[cfgobj] + str(name_uuid)
         # Build the cmd string for optional/non-default args/values
-        for arg, value in kwargs.items():
+        for arg, value in list(kwargs.items()):
             if arg.startswith('_'):
                 # Parameter not supported by CLI, leave it as is
                 arg = arg[1:]
@@ -177,7 +177,7 @@ class Gbp_Config(object):
                 cmd = cmd + " --" + "%s=%s" % (arg, value)
         _log.info(cmd)
         # Execute the cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
         # Catch for non-exception error strings, even though try clause
         # succeeded
         if self.cmd_error_check(cmd_out) == 0:
@@ -257,7 +257,7 @@ class Gbp_Config(object):
             cmd = cmd + " --" + ("%s %s" % (arg, value))
         _log.info(cmd)
         # Execute the update cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
         # Catch for non-exception error strings, even though try clause
         # succeeded
         if self.cmd_error_check(cmd_out) == 0:
@@ -287,7 +287,7 @@ class Gbp_Config(object):
                 raise KeyError
         # Build the command with mandatory params
         cmd = 'gbp %s-list -c id ' % cfgobj_dict[cfgobj]
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
         _out = cmd_out.split('\n')
         final_out = _out[3:len(_out) - 1]
         _log.info("\nThe Policy Object %s to be deleted = \n%s" % (
@@ -295,7 +295,7 @@ class Gbp_Config(object):
         for item in final_out:
             item = item.strip(' |')
             cmd = 'gbp %s-delete ' % cfgobj_dict[cfgobj] + str(item)
-            cmd_out = commands.getoutput(cmd)
+            cmd_out = subprocess.getoutput(cmd)
             _log.info(cmd_out)
         return 1
 
@@ -337,7 +337,7 @@ class Gbp_Config(object):
                    ' --servicetype ' + service)
         _log.info(cmd)
         # Execute the policy-rule-config-cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
 
         # Catch for non-exception error strings, even though try clause
         # succeeded
@@ -374,13 +374,13 @@ class Gbp_Config(object):
         if cmd_val == 2:
             cmd = 'neutron %s-update ' % cfgobj_dict[cfg_obj] + str(name_uuid)
         # Build the cmd string for optional/non-default args/values
-        for arg, value in kwargs.items():
+        for arg, value in list(kwargs.items()):
             if '_' in arg:
                 arg = string.replace(arg, '_', '-')
             cmd = cmd + " --" + "".join('%s=%s' % (arg, value))
         _log.info(cmd)
         # Execute the cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
 
         # Catch for non-exception error strings, even though try clause
         # succeeded

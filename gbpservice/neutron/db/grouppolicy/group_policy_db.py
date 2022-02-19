@@ -600,7 +600,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
                 db_res.consumed_policy_rule_sets = []
                 return
         with context.session.begin(subtransactions=True):
-            policy_rule_sets_id_list = policy_rule_sets_dict.keys()
+            policy_rule_sets_id_list = list(policy_rule_sets_dict.keys())
             # We will first check if the new list of policy_rule_sets is valid
             self._validate_policy_rule_set_list(
                 context, policy_rule_sets_id_list)
