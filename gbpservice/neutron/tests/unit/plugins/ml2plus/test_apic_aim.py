@@ -2504,7 +2504,7 @@ class TestAimMapping(ApicAimTestCase):
             # Simulate the polling thread from the other controller
             # will just stand by
             old_id = self.driver.host_id
-            self.driver.host_id = 'new_id'
+            self.driver.host_id = 'new_id-123456'
             vm.name = 'old_name'
             nova_client.return_value = [vm]
             self.driver._update_nova_vm_name_cache()
