@@ -292,7 +292,7 @@ class NfpResourceManager(NfpProcessManager, NfpEventManager):
                 # event, then worker would not be pre-assigned.
                 # In such case, assign a random worker
                 if not event.desc.worker:
-                    event.desc.worker = self._resource_map.keys()[0]
+                    event.desc.worker = list(self._resource_map.keys())[0]
                 event.lifetime = event.desc.poll_desc.spacing
                 self._watchdog(event, handler=self._poll_timedout)
         else:

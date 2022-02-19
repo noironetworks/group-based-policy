@@ -81,11 +81,9 @@ class ConfiguratorRpcManagerTestCase(base.BaseTestCase):
                              else self.fo.fake_request_data_generic_single()))}
                         }
         if batch:
-            request_data_actual, _ = (
-                                            request_data['batch'].values())
+            request_data_actual, _ = (list(request_data['batch'].values()))
         else:
-            request_data_actual, _ = (
-                                            request_data['single'].values())
+            request_data_actual, _ = (list(request_data['single'].values()))
 
         with mock.patch.object(rpc_mgr,
                                '_get_service_agent_instance',

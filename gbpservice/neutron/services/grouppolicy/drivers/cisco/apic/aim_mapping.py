@@ -341,7 +341,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         # considered for deriving the status
         mapped_status = []
 
-        for ascp in self.L3P_ADDRESS_SCOPE_KEYS.values():
+        for ascp in list(self.L3P_ADDRESS_SCOPE_KEYS.values()):
             if l3p_db[ascp]:
                 ascp_id = l3p_db[ascp]
                 ascope = self._get_address_scope(
@@ -469,7 +469,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             aim_resources = self._get_implicit_contracts_for_default_epg(
                 context, l3p_db, default_epg_dn)
             aim_resources_list = []
-            for k in aim_resources.keys():
+            for k in list(aim_resources.keys()):
                 if not aim_resources[k] or not all(
                     x for x in aim_resources[k]):
                     # We expected a AIM mapped resource but did not find
@@ -955,7 +955,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_filter = self._aim_filter(session, context.current)
         aim_reverse_filter = self._aim_filter(
             session, context.current, reverse_prefix=True)
-        for afilter in filter(None, [aim_filter, aim_reverse_filter]):
+        for afilter in [_f for _f in [aim_filter, aim_reverse_filter] if _f]:
             self.aim.delete(aim_ctx, afilter)
 
     @log.log_method_call
@@ -1509,7 +1509,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
         aim_filter = self._aim_filter(session, pr)
         aim_reverse_filter = self._aim_filter(
             session, pr, reverse_prefix=True)
-        for afilter in filter(None, [aim_filter, aim_reverse_filter]):
+        for afilter in [_f for _f in [aim_filter, aim_reverse_filter] if _f]:
             self._delete_aim_filter_entries(aim_context, afilter)
 
     def _create_aim_filter_entries(self, session, aim_ctx, aim_filter,
@@ -1543,7 +1543,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def _get_aim_filter_names(self, session, policy_rule):
         # Forward and Reverse AIM Filter names for a Policy Rule
         aim_filters = self._get_aim_filters(session, policy_rule)
-        aim_filter_names = [f.name for f in aim_filters.values() if f]
+        aim_filter_names = [f.name for f in list(aim_filters.values()) if f]
         return aim_filter_names
 
     def _get_aim_filter_entries(self, session, policy_rule):
@@ -1970,7 +1970,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _check_l3policy_ext_segment(self, context, l3policy):
         if l3policy['external_segments']:
-            for allocations in l3policy['external_segments'].values():
+            for allocations in list(l3policy['external_segments'].values()):
                 if len(allocations) > 1:
                     raise alib.OnlyOneAddressIsAllowedPerExternalSegment()
             # if NAT is disabled, allow only one L3P per ES
@@ -2067,7 +2067,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                                     filters={'id': l3policy['routers']})
         es_2_router = self._map_ext_segment_to_routers(context, es_list,
                                                        routers)
-        for r in es_2_router.values():
+        for r in list(es_2_router.values()):
             router_subs = self._get_router_interface_subnets(plugin_context,
                                                              r['id'])
             self._detach_router_from_subnets(plugin_context, r['id'],

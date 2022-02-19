@@ -12,6 +12,7 @@
 
 
 import filter_base
+
 from gbpservice.contrib.nfp.configurator.lib import data_filter
 
 
