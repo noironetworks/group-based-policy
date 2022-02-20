@@ -110,7 +110,7 @@ class TaskExecutor(object):
 
             job.pop('thread')
             job['result'] = result
-            if 'result_store' in job.keys():
+            if 'result_store' in list(job.keys()):
                 job['result_store']['result'] = result
 
         done_jobs = self.pipe_line[:]
@@ -147,7 +147,7 @@ class EventGraphExecutor(object):
         self.running = {}
 
     def add(self, graph):
-        assert graph['id'] not in self.running.keys(), "Graph - %s \
+        assert graph['id'] not in list(self.running.keys()), "Graph - %s \
             is already running" % (graph['id'])
         graph['results'] = dict.fromkeys(graph['data'])
         self.running[graph['id']] = graph
@@ -197,7 +197,7 @@ class EventGraphExecutor(object):
         self.manager._scheduled_new_event(event)
 
     def _graph(self, node):
-        for graph in self.running.values():
+        for graph in list(self.running.values()):
             root = self._root(graph, node)
             if root:
                 return graph

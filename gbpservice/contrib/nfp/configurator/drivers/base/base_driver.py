@@ -23,7 +23,7 @@ LOG = nfp_logging.getLogger(__name__)
 
 def set_class_attr(**kwargs):
     def f(class_obj):
-        for key, value in kwargs.items():
+        for key, value in list(kwargs.items()):
             setattr(class_obj, key.lower(), value.lower())
         return class_obj
     return f

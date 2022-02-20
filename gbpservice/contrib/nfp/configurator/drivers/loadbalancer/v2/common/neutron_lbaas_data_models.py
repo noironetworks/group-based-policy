@@ -63,7 +63,7 @@ class BaseDataModel(object):
 
     @classmethod
     def from_dict(cls, model_dict):
-        fields = {k: v for k, v in model_dict.items()
+        fields = {k: v for k, v in list(model_dict.items())
                   if k in cls.fields}
         return cls(**fields)
 

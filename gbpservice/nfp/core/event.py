@@ -244,7 +244,7 @@ class NfpEventHandlers(object):
                     self._event_desc_table[event_id]['modules'][module][0][3])
             else:
                 priorities = (
-                    self._event_desc_table[event_id]['priority'].keys())
+                    list(self._event_desc_table[event_id]['priority'].keys()))
                 priority = max(priorities)
                 eh = (
                     self._event_desc_table[
@@ -268,7 +268,7 @@ class NfpEventHandlers(object):
                     event_id]['modules'][module][0][2]
             else:
                 priorities = (
-                    self._event_desc_table[event_id]['priority'].keys())
+                    list(self._event_desc_table[event_id]['priority'].keys()))
                 priority = max(priorities)
                 ph = (
                     self._event_desc_table[

@@ -10,10 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import commands
 import logging
 import os
 import re
+import subprocess
 import sys
 
 from libs import config_libs
@@ -39,7 +39,7 @@ class test_gbp_pa_func(object):
         level=logging.WARNING)
     _log = logging.getLogger(__name__)
     cmd = 'rm /tmp/test_gbp_pa_func.log'
-    commands.getoutput(cmd)
+    subprocess.getoutput(cmd)
     hdlr = logging.FileHandler('/tmp/test_gbp_pa_func.log')
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     hdlr.setFormatter(formatter)
@@ -197,7 +197,7 @@ class test_gbp_pa_func(object):
             "UPdating Polic Action")
         spec_cr_cmd = ('gbp servicechain-spec-create demo_spec | grep id | '
                        'head -1')
-        cmd_out = commands.getoutput(spec_cr_cmd)
+        cmd_out = subprocess.getoutput(spec_cr_cmd)
         spec_id = re.search("\\bid\\b\s+\| (.*) \|", cmd_out, re.I).group(1)
         self._log.info(
             '\n##Step 2: Update Policy Action Attributes name and '
@@ -234,7 +234,7 @@ class test_gbp_pa_func(object):
             return 0
         self._log.info("\n## Step 3A: Now delete the service chain spec")
         spec_del_cmd = 'gbp servicechain-spec-delete %s' % (spec_id)
-        cmd_out = commands.getoutput(spec_del_cmd)
+        cmd_out = subprocess.getoutput(spec_del_cmd)
         if self.gbpverify.gbp_action_verify(
                 1,
                 'grppol_act',
