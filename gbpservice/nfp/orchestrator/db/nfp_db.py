@@ -59,7 +59,7 @@ class NFPDbBase(common_db_mixin.CommonDbMixin):
             network_function_db = self._get_network_function(
                 session, network_function_id)
             network_function_db.update(updated_network_function)
-            if 'status' in updated_network_function.keys():
+            if 'status' in list(updated_network_function.keys()):
                 updated_network_function_map = {
                         'status': updated_network_function['status']
                 }
