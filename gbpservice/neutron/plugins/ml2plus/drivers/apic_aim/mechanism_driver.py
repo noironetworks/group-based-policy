@@ -2207,7 +2207,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         existing_scope_db.aim_mapping)
                     if vrf.identity != existing_vrf.identity:
                         raise (exceptions.
-                               NonIsomorphicNetworkRoutingUnsupported())
+                               NonIsomorphicNetworkRoutingUnsupported)
                 else:
                     raise exceptions.NonIsomorphicNetworkRoutingUnsupported()
 
@@ -2235,7 +2235,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             router_vrf = (
                 self._map_default_vrf(
                     session,
-                    router_shared_net or next(iter(router_topology.values())))
+                    router_shared_net or next(
+                        iter(list(router_topology.values()))))
                 if router_topology else None)
 
             # Choose VRF and move one topology if necessary.
@@ -2481,7 +2482,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 router_shared_net = self._topology_shared(router_topology)
                 router_vrf = self._map_default_vrf(
                     session,
-                    router_shared_net or next(iter(router_topology.values())))
+                    router_shared_net or next(
+                        iter(list(router_topology.values()))))
                 if old_vrf.identity != router_vrf.identity:
                     router_vrf = self._ensure_default_vrf(aim_ctx, router_vrf)
                     self._move_topology(
@@ -2749,7 +2751,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # active_active_aap mode.
         subnet_ids = [x['subnet_id'] for x in port['fixed_ips']]
         active_aap_mode = self._query_active_active_aap(session, subnet_ids)
-        for port_id, other_subnet_ids in affected_ports.items():
+        for port_id, other_subnet_ids in list(affected_ports.items()):
             other_active_aap_mode = self._query_active_active_aap(
                                                     session, other_subnet_ids)
             if active_aap_mode != other_active_aap_mode:
@@ -4180,7 +4182,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # TODO(rkukura): Validate that nothing in new_vrf overlaps
         # with topology.
 
-        for network_db in topology.values():
+        for network_db in list(topology.values()):
             if old_vrf.tenant_name != new_vrf.tenant_name:
                 # New VRF is in different Tenant, so move BD, EPG, and
                 # all Subnets to new VRF's Tenant and set BD's VRF.
@@ -4349,7 +4351,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 [result[0] for result in results])
 
     def _topology_shared(self, topology):
-        for network_db in topology.values():
+        for network_db in list(topology.values()):
             if self._network_shared(network_db):
                 return network_db
 
@@ -5361,7 +5363,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             network_db = self.plugin._get_network(plugin_context,
                 network['id'])
 
-            for ip_vers, subnet_dict in subnets_dict.items():
+            for ip_vers, subnet_dict in list(subnets_dict.items()):
                 secondary_ip = subnet_dict['subnet']['gateway_ip'] + '/' + (
                     subnet_dict['mask'])
                 aim_l3out_if = aim_resource.L3OutInterface(
@@ -6600,7 +6602,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             mgr, net_dbs, routed_nets)
         self._validate_routed_vrfs(mgr, routed_nets, network_vrfs)
 
-        for net_db in net_dbs.values():
+        for net_db in list(net_dbs.values()):
             if not net_db.aim_extension_mapping:
                 self._missing_network_extension_mapping(mgr, net_db)
             self._expect_project(mgr, net_db.project_id)
@@ -6738,7 +6740,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         unscoped_router_net_ids = defaultdict(set)
         unscoped_net_dbs = {}
         shared_unscoped_net_ids = []
-        for intfs in routed_nets.values():
+        for intfs in list(routed_nets.values()):
             net_id = None
             v4_scope_mapping = None
             v6_scope_mapping = None
@@ -6812,7 +6814,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 expand_shared_topology(net_id, vrf)
 
         # Process remaining (unshared) unscoped networks.
-        for net_db in unscoped_net_dbs.values():
+        for net_db in list(unscoped_net_dbs.values()):
             if net_db.id not in network_vrfs:
                 vrf = use_default_vrf(net_db)
                 for router_id in unscoped_net_router_ids[net_db.id]:
@@ -6822,12 +6824,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _validate_routed_vrfs(self, mgr, routed_nets, network_vrfs):
         vrf_subnets = defaultdict(list)
-        for net_id, intfs in routed_nets.items():
+        for net_id, intfs in list(routed_nets.items()):
             vrf = network_vrfs[net_id]
             vrf_subnets[tuple(vrf.identity)] += [
                 (intf.subnet.id, netaddr.IPNetwork(intf.subnet.cidr))
                 for intf in intfs]
-        for vrf_id, subnets in vrf_subnets.items():
+        for vrf_id, subnets in list(vrf_subnets.items()):
             subnets.sort(key=lambda s: s[1])
             for (id1, cidr1), (id2, cidr2) in zip(subnets[:-1], subnets[1:]):
                 if id2 != id1 and cidr2 in cidr1:
@@ -7089,12 +7091,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         vrf_routers = defaultdict(set)
         int_vrfs = {}
         for router_id in router_ids:
-            for int_vrf in router_vrfs[router_id].values():
+            for int_vrf in list(router_vrfs[router_id].values()):
                 key = tuple(int_vrf.identity)
                 vrf_routers[key].add(router_id)
                 int_vrfs[key] = int_vrf
 
-        for key, routers in vrf_routers.items():
+        for key, routers in list(vrf_routers.items()):
             prov = set()
             cons = set()
             for router_id in routers:
