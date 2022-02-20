@@ -94,7 +94,7 @@ class CommonDbMixin(object):
 
     def _fields(self, resource, fields):
         if fields:
-            return dict(((key, item) for key, item in resource.items()
+            return dict(((key, item) for key, item in list(resource.items())
                          if key in fields))
         return resource
 

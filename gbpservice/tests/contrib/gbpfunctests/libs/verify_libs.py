@@ -10,9 +10,9 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import commands
 import logging
 import re
+import subprocess
 
 import yaml
 
@@ -24,7 +24,7 @@ _log = logging.getLogger()
 _log.setLevel(logging.INFO)
 
 
-orig_getoutput = commands.getoutput
+orig_getoutput = subprocess.getoutput
 
 
 def getoutput(cmd):
@@ -34,7 +34,7 @@ def getoutput(cmd):
     return cmd_out
 
 
-commands.getoutput = getoutput
+subprocess.getoutput = getoutput
 
 
 class Gbp_Verify(object):
@@ -71,7 +71,7 @@ class Gbp_Verify(object):
             cmd = "gbp policy-action-show " + str(action_name)
 
         # Execute the policy-action-verify-cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
 
         # Catch for non-exception error strings, even though try clause
         # succeeded
@@ -93,7 +93,7 @@ class Gbp_Verify(object):
         # If try clause succeeds for "verify" cmd then parse the cmd_out to
         # match the user-fed expected attributes & their values
         if cmd_val == 1:
-            for arg, val in kwargs.items():
+            for arg, val in list(kwargs.items()):
                 if re.search("\\b%s\\b\s+\| \\b%s\\b.*" %
                              (arg, val), cmd_out, re.I) is None:
                     _log.info(cmd_out)
@@ -125,7 +125,7 @@ class Gbp_Verify(object):
         if cmd_val == 1:
             cmd = "gbp policy-classifier-show " + str(classifier_name)
         # Execute the policy-classifier-verify-cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
 
         # Catch for non-exception error strings, even though try clause
         # succeeded
@@ -149,7 +149,7 @@ class Gbp_Verify(object):
         # If try clause succeeds for "verify" cmd then parse the cmd_out to
         # match the user-fed expected attributes & their values
         if cmd_val == 1:
-            for arg, val in kwargs.items():
+            for arg, val in list(kwargs.items()):
                 if re.search("\\b%s\\b\s+\| \\b%s\\b.*" %
                              (arg, val), cmd_out, re.I) is None:
                     _log.info(cmd_out)
@@ -194,7 +194,7 @@ class Gbp_Verify(object):
         if cmd_val == 1:
             cmd = 'gbp %s-show ' % verifyobj_dict[verifyobj] + str(name_uuid)
         # Execute the policy-object-verify-cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
         # Catch for non-exception error strings
         for err in self.err_strings:
             if re.search('\\b%s\\b' % (err), cmd_out, re.I):
@@ -219,7 +219,7 @@ class Gbp_Verify(object):
         # If "verify" cmd succeeds then parse the cmd_out to match the user-fed
         # expected attributes & their values
         if cmd_val == 1:
-            for arg, val in kwargs.items():
+            for arg, val in list(kwargs.items()):
                 if re.search("\\b%s\\b\s+\| \\b%s\\b.*" %
                              (arg, val), cmd_out, re.I) is None:
                     _log.info(cmd_out)
@@ -262,7 +262,7 @@ class Gbp_Verify(object):
         if cmd_val == 1:
             cmd = 'gbp %s-show ' % verifyobj_dict[verifyobj] + str(name_uuid)
         # Execute the policy-object-verify-cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
         # _log.info(cmd_out)
         # Catch for non-exception error strings
         for err in self.err_strings:
@@ -288,7 +288,7 @@ class Gbp_Verify(object):
         # If "verify" succeeds cmd then parse the cmd_out to match the user-fed
         # expected attributes & their values
         if cmd_val == 1 and ret == 'default':
-            for arg, val in kwargs.items():
+            for arg, val in list(kwargs.items()):
                 if re.search("\\b%s\\b\s+\| \\b%s\\b.*" %
                              (arg, val), cmd_out, re.I) is None:
                     # incase of attribute has more than one value then
@@ -317,7 +317,7 @@ class Gbp_Verify(object):
                 rtrid = match.group(1)
                 return rtrid.rstrip()
         elif cmd_val == 1:
-            for arg, val in kwargs.items():
+            for arg, val in list(kwargs.items()):
                 if arg == 'network_service_params':
                     if re.findall('(%s)' % (val), cmd_out) == []:
                         _log.info(cmd_out)
@@ -353,7 +353,7 @@ class Gbp_Verify(object):
         cmd = 'neutron %s-show ' % verifyobj + str(name_uuid)
         _log.info('Neutron Cmd == %s\n' % (cmd))
         # Execute the policy-object-verify-cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
         _log.info(cmd_out)
         # Catch for non-exception error strings
         for err in self.err_strings:
@@ -369,7 +369,7 @@ class Gbp_Verify(object):
                 return match.group(1).rstrip()
             else:
                 return 0
-        for arg, val in kwargs.items():
+        for arg, val in list(kwargs.items()):
             if isinstance(val, list):  # More than 1 value is to be verified
                 for i in val:
                     if cmd_out.find(i) == -1:
@@ -415,7 +415,7 @@ class Gbp_Verify(object):
         cmd = ('gbp %s-show ' % verifyobj_dict[verifyobj] +
                str(name_uuid) + ' -F %s' % (attr))
         # Execute the policy-object-verify-cmd
-        cmd_out = commands.getoutput(cmd)
+        cmd_out = subprocess.getoutput(cmd)
         # Catch for non-exception error strings
         for err in self.err_strings:
             if re.search('\\b%s\\b' % (err), cmd_out, re.I):
@@ -446,10 +446,10 @@ class Gbp_Verify(object):
         # heat template
         outputs_dict = heat_conf["outputs"]
         print(outputs_dict)
-        for key in outputs_dict.keys():
+        for key in list(outputs_dict.keys()):
             cmd = 'heat stack-show %s | grep -B 2 %s' % (heat_stack_name, key)
             print(cmd)
-            cmd_out = commands.getoutput(cmd)
+            cmd_out = subprocess.getoutput(cmd)
             print(cmd_out)
             match = re.search('\"\\boutput_value\\b\": \"(.*)\"',
                               cmd_out, re.I)

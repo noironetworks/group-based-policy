@@ -111,7 +111,7 @@ class OctaviaDataModelBuilder(object):
 
     # Update Octavia model from dict
     def _update(self, octavia_data_model, update_dict):
-        for key, value in update_dict.items():
+        for key, value in list(update_dict.items()):
             setattr(octavia_data_model, key, value)
         return octavia_data_model
 

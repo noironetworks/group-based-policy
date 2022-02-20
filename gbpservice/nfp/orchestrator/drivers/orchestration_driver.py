@@ -894,7 +894,7 @@ class OrchestrationDriver(object):
                     gcm.retry(gbp_cli.delete_l2_policy, token,
                             ptg['l2_policy_id'])
 
-        if ('consumer' not in device_data.keys() or not device_data[
+        if ('consumer' not in list(device_data.keys()) or not device_data[
             'consumer'].get('ptg')):
             return
 
