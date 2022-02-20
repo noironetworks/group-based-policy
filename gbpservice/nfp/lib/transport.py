@@ -202,7 +202,7 @@ def send_request_to_configurator(conf, context, body,
         method_name = 'network_function_event'
     else:
         if (body['config'][0]['resource'] in
-                nfp_constants.CONFIG_TAG_RESOURCE_MAP.values()):
+                list(nfp_constants.CONFIG_TAG_RESOURCE_MAP.values())):
             body['config'][0]['resource_data'].update(
                 {'neutron_context': context.to_dict()})
             body['info']['context'].update(
