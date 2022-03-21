@@ -7735,7 +7735,7 @@ class TestExtensionAttributes(ApicAimTestCase):
                     for k, v in list(res.members.items()):
                         if k in res.user_attributes():
                             if isinstance(v, list):
-                                v = v.sort() or []
+                                v = sorted(v) or []
                             res_dict[k] = v
                     new_resources.append(res_dict)
                 return new_resources
@@ -7788,7 +7788,7 @@ class TestExtensionAttributes(ApicAimTestCase):
             name=source_name)],
             [aim_resource.SpanVsource(vsg_name=source_name,
                 name=source_name, dir='in',
-                src_paths=['uni/tn-prj_' + p1['project_id'] +
+                src_paths=['uni/tn-prj_' + net['network']['project_id'] +
                 '/ap-OpenStack/epg-net_' + net['network']['id'] +
                 '/cep-' + p1['mac_address'].upper()])],
             [aim_resource.SpanSpanlbl(vsg_name=source_name,
@@ -7820,7 +7820,7 @@ class TestExtensionAttributes(ApicAimTestCase):
             name=source_name))
         source_resources[1].append(aim_resource.SpanVsource(
             vsg_name=source_name, name=source_name, dir='both',
-            src_paths=['uni/tn-prj_' + p1['project_id'] +
+            src_paths=['uni/tn-prj_' + net['network']['project_id'] +
                        '/ap-OpenStack/epg-net_' + net['network']['id'] +
                        '/cep-' + p1['mac_address'].upper()]))
         source_resources[2].append(aim_resource.SpanSpanlbl(
@@ -7847,6 +7847,7 @@ class TestExtensionAttributes(ApicAimTestCase):
                            'flow_id': 1023}]}
         p2 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:',
+                             tenant_id='tenant2',
                              arg_list=('apic:erspan_config',),
                              **erspan_config)['port']
         self.assertEqual(erspan_config.get('apic:erspan_config'),
@@ -7858,7 +7859,7 @@ class TestExtensionAttributes(ApicAimTestCase):
             name=source_name))
         source_resources[1].append(aim_resource.SpanVsource(
             vsg_name=source_name, name=source_name, dir='both',
-            src_paths=['uni/tn-prj_' + p2['project_id'] +
+            src_paths=['uni/tn-prj_' + net['network']['project_id'] +
                        '/ap-OpenStack/epg-net_' + net['network']['id'] +
                        '/cep-' + p2['mac_address'].upper()]))
         source_resources[2].append(aim_resource.SpanSpanlbl(
@@ -7876,7 +7877,7 @@ class TestExtensionAttributes(ApicAimTestCase):
             name=source_name)],
             [aim_resource.SpanVsource(
                 vsg_name=source_name, name=source_name, dir='both',
-                src_paths=['uni/tn-prj_' + p2['project_id'] +
+                src_paths=['uni/tn-prj_' + net['network']['project_id'] +
                 '/ap-OpenStack/epg-net_' + net['network']['id'] +
                 '/cep-' + p2['mac_address'].upper()])],
             [aim_resource.SpanSpanlbl(
