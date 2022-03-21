@@ -4403,8 +4403,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             scope_id=scope_id).one_or_none()
 
     def _map_port(self, session, port):
-        tenant_aname = self.name_mapper.project(session,
-                                                port['project_id'])
         # REVISIT: GBP workflow isn't supported in this release. If
         #          we do add support for GBP, getting the EPG requires
         #          determining which workflow was used, and get the
@@ -4417,7 +4415,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         epg = self._get_network_epg(mapping)
         # The ERSPAN source ocnfiguration requires the DN
         # for the EP, so we construct it.
-        return ('uni/tn-' + tenant_aname +
+        return ('uni/tn-' + epg.tenant_name +
                 '/ap-OpenStack/epg-' + epg.name +
                 '/cep-' + port['mac_address'].upper())
 
