@@ -32,6 +32,7 @@ from aim import utils as aim_utils
 import netaddr
 from neutron.agent import securitygroups_rpc
 from neutron.common import utils as n_utils
+from neutron.db.models import address_group as ag_db
 from neutron.db.models import address_scope as as_db
 from neutron.db.models import allowed_address_pair as n_addr_pair_db
 from neutron.db.models import l3 as l3_db
@@ -2656,6 +2657,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                 context, port, removed_sgs, is_delete=True)
             self._really_update_sg_rule_with_remote_group_set(
                                 context, port, added_sgs, is_delete=False)
+            self._really_update_sg_rule_with_remote_address_group_set(
+                                context, port, removed_sgs, is_delete=True)
+            self._really_update_sg_rule_with_remote_address_group_set(
+                                context, port, added_sgs, is_delete=False)
 
     def _really_update_sg_rule_with_remote_group_set(
                     self, context, port, security_groups, is_delete):
@@ -2702,6 +2707,51 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 elif ip_version == netaddr.IPAddress(fixed_ip).version:
                     if fixed_ip not in aim_sg_rule.remote_ips:
                         aim_sg_rule.remote_ips.append(fixed_ip)
+            self.aim.update(aim_ctx, sg_rule_aim,
+                            remote_ips=aim_sg_rule.remote_ips)
+
+    def _really_update_sg_rule_with_remote_address_group_set(
+            self, context, port, security_groups, is_delete):
+        if not security_groups:
+            return
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+
+        query = BAKERY(lambda s: s.query(
+                        sg_models.SecurityGroupRule,
+                        ag_db.AddressGroup))
+        query += lambda q: q.filter(
+            sg_models.SecurityGroupRule.remote_address_group_id ==
+            ag_db.AddressGroup.id)
+        res = query(session).params(
+            security_groups=list(security_groups)).all()
+        sg_to_tenant = {}
+        for sg in res:
+            sg_rule = sg[0]
+            address_group = sg[1]
+            sg_id = sg_rule['security_group_id']
+            if sg_id in sg_to_tenant:
+                tenant_id = sg_to_tenant[sg_id]
+            else:
+                tenant_id = self._get_sg_rule_tenant_id(session, sg_rule)
+                sg_to_tenant[sg_id] = tenant_id
+            tenant_aname = self.name_mapper.project(session, tenant_id)
+            sg_rule_aim = aim_resource.SecurityGroupRule(
+                        tenant_name=tenant_aname,
+                        security_group_name=sg_rule['security_group_id'],
+                        security_group_subject_name='default',
+                        name=sg_rule['id'])
+            aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim)
+            if not aim_sg_rule:
+                continue
+            for ag_address in address_group['addresses']:
+                address = str(ag_address.address)
+                if is_delete:
+                    if address in aim_sg_rule.remote_ips:
+                        aim_sg_rule.remote_ips.remove(address)
+                else:
+                    if address not in aim_sg_rule.remote_ips:
+                        aim_sg_rule.remote_ips.append(address)
             self.aim.update(aim_ctx, sg_rule_aim,
                             remote_ips=aim_sg_rule.remote_ips)
 
@@ -2951,6 +3001,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if port.get(cisco_apic.ERSPAN_CONFIG):
             self._check_valid_erspan_config(port)
         self._really_update_sg_rule_with_remote_group_set(
+            context, port, port['security_groups'], is_delete=False)
+        self._really_update_sg_rule_with_remote_address_group_set(
             context, port, port['security_groups'], is_delete=False)
         self._insert_provisioning_block(context)
 
@@ -3234,6 +3286,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self.disassociate_domain(context)
             self._delete_erspan_aim_config(context, port)
         self._really_update_sg_rule_with_remote_group_set(
+            context, port, port['security_groups'], is_delete=True)
+        self._really_update_sg_rule_with_remote_address_group_set(
             context, port, port['security_groups'], is_delete=True)
 
         # Set status of floating ip DOWN.

@@ -40,6 +40,7 @@ from neutron.plugins.ml2 import driver_context
 from neutron.plugins.ml2 import models as ml2_models
 from neutron.tests.unit.api import test_extensions
 from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
+from neutron.tests.unit.extensions import test_address_group
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_l3
 from neutron.tests.unit.extensions import test_securitygroup
@@ -297,7 +298,8 @@ class ApicAimTestMixin(object):
 
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_l3.L3NatTestCaseMixin, ApicAimTestMixin,
-                      test_securitygroup.SecurityGroupsTestCase):
+                      test_securitygroup.SecurityGroupsTestCase,
+                      test_address_group.AddressGroupTestCase):
 
     def setUp(self, mechanism_drivers=None, tenant_network_types=None,
             plugin=None, ext_mgr=None):
@@ -11000,6 +11002,62 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         self.assertEqual(aim_sg_rule.remote_ips, [])
         aim_sg_rule = self._get_sg_rule(
             sg_rule1['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, [])
+
+    def test_update_sg_rule_with_remote_address_group_set(self):
+        # Create network.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+
+        # Create subnet
+        subnet = self._make_subnet(self.fmt, net_resp, '10.0.1.1',
+                                   '10.0.1.0/24')['subnet']
+        subnet_id = subnet['id']
+        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.100'}]
+
+        # create port with security group having rule
+        # with remote_address_group_id set
+        sg = self._make_security_group(self.fmt, 'test',
+                                       'test remote address group')
+        sg_id = sg['security_group']['id']
+        ag = self._test_create_address_group(name='foo',
+                                             addresses=['10.0.1.0/24',
+                                                        '192.168.0.1/32'])
+        ag_id = ag['address_group']['id']
+        rule = self._build_security_group_rule(
+            sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, '33', '2',
+            remote_address_group_id=ag_id, ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule['security_group_rule']]}
+        sg_rule = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        port = self._make_port(self.fmt, net['id'], fixed_ips=fixed_ips,
+                               security_groups=[sg_id])['port']
+        tenant_aname = self.name_mapper.project(None,
+                sg['security_group']['tenant_id'])
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips,
+                ['10.0.1.0/24', '192.168.0.1/32'])
+
+        # delete SG group
+        data = {'port': {'security_groups': []}}
+        port = self._update('ports', port['id'], data)['port']
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, [])
+
+        # add security group
+        data = {'port': {'security_groups': [sg_id]}}
+        port = self._update('ports', port['id'], data)['port']
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips,
+                ['10.0.1.0/24', '192.168.0.1/32'])
+
+        # Delete port
+        self._delete('ports', port['id'])
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, [])
 
     def test_create_sg_rule_with_remote_group_set_different_tenant(self):
