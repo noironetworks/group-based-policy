@@ -7665,7 +7665,7 @@ class TestExtensionAttributes(ApicAimTestCase):
                 name=dest_name)],
             [aim_resource.SpanVepgSummary(vdg_name=dest_name,
                 vd_name=dest_name, dst_ip='192.168.0.10',
-                flow_id='1023')]]
+                flow_id='1023', mtu=str(net['network']['mtu']))]]
         dest_resources.append([
             aim_resource.InfraAccBundleGroup(name=host1_pg,
                 span_vsource_group_names=[source_resources[0][0].name],
@@ -7697,7 +7697,7 @@ class TestExtensionAttributes(ApicAimTestCase):
             name=dest_name))
         dest_resources[2].append(aim_resource.SpanVepgSummary(
             vdg_name=dest_name, vd_name=dest_name, dst_ip='192.168.0.11',
-            flow_id='1022'))
+            flow_id='1022', mtu=str(net['network']['mtu'])))
         dest_resources[3] = [aim_resource.InfraAccBundleGroup(
             name=host1_pg,
             span_vsource_group_names=[res.name for res in source_resources[0]],
@@ -7753,8 +7753,8 @@ class TestExtensionAttributes(ApicAimTestCase):
             [aim_resource.SpanVdest(vdg_name=dest_name,
                 name=dest_name)],
             [aim_resource.SpanVepgSummary(vdg_name=dest_name,
-                vd_name=dest_name, dst_ip='192.168.0.10',
-                flow_id='1023')]]
+                vd_name=dest_name, dst_ip='192.168.0.10', flow_id='1023',
+                mtu=str(net['network']['mtu']))]]
         dest_resources.append([aim_resource.InfraAccBundleGroup(
             name=host1_pg,
             span_vsource_group_names=[res.name for res in source_resources[0]],
