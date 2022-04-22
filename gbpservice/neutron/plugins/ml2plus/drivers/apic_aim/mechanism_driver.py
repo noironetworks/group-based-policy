@@ -1287,6 +1287,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             cep_dn = self._map_port(session, port_db)
             resources = self._get_erspan_aim_resources_list(port_db, cep_dn)
             if resources:
+                self.update_summary_resource(session, resources,
+                                            port_db['network_id'])
                 aim_resources.extend(resources)
             binding = (port_db.port_bindings[0]
                        if port_db.port_bindings else None)
@@ -2793,6 +2795,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 port['id'], cep_dn, erspan_config))
         return resources
 
+    def update_summary_resource(self, session, resources, network_id):
+        for resource in resources:
+            if type(resource) == aim_resource.SpanVepgSummary:
+                with session.begin(subtransactions=True):
+                    query = BAKERY(lambda s: s.query(
+                                models_v2.Network))
+                    query += lambda q: q.filter_by(
+                                id=network_id)
+                    net = query(session).params().first()
+                    if net:
+                        resource.mtu = net.mtu
+
     def _get_acc_bundle_for_host(self, aim_ctx, host_name):
         if not host_name:
             return None
@@ -2837,6 +2851,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         for erspan_config in port.get(cisco_apic.ERSPAN_CONFIG, []):
             resources = self._get_erspan_aim_resources(port['id'], cep_dn,
                                                        erspan_config)
+            if resources:
+                self.update_summary_resource(session, resources,
+                                             port['network_id'])
             # Create ERSPAN source group and source
             if not self.aim.get(aim_ctx, resources[0]):
                 self.aim.create(aim_ctx, resources[0])
@@ -7228,6 +7245,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 cep_dn = self._map_port(mgr.actual_session, port_db)
                 resources = self._get_erspan_aim_resources_list(port_db,
                                                                 cep_dn)
+                self.update_summary_resource(mgr.actual_session, resources,
+                        port_db['network_id'])
                 # Copy the bundle group pre-existing resources, if they
                 # are monitored, from the actual AIM store to the validation
                 # AIM store, so that the resource behaves as expected
