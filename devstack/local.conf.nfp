@@ -43,11 +43,11 @@ if [[ $ENABLE_NFP = True ]]; then
         # Make sure that your public interface is not attached to any bridge.
         PUBLIC_INTERFACE=
 
-        enable_plugin neutron-fwaas http://opendev.org/openstack/neutron-fwaas.git stable/xena
-        enable_plugin neutron-lbaas https://opendev.org/openstack/neutron-lbaas.git stable/xena
-        enable_plugin neutron https://opendev.org/openstack/neutron.git stable/xena
-        enable_plugin neutron-vpnaas https://opendev.org/openstack/neutron-vpnaas.git stable/xena
-        enable_plugin octavia https://opendev.org/openstack/octavia.git stable/xena
+        enable_plugin neutron-fwaas http://opendev.org/openstack/neutron-fwaas.git stable/yoga
+        enable_plugin neutron-lbaas https://opendev.org/openstack/neutron-lbaas.git stable/yoga
+        enable_plugin neutron https://opendev.org/openstack/neutron.git stable/yoga
+        enable_plugin neutron-vpnaas https://opendev.org/openstack/neutron-vpnaas.git stable/yoga
+        enable_plugin octavia https://opendev.org/openstack/octavia.git stable/yoga
 
     fi
 fi

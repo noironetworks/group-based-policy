@@ -264,7 +264,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.enable_iptables_firewall = (cfg.CONF.ml2_apic_aim.
                                          enable_iptables_firewall)
         self.vif_details = {portbindings.VIF_DETAILS_CONNECTIVITY:
-                            portbindings.CONNECTIVITY_L2}
+                            self.connectivity}
         self.vif_details.update(self._update_binding_sg())
         self.l3_domain_dn = cfg.CONF.ml2_apic_aim.l3_domain_dn
         self.apic_nova_vm_name_cache_update_interval = (cfg.CONF.ml2_apic_aim.
@@ -287,6 +287,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.apic_router_id_pool = cfg.CONF.ml2_apic_aim.apic_router_id_pool
         self.apic_router_id_subnet = netaddr.IPSet([self.apic_router_id_pool])
         self.qos_driver = qos_driver.register(self)
+
+    @property
+    def connectivity(self):
+        return portbindings.CONNECTIVITY_L2
 
     def start_rpc_listeners(self):
         LOG.info("APIC AIM MD starting RPC listeners")
@@ -3182,8 +3186,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._update_sg_rule_with_remote_group_set(context, port)
         self._check_allowed_address_pairs(context, port)
         self._insert_provisioning_block(context)
-        registry.notify(aim_cst.GBP_PORT, events.PRECOMMIT_UPDATE,
-                        self, driver_context=context)
+        registry.publish(aim_cst.GBP_PORT, events.PRECOMMIT_UPDATE,
+                         self,
+                         payload=events.DBEventPayload(context))
 
         # No need to handle router gateway port update, as we don't
         # care about its fixed_ips.
@@ -3566,10 +3571,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             aim_ctx = aim_context.AimContext(db_session=session)
             hlinks = self.aim.find(aim_ctx, aim_infra.HostLink, host_name=host)
             nets_segs = self._get_non_opflex_segments_on_host(context, host)
-            registry.notify(aim_cst.GBP_NETWORK_LINK,
-                            events.PRECOMMIT_UPDATE, self, context=context,
-                            networks_map=nets_segs, host_links=hlinks,
-                            host=host)
+            registry.publish(aim_cst.GBP_NETWORK_LINK, events.PRECOMMIT_UPDATE,
+                             self,
+                             payload=events.DBEventPayload(
+                                 context,
+                                 metadata={
+                                     'networks_map': nets_segs,
+                                     'host_links': hlinks, 'host': host}))
         for network, segment in nets_segs:
             self._rebuild_host_path_for_network(
                 context, network, segment, host, hlinks)
@@ -6402,22 +6410,32 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                         vrf):
         with db_api.CONTEXT_WRITER.using(context) as session:
             self._add_network_mapping(session, network_id, bd, epg, vrf)
-            registry.notify(aim_cst.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
-                            self, context=context, network_id=network_id)
+            registry.publish(aim_cst.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
+                             self,
+                             payload=events.DBEventPayload(
+                                 context,
+                                 metadata={
+                                     'network_id': network_id}))
 
     def _set_network_epg_and_notify(self, context, mapping, epg):
         with db_api.CONTEXT_WRITER.using(context):
             self._set_network_epg(mapping, epg)
-            registry.notify(aim_cst.GBP_NETWORK_EPG, events.PRECOMMIT_UPDATE,
-                            self, context=context,
-                            network_id=mapping.network_id)
+            registry.publish(aim_cst.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
+                             self,
+                             payload=events.DBEventPayload(
+                                 context,
+                                 metadata={
+                                     'network_id': mapping.network_id}))
 
     def _set_network_vrf_and_notify(self, context, mapping, vrf):
         with db_api.CONTEXT_WRITER.using(context):
             self._set_network_vrf(mapping, vrf)
-            registry.notify(aim_cst.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
-                            self, context=context,
-                            network_id=mapping.network_id)
+            registry.publish(aim_cst.GBP_NETWORK_VRF, events.PRECOMMIT_UPDATE,
+                             self,
+                             payload=events.DBEventPayload(
+                                 context,
+                                 metadata={
+                                     'network_id': mapping.network_id}))
 
     def validate_aim_mapping(self, mgr):
         mgr.register_aim_resource_class(aim_infra.HostDomainMappingV2)

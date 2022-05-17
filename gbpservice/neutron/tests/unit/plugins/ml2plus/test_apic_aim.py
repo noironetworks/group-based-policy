@@ -1975,12 +1975,14 @@ class TestAimMapping(ApicAimTestCase):
         port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
         port = self._bind_port_to_host(port['id'], 'host1')['port']
         port['dns_name'] = ''
+        port = self._show('ports', port['id'])['port']
         port_calls = [mock.call(mock.ANY, port)]
 
         fixed_ips = [{'subnet_id': subnet1_id, 'ip_address': '10.0.1.101'}]
         port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
         port = self._bind_port_to_host(port['id'], 'host2')['port']
         port['dns_name'] = ''
+        port = self._show('ports', port['id'])['port']
         port_calls.append(mock.call(mock.ANY, port))
 
         # The update to host_routes should trigger the port updates
@@ -1995,6 +1997,7 @@ class TestAimMapping(ApicAimTestCase):
         data = {'subnet': {'dns_nameservers': ['9.8.7.6']}}
         subnet = self._update('subnets', subnet1_id, data)['subnet']
         self._check_subnet(subnet, net, [], [gw1_ip])
+        port = self._show('ports', port['id'])['port']
         mock_notif.assert_has_calls(port_calls, any_order=True)
 
         # Create subnet2.
@@ -2011,6 +2014,7 @@ class TestAimMapping(ApicAimTestCase):
                                    fixed_ips=fixed_ips)['port']
             port = self._bind_port_to_host(port['id'], 'host1')['port']
             port['dns_name'] = ''
+            port = self._show('ports', port['id'])['port']
             port_calls.append(mock.call(mock.ANY, port))
 
         # Add subnet1 to router by subnet.
@@ -2262,6 +2266,7 @@ class TestAimMapping(ApicAimTestCase):
         port = self._bind_port_to_host(port['id'], 'host1')['port']
         port['dns_name'] = ""
         port['project_id'] = port['tenant_id']
+        port = self._show('ports', port['id'])['port']
         port_calls = [mock.call(mock.ANY, port)]
 
         # Create subnet2.
@@ -2279,6 +2284,7 @@ class TestAimMapping(ApicAimTestCase):
             port = self._bind_port_to_host(port['id'], 'host1')['port']
             port['dns_name'] = ''
             port['project_id'] = port['tenant_id']
+            port = self._show('ports', port['id'])['port']
             port_calls.append(mock.call(mock.ANY, port))
 
         # Add subnet1 to router by subnet.
@@ -3456,6 +3462,7 @@ class TestAimMapping(ApicAimTestCase):
         # Add subnet 1 to router A, which should create tenant 1's
         # default VRF.
         add_interface(rA, net1, sn1, gw1A, t1)
+        p1 = self._show('ports', p1['id'])['port']
         check_port_notify([p1])
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [], [], [gw2A, gw2B], t1)
@@ -3467,6 +3474,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Add subnet 2 to router A.
         add_interface(rA, net2, sn2, gw2A, t1)
+        p2 = self._show('ports', p2['id'])['port']
         check_port_notify([p2])
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA], [(gw2A, rA)], [gw2B], t1)
@@ -3489,6 +3497,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Add subnet 3 to router B.
         add_interface(rB, net3, sn3, gw3B, t1)
+        p3 = self._show('ports', p3['id'])['port']
         check_port_notify([p3])
         check_net(net1, sn1, [rA], [(gw1A, rA)], [], t1)
         check_net(net2, sn2, [rA, rB], [(gw2A, rA), (gw2B, rB)], [], t1)
@@ -6174,7 +6183,6 @@ class TestPortBinding(ApicAimTestCase):
             subport = self._show('ports', subport_net1_port['id'])['port']
             self.assertEqual(kwargs['binding:profile'],
                              subport['binding:profile'])
-            self.assertEqual({}, subport['binding:vif_details'])
             self.assertEqual('other', subport['binding:vif_type'])
             self.assertEqual('host1', subport['binding:host_id'])
             # Verify the other port (not yet a subport) isn't bound.
@@ -6194,7 +6202,6 @@ class TestPortBinding(ApicAimTestCase):
             subport = self._show('ports', subport_net2_port['id'])['port']
             self.assertEqual(kwargs['binding:profile'],
                              subport['binding:profile'])
-            self.assertEqual({}, subport['binding:vif_details'])
             self.assertEqual('other', subport['binding:vif_type'])
             self.assertEqual('host1', subport['binding:host_id'])
             epg = self._net_2_epg(sb_net2['network'])
@@ -6379,7 +6386,7 @@ class TestPortBinding(ApicAimTestCase):
         # allocated for that physical_network. Even though the
         # segmentation_ids overlap, this succeeds because they are
         # from different physical_networks.
-        subports = [{'port_id': other_net1_port['id'],
+        subports = [{'port_id': subport_net2_port['id'],
                      'segmentation_id': 137,
                      'segmentation_type': 'vlan'}]
         self._update_trunk(net1['network']['tenant_id'],
@@ -6421,6 +6428,7 @@ class TestPortBinding(ApicAimTestCase):
         net = self._make_network(self.fmt, 'net1', True)['network']
         resp = self._create_port(self.fmt, net['id'])
         port = self.deserialize(self.fmt, resp)
+        port = self._show('ports', port['port']['id'])
         port = self._bind_port_to_host(port['port']['id'], 'host1')['port']
         self.assertEqual(port['binding:vif_type'], 'ovs')
 
@@ -8544,6 +8552,7 @@ class TestExternalConnectivityBase(object):
             with self.port(subnet=sub) as port:
                 port = self._bind_port_to_host(port['port']['id'], 'host1')
                 port['port']['dns_name'] = ''
+                port = self._show('ports', port['port']['id'])
                 p.append(port['port'])
 
         mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
@@ -8623,6 +8632,7 @@ class TestExternalConnectivityBase(object):
             with self.port(subnet={'subnet': sub}) as p:
                 p = self._bind_port_to_host(p['port']['id'], 'host1')['port']
                 p['dns_name'] = ''
+                p = self._show('ports', p['id'])['port']
                 port_calls.append(mock.call(mock.ANY, p))
 
         router = self._make_router(
@@ -8669,6 +8679,7 @@ class TestExternalConnectivityBase(object):
                 p = self._bind_port_to_host(p['port']['id'], 'host1')['port']
                 p['dns_name'] = ''
                 subnets.append(sub['subnet'])
+                p = self._show('ports', p['id'])['port']
                 port_calls.append(mock.call(mock.ANY, p))
 
         # add router - expect notifications
@@ -9366,6 +9377,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                       'host': 'h1'}],
                     epg.static_paths)
                 self._validate()
+                p1 = self._show('ports', p1['port']['id'])
 
                 # The update to host_routes should trigger the port updates
                 port_calls = [mock.call(mock.ANY, p1['port'])]

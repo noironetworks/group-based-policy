@@ -310,6 +310,11 @@ class Servicechain(extensions.ExtensionDescriptor):
         return ServiceChainPluginBase
 
     def update_attributes_map(self, attributes):
+        # REVISIT: temporary solution until the services
+        # are removed fully.
+        if 'service_profiles' in attributes:
+            attributes['service_profiles'].pop('parent')
+            attributes['service_profiles'].pop('parameters')
         super(Servicechain, self).update_attributes_map(
             attributes, extension_attrs_map=RESOURCE_ATTRIBUTE_MAP)
 

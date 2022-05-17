@@ -66,17 +66,26 @@ class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
 
     def create_flow_classifier_precommit(self, context):
         self._validate_flow_classifier(context)
-        registry.notify(constants.GBP_FLOW_CLASSIFIER, events.PRECOMMIT_CREATE,
-                        self, driver_context=context)
+        registry.publish(constants.GBP_FLOW_CLASSIFIER,
+                         events.PRECOMMIT_CREATE,
+                         self,
+                         payload=events.DBEventPayload(
+                             context))
 
     def update_flow_classifier_precommit(self, context):
         self._validate_flow_classifier(context)
-        registry.notify(constants.GBP_FLOW_CLASSIFIER, events.PRECOMMIT_UPDATE,
-                        self, driver_context=context)
+        registry.publish(constants.GBP_FLOW_CLASSIFIER,
+                         events.PRECOMMIT_UPDATE,
+                         self,
+                         payload=events.DBEventPayload(
+                             context))
 
     def delete_flow_classifier_precommit(self, context):
-        registry.notify(constants.GBP_FLOW_CLASSIFIER, events.PRECOMMIT_DELETE,
-                        self, driver_context=context)
+        registry.publish(constants.GBP_FLOW_CLASSIFIER,
+                         events.PRECOMMIT_DELETE,
+                         self,
+                         payload=events.DBEventPayload(
+                             context))
 
     def _validate_flow_classifier(self, context):
         fc = context.current
