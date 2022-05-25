@@ -53,6 +53,7 @@ ERSPAN_CONFIG = 'apic:erspan_config'
 POLICY_ENFORCEMENT_PREF = 'apic:policy_enforcement_pref'
 SNAT_SUBNET_ONLY = 'apic:snat_subnet_only'
 EPG_SUBNET = 'apic:epg_subnet'
+NO_NAT_CIDRS = 'apic:no_nat_cidrs'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -353,6 +354,12 @@ NET_ATTRIBUTES = {
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': 'unenforced',
         'validate': {'type:values': ['unenforced', 'enforced', '']},
+    },
+    NO_NAT_CIDRS: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'convert_to': convert_apic_none_to_empty_list,
+        'validate': {'type:list_of_unique_strings': None},
     },
 }
 
