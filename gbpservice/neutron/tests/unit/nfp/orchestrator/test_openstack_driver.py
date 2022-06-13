@@ -647,33 +647,3 @@ class TestGBPClient(SampleData):
         self.assertEqual(retval, obj)
         mock_obj.assert_called_once_with(token=self.AUTH_TOKEN,
                                          endpoint_url=self.ENDPOINT_URL)
-
-    def test_get_service_profile(self, mock_obj):
-        instance = mock_obj.return_value
-        obj = instance.show_service_profile(
-            'service_profile_id')['service_profile']
-        retval = self.gbp_obj.get_service_profile(self.AUTH_TOKEN,
-                                                  'service_profile_id')
-        self.assertEqual(retval, obj)
-        mock_obj.assert_called_once_with(token=self.AUTH_TOKEN,
-                                         endpoint_url=self.ENDPOINT_URL)
-
-    def test_get_servicechain_node(self, mock_obj):
-        instance = mock_obj.return_value
-        obj = instance.show_servicechain_node(
-            'node_id')['servicechain_node']
-        retval = self.gbp_obj.get_servicechain_node(self.AUTH_TOKEN,
-                                                    'node_id')
-        self.assertEqual(retval, obj)
-        mock_obj.assert_called_once_with(token=self.AUTH_TOKEN,
-                                         endpoint_url=self.ENDPOINT_URL)
-
-    def test_get_servicechain_instance(self, mock_obj):
-        instance = mock_obj.return_value
-        obj = instance.show_servicechain_instance(
-            'instance_id')['servicechain_instance']
-        retval = self.gbp_obj.get_servicechain_instance(self.AUTH_TOKEN,
-                                                        'instance_id')
-        self.assertEqual(retval, obj)
-        mock_obj.assert_called_once_with(token=self.AUTH_TOKEN,
-                                         endpoint_url=self.ENDPOINT_URL)

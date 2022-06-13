@@ -31,8 +31,7 @@ from gbpservice.neutron.db.grouppolicy import (  # noqa
     group_policy_mapping_db
 )
 from gbpservice.neutron.db import (  # noqa
-    implicitsubnetpool_db,
-    servicechain_db
+    implicitsubnetpool_db
 )
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (  # noqa
     data_migrations,
@@ -40,18 +39,11 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (  # noqa
     extension_db
 )
 from gbpservice.neutron.services.grouppolicy.drivers import (  # noqa
-    chain_mapping,
     implicit_policy,
     nsp_manager,
     resource_mapping
 )
-from gbpservice.neutron.services.servicechain.plugins.ncp import (  # noqa
-    model
-)
-from gbpservice.neutron.services.servicechain.plugins.ncp.node_drivers import (  # noqa
-    heat_node_driver,
-    nfp_node_driver
-)
+
 from gbpservice.neutron.tests.unit.plugins.ml2plus.drivers import (  # noqa
     extension_test
 )
