@@ -85,8 +85,8 @@ NetworkMapping = sa.Table(
         sa.Column('vrf_tenant_name', sa.String(64), nullable=True))
 
 
-# This is neeeded in order to make aueries against the table
-# prior to the pirmary key change in the schema (the ORM is defined
+# This is needed in order to make queries against the table
+# prior to the primary key change in the schema (the ORM is defined
 # with the new primary keys, so it can't be used).
 HAIPAddressToPortAssociation = sa.Table(
         'apic_ml2_ha_ipaddress_to_port_owner', sa.MetaData(),
