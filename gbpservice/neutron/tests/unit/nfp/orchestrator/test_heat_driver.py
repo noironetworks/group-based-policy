@@ -217,15 +217,6 @@ class TestHeatDriver(unittest2.TestCase):
         tenant_context = self.heat_driver_obj._get_tenant_context(tenant_id)
         self.assertEqual(tenant_context, expected_tenant_context)
 
-    def test_is_service_target(self):
-        policy_target = {'name': 'service_target_provider_0132c_00b93'}
-        retval = self.heat_driver_obj._is_service_target(policy_target)
-        self.assertTrue(retval)
-        policy_target = {'name': 'mem1_gbpui'}
-        expected_result = False
-        result = self.heat_driver_obj._is_service_target(policy_target)
-        self.assertEqual(result, expected_result)
-
     @mock.patch.object(neutron_client.Client, "show_port")
     @mock.patch.object(gbp_client.Client, "list_policy_targets")
     def test_get_member_ips(self, list_pt_mock_obj, show_port_mock_obj):

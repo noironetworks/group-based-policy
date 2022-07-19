@@ -37,8 +37,6 @@ cfg.CONF.import_opt('policy_drivers',
 GP_PLUGIN_KLASS = (
     "gbpservice.neutron.services.grouppolicy.plugin.GroupPolicyPlugin"
 )
-SERVICECHAIN_SPECS = 'servicechain/servicechain_specs'
-SERVICECHAIN_NODES = 'servicechain/servicechain_nodes'
 
 
 class FakeDriver(object):
@@ -117,38 +115,6 @@ class GroupPolicyPluginTestBase(tgpmdb.GroupPolicyMappingDbTestCase):
         return self.create_nat_pool(
             external_segment_id=es['external_segment']['id'],
             **kwargs)['nat_pool']
-
-    def _create_servicechain_spec(self, node_types=None, shared=False):
-        node_types = node_types or []
-        if not node_types:
-            node_types = ['LOADBALANCERV2']
-        node_ids = []
-        for node_type in node_types:
-            node_ids.append(self._create_servicechain_node(node_type,
-                                                           shared=shared))
-        data = {'servicechain_spec': {'tenant_id': self._tenant_id if not
-                                      shared else 'another-tenant',
-                                      'nodes': node_ids,
-                                      'shared': shared}}
-        scs_req = self.new_create_request(
-            SERVICECHAIN_SPECS, data, self.fmt)
-        spec = self.deserialize(
-            self.fmt, scs_req.get_response(self.ext_api))
-        scs_id = spec['servicechain_spec']['id']
-        return scs_id
-
-    def _create_servicechain_node(self, node_type="LOADBALANCERV2",
-                                  shared=False):
-        config = "{}"
-        data = {'servicechain_node': {'service_type': node_type,
-                                      'tenant_id': self._tenant_id if not
-                                      shared else 'another-tenant',
-                                      'config': config,
-                                      'shared': shared}}
-        scn_req = self.new_create_request(SERVICECHAIN_NODES, data, self.fmt)
-        node = self.deserialize(self.fmt, scn_req.get_response(self.ext_api))
-        scn_id = node['servicechain_node']['id']
-        return scn_id
 
     def _get_object(self, type, id, api, expected_res_status=None):
         req = self.new_show_request(type, id, self.fmt)
@@ -1062,55 +1028,6 @@ class TestResourceStatusChange(GroupPolicyPluginTestCase):
     def test_no_status_change_on_list(self):
         for resource_name in gpolicy.RESOURCE_ATTRIBUTE_MAP:
             self._test_status_change_on_list(resource_name, fields=['name'])
-
-
-class TestPolicyAction(GroupPolicyPluginTestCase):
-
-    def test_redirect_value(self):
-        scs_id = self._create_servicechain_spec(
-            node_types=['FIREWALL_TRANSPARENT'])
-        res = self.create_policy_action(action_type='redirect',
-                                        action_value=scs_id, shared=True,
-                                        expected_res_status=400)
-        self.assertEqual(
-            'SharedResourceReferenceError', res['NeutronError']['type'])
-
-        res = self.create_policy_action(
-            action_type='redirect', action_value=scs_id, tenant_id='different',
-            expected_res_status=404)
-        self.assertEqual(
-            'ServiceChainSpecNotFound', res['NeutronError']['type'])
-
-        res = self.create_policy_action(
-            action_type='redirect', action_value=scs_id, tenant_id='different',
-            expected_res_status=201, is_admin_context=True)
-
-        res = self.create_policy_action(
-            action_type='redirect', action_value=scs_id,
-            expected_res_status=201)['policy_action']
-        res = self.update_policy_action(
-            res['id'], shared=True, expected_res_status=400)
-        self.assertEqual(
-            'SharedResourceReferenceError', res['NeutronError']['type'])
-
-        scs_id = self._create_servicechain_spec(
-            node_types=['FIREWALL_TRANSPARENT'], shared=True)
-        self.create_policy_action(
-            action_type='redirect', action_value=scs_id, shared=True,
-            expected_res_status=201)
-        data = {'servicechain_spec': {'shared': False}}
-        scs_req = self.new_update_request(
-            SERVICECHAIN_SPECS, data, scs_id, self.fmt)
-        res = self.deserialize(
-            self.fmt, scs_req.get_response(self.ext_api))
-        self.assertEqual(
-            'InvalidSharedAttributeUpdate', res['NeutronError']['type'])
-
-    def test_redirect_shared_create(self):
-        scs_id = self._create_servicechain_spec(
-            node_types=['FIREWALL_TRANSPARENT'], shared=True)
-        self.create_policy_action(action_type='redirect', action_value=scs_id,
-                                  shared=True, expected_res_status=201)
 
 
 class TestGroupPolicyPluginGroupResources(

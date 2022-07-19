@@ -30,11 +30,8 @@ from oslo_utils import uuidutils
 import six
 import webob.exc
 
-from gbpservice.neutron.db import all_models  # noqa
 from gbpservice.neutron.db.grouppolicy import group_policy_db as gpdb
-from gbpservice.neutron.db import servicechain_db as svcchain_db
 from gbpservice.neutron.extensions import group_policy as gpolicy
-from gbpservice.neutron.extensions import servicechain as service_chain
 from gbpservice.neutron.services.grouppolicy.common import (
     constants as gp_constants)
 import gbpservice.neutron.tests
@@ -210,20 +207,13 @@ class ApiManagerMixin(object):
 
 class GroupPolicyDBTestBase(ApiManagerMixin):
     resource_prefix_map = dict(
-        (k, gp_constants.GBP_PREFIXES[constants.SERVICECHAIN])
-        for k in list(service_chain.RESOURCE_ATTRIBUTE_MAP.keys()))
-    resource_prefix_map.update(dict(
         (k, gp_constants.GBP_PREFIXES[constants.GROUP_POLICY])
-        for k in list(gpolicy.RESOURCE_ATTRIBUTE_MAP.keys())
-    ))
+        for k in list(gpolicy.RESOURCE_ATTRIBUTE_MAP.keys()))
 
     fmt = JSON_FORMAT
 
     def __getattr__(self, item):
         # Verify is an update of a proper GBP object
-
-        def _is_sc_resource(plural):
-            return plural in service_chain.RESOURCE_ATTRIBUTE_MAP
 
         def _is_gbp_resource(plural):
             return plural in gpolicy.RESOURCE_ATTRIBUTE_MAP
@@ -235,7 +225,7 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
             return plural in flowclassifier.RESOURCE_ATTRIBUTE_MAP
 
         def _is_valid_resource(plural):
-            return (_is_gbp_resource(plural) or _is_sc_resource(plural) or
+            return (_is_gbp_resource(plural) or
                     _is_flowc_resource(plural) or _is_sfc_resource(plural))
 
         def _get_prefix(plural):
@@ -317,16 +307,6 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         self.assertEqual(sorted([i['id'] for i in res[resource_plural]]),
                          sorted([i[resource]['id'] for i in items]))
 
-    def _create_profiled_servicechain_node(
-            self, service_type=constants.LOADBALANCERV2, shared_profile=False,
-            profile_tenant_id=None, **kwargs):
-        prof = self.create_service_profile(
-            service_type=service_type,
-            shared=shared_profile,
-            tenant_id=profile_tenant_id or self._tenant_id)['service_profile']
-        return self.create_servicechain_node(
-            service_profile_id=prof['id'], **kwargs)
-
     def _set_notification_mocks(self):
         self.l3_notify_p = mock.patch(
             'neutron.extensions.l3agentscheduler.notify').start()
@@ -356,22 +336,11 @@ DB_GP_PLUGIN_KLASS = (GroupPolicyDBTestPlugin.__module__ + '.' +
                       GroupPolicyDBTestPlugin.__name__)
 
 
-class ServiceChainDBTestPlugin(svcchain_db.ServiceChainDbPlugin):
-
-    supported_extension_aliases = ['servicechain'] + UNSUPPORTED_REQUIRED_EXTS
-    path_prefix = "/servicechain"
-
-
-DB_SC_PLUGIN_KLASS = (ServiceChainDBTestPlugin.__module__ + '.' +
-                      ServiceChainDBTestPlugin.__name__)
-
-
 class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
                             test_db_base_plugin_v2.NeutronDbPluginV2TestCase):
 
     def setUp(self, core_plugin=None, sc_plugin=None, service_plugins=None,
               ext_mgr=None, gp_plugin=None):
-        sc_plugin = sc_plugin or DB_SC_PLUGIN_KLASS
         gp_plugin = gp_plugin or DB_GP_PLUGIN_KLASS
 
         if not service_plugins:
@@ -379,8 +348,7 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
                 'l3_plugin_name': 'router',
                 'flavors_plugin_name': 'neutron.services.flavors.'
                                        'flavors_plugin.FlavorsPlugin',
-                'gp_plugin_name': gp_plugin,
-                'sc_plugin_name': sc_plugin}
+                'gp_plugin_name': gp_plugin}
 
         # Always install SFC plugin for convenience
         service_plugins['sfc_plugin_name'] = 'sfc'
@@ -396,14 +364,12 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
         test_policy_file = ETCDIR + "/test-policy.json"
         policy.refresh(policy_file=test_policy_file)
         self.plugin = importutils.import_object(gp_plugin)
-        self._sc_plugin = importutils.import_object(sc_plugin)
         if not ext_mgr:
             ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
             self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
 
         plugins = directory.get_plugins()
         self._gbp_plugin = plugins.get(constants.GROUP_POLICY)
-        self._sc_plugin = plugins.get(constants.SERVICECHAIN)
         self._l3_plugin = plugins.get(constants.L3)
         self._set_notification_mocks()
         # The following is done to stop the neutron code from checking

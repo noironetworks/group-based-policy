@@ -32,10 +32,6 @@ class GroupPolicyMappingDBTestPlugin(gpmdb.GroupPolicyMappingDbPlugin):
 DB_GP_PLUGIN_KLASS = (GroupPolicyMappingDBTestPlugin.__module__ + '.' +
                       GroupPolicyMappingDBTestPlugin.__name__)
 
-SC_PLUGIN_KLASS = (
-    "gbpservice.neutron.services.servicechain.plugins.ncp.plugin."
-    "NodeCompositionPlugin")
-
 
 class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
                                    test_l3.L3NatTestCaseMixin):
@@ -49,8 +45,7 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
             service_plugins = {
                 'gp_plugin_name': gp_plugin,
                 'flavors_plugin_name': 'neutron.services.flavors.'
-                                       'flavors_plugin.FlavorsPlugin',
-                'servicechain_plugin': sc_plugin or SC_PLUGIN_KLASS}
+                                       'flavors_plugin.FlavorsPlugin'}
         service_plugins['l3_plugin_name'] = l3_plugin or "router"
         if qos_plugin:
             service_plugins['qos_plugin_name'] = qos_plugin

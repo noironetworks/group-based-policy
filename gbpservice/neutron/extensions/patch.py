@@ -10,10 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import copy
-
 from neutron.api import extensions
-from neutron.api.v2 import resource as neutron_resource
 from neutron.db.db_base_plugin_v2 import _constants
 from neutron.db import l3_db
 from neutron.db import models_v2
@@ -30,7 +27,6 @@ from oslo_log import log
 from oslo_utils import excutils
 
 from gbpservice._i18n import _
-from gbpservice.common import utils as gbp_utils
 from gbpservice.neutron.db import api as db_api
 
 
@@ -41,22 +37,7 @@ if not hasattr(quota_resource, 'GBP_PATCHED'):
     orig_count_resource = quota_resource._count_resource
 
     def new_count_resource(*kwargs):
-        request = gbp_utils.get_obj_from_stack(neutron_resource.Request)
         orig_plugins = directory._get_plugin_directory()._plugins
-        if request and request.environ['PATH_INFO'] == (
-                '/servicechain/service_profiles.json'):
-            new_plugins = copy.copy(directory._get_plugin_directory()._plugins)
-            # The service_profile resource is supported by the FLAVORS
-            # plugin as well as the SERVICECHAIN plugin. At this point
-            # we know that we are dealing with the service_profile from
-            # SERVICECHAIN, and since the original implementation of the
-            # count_resource will think of service_profile from FLAVORS
-            # (in the sorted order of plugins, FLAVORS preceedes SERVICECHAIN)
-            # we temporarily remove the FLAVORS plugin reference from the
-            # plugins directory.
-            new_plugins.pop('FLAVORS')
-            directory._get_plugin_directory()._plugins = new_plugins
-
         count_resource = orig_count_resource(*kwargs)
         directory._get_plugin_directory()._plugins = orig_plugins
         return count_resource
@@ -160,22 +141,11 @@ def extend_resources(self, version, attr_map):
                 for res, resource_attrs in list(extended_attrs.items()):
                     res_to_update = attr_map.setdefault(res, {})
                     if self._is_sub_resource(res_to_update):
-                        # kentwu: service_profiles defined in servicechain
-                        # plugin has a name conflict with service_profiles
-                        # sub-resource defined in flavor plugin. The attr_map
-                        # can only have one service_profiles so here we make
-                        # this very same service_profiles to have the
-                        # attributes from both plugins. This behavior is now
-                        # consistent with Pike.
-                        if (ext_name == 'servicechain' and
-                                res == 'service_profiles'):
-                            res_to_update.update(resource_attrs)
                         # in the case of an existing sub-resource, we need to
                         # update the parameters content rather than overwrite
                         # it, and also keep the description of the parent
                         # resource unmodified
-                        else:
-                            res_to_update['parameters'].update(
+                        res_to_update['parameters'].update(
                                 resource_attrs['parameters'])
                     else:
                         res_to_update.update(resource_attrs)
