@@ -4230,6 +4230,16 @@ class TestSyncState(ApicAimTestCase):
         self._bind_port_to_host(p1['id'], 'host1')
         port = self._show('ports', p1['id'])['port']
         self.assertEqual(expected_state, port['apic:synchronization_state'])
+        # Verify synchronization state for multiple erspan session
+        if with_erspan:
+            erspan_config['apic:erspan_config'].append(
+                {'dest_ip': '192.168.0.11',
+                 'direction': 'in',
+                 'flow_id': '1022'})
+            data = {'port': erspan_config}
+            p1 = self._update('ports', p1['id'], data)['port']
+            self.assertEqual(expected_state,
+                             port['apic:synchronization_state'])
 
     def test_erspan_no_status(self):
         def get_status(self, context, resource, create_if_absent=True):
