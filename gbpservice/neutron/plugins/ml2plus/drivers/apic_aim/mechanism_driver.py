@@ -1304,6 +1304,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # the status objs for all of the associated AIM resources. Until
             # this happens, the sync_state is held as 'build' (unless it has
             # to be set to 'error').
+            aim_resources = []
+            for resource in resources:
+                if resource not in aim_resources:
+                    aim_resources.append(resource)
+
             aim_status_track[AIM_RESOURCES_CNT] = len(aim_resources)
             aim_resources_aggregate.extend(aim_resources)
 
