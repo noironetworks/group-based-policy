@@ -11,8 +11,8 @@ python-heatclient
 python-keystoneclient
 
 -e git+https://opendev.org/openstack/neutron-lbaas.git@stable/stein#egg=neutron-lbaas
--e git+https://opendev.org/openstack/neutron-fwaas.git@stable/stein#egg=neutron-fwaas
--e git+https://opendev.org/openstack/networking-sfc.git@stable/stein#egg=networking-sfc
+-e git+https://opendev.org/openstack/neutron-fwaas.git@stein-eol#egg=neutron-fwaas
+-e git+https://opendev.org/openstack/networking-sfc.git@refs/changes/48/646648/1#egg=networking-sfc
 
 -e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
