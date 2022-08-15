@@ -5,8 +5,8 @@ hacking!=0.13.0,<0.14,>=0.12.0 # Apache-2.0
 
 -e git+https://opendev.org/openstack/neutron.git@stable/queens#egg=neutron
 -e git+https://opendev.org/openstack/neutron-lbaas.git@stable/queens#egg=neutron-lbaas
--e git+https://opendev.org/openstack/neutron-fwaas.git@stable/queens#egg=neutron-fwaas
--e git+https://opendev.org/openstack/networking-sfc.git@stable/queens#egg=networking-sfc
+-e git+https://opendev.org/openstack/neutron-fwaas.git@queens-eol#egg=neutron-fwaas
+-e git+https://opendev.org/openstack/networking-sfc.git@refs/changes/87/596287/2#egg=networking-sfc
 
 -e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
