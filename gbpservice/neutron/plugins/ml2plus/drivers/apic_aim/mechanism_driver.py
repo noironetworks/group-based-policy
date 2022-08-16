@@ -4908,7 +4908,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             try:
                 self._notify_port_update(plugin_context, p)
             except n_exceptions.PortNotFound:
-                LOG.info("Port not found %s", p)
+                pass
 
     def _notify_port_update_bulk(self, plugin_context, port_ids):
         # REVISIT: Is a single query for all ports possible?
