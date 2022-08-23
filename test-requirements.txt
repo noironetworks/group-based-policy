@@ -10,7 +10,7 @@ neutron
 python-heatclient
 python-keystoneclient
 
--e git+https://opendev.org/openstack/neutron-vpnaas.git@stable/train#egg=neutron-vpnaas
+-e git+https://opendev.org/openstack/neutron-vpnaas.git@refs/changes/69/805969/15#egg=neutron-vpnaas
 -e git+https://opendev.org/openstack/neutron-fwaas.git@stable/train#egg=neutron-fwaas
 -e git+https://opendev.org/openstack/networking-sfc.git@stable/train#egg=networking-sfc
 

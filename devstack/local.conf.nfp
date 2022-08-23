@@ -46,7 +46,7 @@ if [[ $ENABLE_NFP = True ]]; then
         enable_plugin neutron-fwaas http://opendev.org/openstack/neutron-fwaas.git stable/train
         enable_plugin neutron-lbaas https://opendev.org/openstack/neutron-lbaas.git stable/train
         enable_plugin neutron https://opendev.org/openstack/neutron.git stable/train
-        enable_plugin neutron-vpnaas https://opendev.org/openstack/neutron-vpnaas.git stable/train
+        enable_plugin neutron-vpnaas https://opendev.org/openstack/neutron-vpnaas.git train-eol
         enable_plugin octavia https://opendev.org/openstack/octavia.git stable/train
 
     fi
