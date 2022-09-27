@@ -479,10 +479,18 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                         self.assertIsNotNone(ext_sub)
 
                     self.assertIsNotNone(ext_net)
-                    self.assertTrue(
-                        contract.name in (ext_net.consumed_contract_names if
-                                          pref == 'src_' else
-                                          ext_net.provided_contract_names),
+                    ext_contract_params = {
+                        'tenant_name': ext_net.tenant_name,
+                        'l3out_name': ext_net.l3out_name,
+                        'ext_net_name': ext_net.name}
+                    if pref == 'src_':
+                        klass = aim_res.ExternalNetworkConsumedContract
+                    else:
+                        klass = aim_res.ExternalNetworkProvidedContract
+                    contracts = self.aim_mgr.find(ctx, klass,
+                                                  **ext_contract_params)
+                    contract_names = [c.name for c in contracts]
+                    self.assertTrue(contract.name in contract_names,
                         "%s not in ext net %s" % (contract.name,
                                                   ext_net.__dict__))
                 else:
@@ -1390,10 +1398,19 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
                 self._aim_context, aim_res.ExternalNetwork,
                 name=fc['destination_ip_prefix'].replace(
                     '/', '_') + '_' + 'net_' + dst_net_id)[0]
-            self.assertEqual(2, len(ext_net.provided_contract_names))
+            ext_params = {
+                'tenant_name': ext_net.tenant_name,
+                'l3out_name': ext_net.l3out_name,
+                'ext_net_name': ext_net.name}
+            prov = self.aim_mgr.find(self._aim_context,
+                                     aim_res.ExternalNetworkProvidedContract,
+                                     **ext_params)
+            self.assertEqual(2, len(prov))
             self.delete_port_chain(pc1['id'])
-            ext_net = self.aim_mgr.get(self._aim_context, ext_net)
-            self.assertEqual(1, len(ext_net.provided_contract_names))
+            prov = self.aim_mgr.find(self._aim_context,
+                                     aim_res.ExternalNetworkProvidedContract,
+                                     **ext_params)
+            self.assertEqual(1, len(prov))
             self.delete_port_chain(pc2['id'])
             self.assertIsNone(self.aim_mgr.get(self._aim_context, ext_net))
 
