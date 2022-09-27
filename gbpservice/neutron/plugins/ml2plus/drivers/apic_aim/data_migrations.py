@@ -330,11 +330,27 @@ def do_ap_name_change(session, conf=None):
                 eid = (ext_net.tenant_name, ext_net.l3out_name, ext_net.name)
                 for vrf in vrfs:
                     if eid in clone_ext_nets:
-                        ext_net.provided_contract_names = clone_ext_nets[
-                            eid].provided_contract_names
-                        ext_net.consumed_contract_names = clone_ext_nets[
-                            eid].consumed_contract_names
-                    ns.connect_vrf(aim_ctx, ext_net, vrf)
+                        p_cons = clone_ext_nets[eid].provided_contract_names
+                        c_cons = clone_ext_nets[eid].provided_contract_names
+                        prov = []
+                        cons = []
+                        ext_net = clone_ext_nets[eid]
+                        for p_con in p_cons:
+                            prov.append(
+                                aim_resource.ExternalNetworkProvidedContract(
+                                    tenant_name=ext_net.tenant_name,
+                                    l3out_name=ext_net.l3out_name,
+                                    ext_net_name=ext_net.ext_net_name,
+                                    name=p_con.name))
+                        for c_con in c_cons:
+                            cons.append(
+                                aim_resource.ExternalNetworkConsumedContract(
+                                    tenant_name=ext_net.tenant_name,
+                                    l3out_name=ext_net.l3out_name,
+                                    ext_net_name=ext_net.ext_net_name,
+                                    name=p_con.name))
+                    ns.connect_vrf(aim_ctx, ext_net, vrf,
+                        provided_contracts=prov, consumed_contracts=cons)
 
 
 def do_apic_aim_security_group_migration(session):
