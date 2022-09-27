@@ -734,6 +734,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             res = aim_resource.QosDppPol(**i)
             self.aim.create(aim_ctx, res, overwrite=True)
 
+    def _create_external_epg_contract(self, aim_ctx, klass,
+                                      ext_net, contract):
+        new_contract = klass(
+            tenant_name=ext_net.tenant_name,
+            l3out_name=ext_net.l3out_name,
+            ext_net_name=ext_net.name,
+            name=contract.name)
+        self.aim.create(aim_ctx, new_contract, overwrite=True)
+
+    def _delete_external_epg_contract(self, aim_ctx, klass,
+                                      ext_net, contract):
+        old_contract = klass(
+            tenant_name=ext_net.tenant_name,
+            l3out_name=ext_net.l3out_name,
+            ext_net_name=ext_net.name,
+            name=contract.name)
+        old_contract_db = self.aim.get(aim_ctx, old_contract)
+        if old_contract_db:
+            self.aim.delete(aim_ctx, old_contract_db)
+
     def create_qos_policy_precommit(self, context, policy):
         """Create a QoS policy.
         :param context: neutron api request context
@@ -2328,16 +2348,24 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # this could be internal or external EPG
         epg = self.aim.get(aim_ctx, epg)
         if epg:
-            contracts = epg.consumed_contract_names
-            if contract.name not in contracts:
-                contracts.append(contract.name)
-                epg = self.aim.update(aim_ctx, epg,
-                                      consumed_contract_names=contracts)
-            contracts = epg.provided_contract_names
-            if contract.name not in contracts:
-                contracts.append(contract.name)
-                epg = self.aim.update(aim_ctx, epg,
-                                      provided_contract_names=contracts)
+            if isinstance(epg, aim_resource.ExternalNetwork):
+                self._create_external_epg_contract(aim_ctx,
+                    aim_resource.ExternalNetworkProvidedContract,
+                    epg, contract)
+                self._create_external_epg_contract(aim_ctx,
+                    aim_resource.ExternalNetworkConsumedContract,
+                    epg, contract)
+            else:
+                contracts = epg.consumed_contract_names
+                if contract.name not in contracts:
+                    contracts.append(contract.name)
+                    epg = self.aim.update(aim_ctx, epg,
+                                          consumed_contract_names=contracts)
+                contracts = epg.provided_contract_names
+                if contract.name not in contracts:
+                    contracts.append(contract.name)
+                    epg = self.aim.update(aim_ctx, epg,
+                                          provided_contract_names=contracts)
 
         # If external-gateway is set, handle external-connectivity changes.
         # External network is not supported for SVI network for now.
@@ -2439,16 +2467,23 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Contract.
         if router_id not in router_ids and epg:
             epg = self.aim.get(aim_ctx, epg)
+            if isinstance(epg, aim_resource.ExternalNetwork):
+                self._delete_external_epg_contract(aim_ctx,
+                    aim_resource.ExternalNetworkProvidedContract,
+                    epg, contract)
+                self._delete_external_epg_contract(aim_ctx,
+                    aim_resource.ExternalNetworkConsumedContract,
+                    epg, contract)
+            else:
+                contracts = [name for name in epg.consumed_contract_names
+                             if name != contract.name]
+                epg = self.aim.update(aim_ctx, epg,
+                                      consumed_contract_names=contracts)
 
-            contracts = [name for name in epg.consumed_contract_names
-                         if name != contract.name]
-            epg = self.aim.update(aim_ctx, epg,
-                                  consumed_contract_names=contracts)
-
-            contracts = [name for name in epg.provided_contract_names
-                         if name != contract.name]
-            epg = self.aim.update(aim_ctx, epg,
-                                  provided_contract_names=contracts)
+                contracts = [name for name in epg.provided_contract_names
+                             if name != contract.name]
+                epg = self.aim.update(aim_ctx, epg,
+                                      provided_contract_names=contracts)
 
         nets_to_notify = set()
         ports_to_notify = set()
@@ -4696,17 +4731,37 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         vrf = aim_resource.VRF(tenant_name=vrf.tenant_name, name=vrf.name)
         rtr_dbs = self._get_routers_for_vrf(session, vrf)
 
-        prov = set()
-        cons = set()
+        prov_dict = {}
+        cons_dict = {}
 
-        def update_contracts(router):
+        def update_contracts(router, ext_net):
             contract = self._map_router(session, router, True)
-            prov.add(contract.name)
-            cons.add(contract.name)
+            prov_dict[
+                contract.name] = aim_resource.ExternalNetworkProvidedContract(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    ext_net_name=ext_net.name,
+                    name=contract.name)
+            cons_dict[
+                contract.name] = aim_resource.ExternalNetworkConsumedContract(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    ext_net_name=ext_net.name,
+                    name=contract.name)
 
             r_info = self.get_router_extn_db(session, router['id'])
-            prov.update(r_info[a_l3.EXTERNAL_PROVIDED_CONTRACTS])
-            cons.update(r_info[a_l3.EXTERNAL_CONSUMED_CONTRACTS])
+            for p_con in r_info[a_l3.EXTERNAL_PROVIDED_CONTRACTS]:
+                prov_dict[
+                    p_con] = aim_resource.ExternalNetworkProvidedContract(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        ext_net_name=ext_net.name, name=p_con)
+            for c_con in r_info[a_l3.EXTERNAL_CONSUMED_CONTRACTS]:
+                cons_dict[
+                    c_con] = aim_resource.ExternalNetworkConsumedContract(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        ext_net_name=ext_net.name, name=c_con)
 
         if old_network:
             _, ext_net, ns = self._get_aim_nat_strategy(old_network)
@@ -4717,15 +4772,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 rtr_old = [r for r in rtr_dbs
                            if (r.gw_port_id and
                                r.gw_port.network_id in eqv_nets)]
-                prov = set()
-                cons = set()
+                prov_dict = {}
+                cons_dict = {}
                 for r in rtr_old:
-                    update_contracts(r)
+                    update_contracts(r, ext_net)
 
                 if rtr_old:
-                    ext_net.provided_contract_names = sorted(prov)
-                    ext_net.consumed_contract_names = sorted(cons)
-                    ns.connect_vrf(aim_ctx, ext_net, vrf)
+                    prov_list = list(prov_dict.values())
+                    cons_list = list(cons_dict.values())
+                    provided = sorted(prov_list, key=lambda x: x.name)
+                    consumed = sorted(cons_list, key=lambda x: x.name)
+                    ns.connect_vrf(aim_ctx, ext_net, vrf,
+                        provided_contracts=provided,
+                        consumed_contracts=consumed)
                 else:
                     ns.disconnect_vrf(aim_ctx, ext_net, vrf)
         if new_network:
@@ -4737,14 +4796,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 rtr_new = [r for r in rtr_dbs
                            if (r.gw_port_id and
                                r.gw_port.network_id in eqv_nets)]
-                prov = set()
-                cons = set()
+                prov_dict = {}
+                cons_dict = {}
                 for r in rtr_new:
-                    update_contracts(r)
-                update_contracts(router)
-                ext_net.provided_contract_names = sorted(prov)
-                ext_net.consumed_contract_names = sorted(cons)
-                ns.connect_vrf(aim_ctx, ext_net, vrf)
+                    update_contracts(r, ext_net)
+                update_contracts(router, ext_net)
+                prov_list = list(prov_dict.values())
+                cons_list = list(cons_dict.values())
+                provided = sorted(prov_list, key=lambda x: x.name)
+                consumed = sorted(cons_list, key=lambda x: x.name)
+                ns.connect_vrf(aim_ctx, ext_net, vrf,
+                    provided_contracts=provided,
+                    consumed_contracts=consumed)
 
     def _is_port_bound(self, port):
         return port.get(portbindings.VIF_TYPE) not in [
@@ -6349,6 +6412,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mgr.register_aim_resource_class(aim_resource.ContractSubject)
         mgr.register_aim_resource_class(aim_resource.EndpointGroup)
         mgr.register_aim_resource_class(aim_resource.ExternalNetwork)
+        mgr.register_aim_resource_class(
+            aim_resource.ExternalNetworkProvidedContract)
+        mgr.register_aim_resource_class(
+            aim_resource.ExternalNetworkConsumedContract)
         mgr.register_aim_resource_class(aim_resource.ExternalSubnet)
         mgr.register_aim_resource_class(aim_resource.Filter)
         mgr.register_aim_resource_class(aim_resource.FilterEntry)
@@ -7046,12 +7113,30 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             for router_id in routers:
                 contract = self._map_router(
                     mgr.expected_session, router_dbs[router_id], True)
-                prov.add(contract.name)
-                cons.add(contract.name)
-                prov.update(router_ext_prov[router_id])
-                cons.update(router_ext_cons[router_id])
-            ext_net.provided_contract_names = sorted(prov)
-            ext_net.consumed_contract_names = sorted(cons)
+                prov.add(aim_resource.ExternalNetworkProvidedContract(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    ext_net_name=ext_net.name,
+                    name=contract.name))
+                cons.add(aim_resource.ExternalNetworkProvidedContract(
+                    tenant_name=ext_net.tenant_name,
+                    l3out_name=ext_net.l3out_name,
+                    ext_net_name=ext_net.name,
+                    name=contract.name))
+                for p_con in router_ext_prov[router_id]:
+                    prov.add(aim_resource.ExternalNetworkProvidedContract(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        ext_net_name=ext_net.name,
+                        name=p_con))
+                for c_con in router_ext_cons[router_id]:
+                    cons.add(aim_resource.ExternalNetworkConsumedContract(
+                        tenant_name=ext_net.tenant_name,
+                        l3out_name=ext_net.l3out_name,
+                        ext_net_name=ext_net.name,
+                        name=c_con))
+            provided = sorted(prov, key=lambda x: x.name)
+            consumed = sorted(cons, key=lambda x: x.name)
             int_vrf = int_vrfs[key]
 
             # Keep only the identity attributes of the VRF so that
@@ -7061,7 +7146,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # of the L3Outside's display_name.
             int_vrf = aim_resource.VRF(
                 tenant_name=int_vrf.tenant_name, name=int_vrf.name)
-            ns.connect_vrf(mgr.expected_aim_ctx, ext_net, int_vrf)
+            ns.connect_vrf(mgr.expected_aim_ctx, ext_net, int_vrf,
+                provided_contracts=provided, consumed_contracts=consumed)
 
         return bd, epg, vrf
 

@@ -583,10 +583,20 @@ class SfcAIMDriver(SfcAIMDriverBase):
         contract = self._get_flc_contract(prov_group, sg)
         # TODO(ivar): if provider/consumer are in different tenants, export
         # the contract
-        if contract.name not in cons_group.consumed_contract_names:
-            cons_group.consumed_contract_names.append(contract.name)
-        if contract.name not in prov_group.provided_contract_names:
-            prov_group.provided_contract_names.append(contract.name)
+        if isinstance(cons_group, aim_resource.ExternalNetwork):
+            self.aim_mech._create_external_epg_contract(aim_ctx,
+                aim_resource.ExternalNetworkConsumedContract,
+                cons_group, contract)
+        else:
+            if contract.name not in cons_group.consumed_contract_names:
+                cons_group.consumed_contract_names.append(contract.name)
+        if isinstance(prov_group, aim_resource.ExternalNetwork):
+            self.aim_mech._create_external_epg_contract(aim_ctx,
+                aim_resource.ExternalNetworkProvidedContract,
+                prov_group, contract)
+        else:
+            if contract.name not in prov_group.provided_contract_names:
+                prov_group.provided_contract_names.append(contract.name)
         self.aim.create(aim_ctx, cons_group, overwrite=True)
         self.aim.create(aim_ctx, prov_group, overwrite=True)
 
@@ -650,18 +660,44 @@ class SfcAIMDriver(SfcAIMDriverBase):
             contract = self._get_flc_contract(p_group, sg)
             try:
                 if prefix == FLOWC_SRC:
-                    epg.consumed_contract_names.remove(contract.name)
+                    if isinstance(epg, aim_resource.ExternalNetwork):
+                        self.aim_mech._delete_external_epg_contract(aim_ctx,
+                            aim_resource.ExternalNetworkConsumedContract,
+                            epg, contract)
+                    else:
+                        epg.consumed_contract_names.remove(contract.name)
                 else:
-                    epg.provided_contract_names.remove(contract.name)
+                    if isinstance(epg, aim_resource.ExternalNetwork):
+                        self.aim_mech._delete_external_epg_contract(aim_ctx,
+                            aim_resource.ExternalNetworkProvidedContract,
+                            epg, contract)
+                    else:
+                        epg.provided_contract_names.remove(contract.name)
             except ValueError:
                 LOG.warning("Contract %(name)s not present in EPG %(epg)s",
                             {'name': contract.name, 'epg': epg})
             else:
                 epg = self.aim.create(aim_ctx, epg, overwrite=True)
-            if (ext_net and not epg.consumed_contract_names and not
-                    epg.provided_contract_names):
-                # Only remove external network if completely empty
-                self.aim.delete(aim_ctx, epg, cascade=True)
+            if ext_net:
+                if isinstance(epg, aim_resource.ExternalNetwork):
+                    contract_params = {
+                        'tenant_name': ext_net.tenant_name,
+                        'l3out_name': ext_net.l3out_name,
+                        'ext_net_name': ext_net.name}
+                    p_cons = self.aim.find(aim_ctx,
+                        aim_resource.ExternalNetworkProvidedContract,
+                        **contract_params)
+                    c_cons = self.aim.find(aim_ctx,
+                        aim_resource.ExternalNetworkProvidedContract,
+                        **contract_params)
+                    if not p_cons and not c_cons:
+                        # Only remove if completely empty
+                        self.aim.delete(aim_ctx, epg, cascade=True)
+                else:
+                    if (not epg.consumed_contract_names and
+                        not epg.provided_contract_names):
+                        # Only remove if completely empty
+                        self.aim.delete(aim_ctx, epg, cascade=True)
 
     def _get_chains_by_classifier_id(self, plugin_context, flowc_id):
         context = plugin_context
