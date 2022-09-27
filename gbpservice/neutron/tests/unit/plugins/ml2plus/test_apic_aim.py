@@ -8183,33 +8183,54 @@ class TestExternalConnectivityBase(object):
 
         # Connect the router interfaces to the subnets
         vrf_objs = {}
+        rtr_contracts = {}
         for tenant, router_list in six.iteritems(objs):
             tenant_aname = self.name_mapper.project(None, tenant)
             a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                      name='DefaultVRF')
             a_ext_net = aim_resource.ExternalNetwork(
                 tenant_name=self.t1_aname, l3out_name='l1', name='n1')
+            prov = []
+            cons = []
             for router, subnets, addr_scope in router_list:
                 if addr_scope:
                     a_vrf.name = self.name_mapper.address_scope(
                         None, addr_scope['id'])
                 self.fix_l3out_vrf(self.t1_aname, 'l1', a_vrf.name)
                 contract = self.name_mapper.router(None, router['id'])
-                a_ext_net.provided_contract_names.append(contract)
-                a_ext_net.provided_contract_names.extend(
-                    router[PROV])
-                a_ext_net.provided_contract_names.sort()
-                a_ext_net.consumed_contract_names.append(contract)
-                a_ext_net.consumed_contract_names.extend(
-                    router[CONS])
-                a_ext_net.consumed_contract_names.sort()
+                prov.append(aim_resource.ExternalNetworkProvidedContract(
+                    tenant_name=a_ext_net.tenant_name,
+                    l3out_name=a_ext_net.l3out_name,
+                    ext_net_name=a_ext_net.name,
+                    name=contract))
+                cons.append(aim_resource.ExternalNetworkConsumedContract(
+                    tenant_name=a_ext_net.tenant_name,
+                    l3out_name=a_ext_net.l3out_name,
+                    ext_net_name=a_ext_net.name,
+                    name=contract))
+                for con in router[PROV]:
+                    prov.append(aim_resource.ExternalNetworkProvidedContract(
+                        tenant_name=a_ext_net.tenant_name,
+                        l3out_name=a_ext_net.l3out_name,
+                        ext_net_name=a_ext_net.name,
+                        name=con))
+                for con in router[CONS]:
+                    cons.append(aim_resource.ExternalNetworkConsumedContract(
+                        tenant_name=a_ext_net.tenant_name,
+                        l3out_name=a_ext_net.l3out_name,
+                        ext_net_name=a_ext_net.name,
+                        name=con))
 
                 for idx in range(0, len(subnets)):
                     self.mock_ns.reset_mock()
                     self._router_interface_action('add', router['id'],
                                                   subnets[idx]['id'], None)
                     if idx == 0:
-                        cv.assert_called_once_with(mock.ANY, a_ext_net, a_vrf)
+                        provided = sorted(prov, key=lambda x: x.name)
+                        consumed = sorted(cons, key=lambda x: x.name)
+                        cv.assert_called_once_with(mock.ANY, a_ext_net, a_vrf,
+                            provided_contracts=provided,
+                            consumed_contracts=consumed)
                     else:
                         cv.assert_not_called()
 
@@ -8220,6 +8241,7 @@ class TestExternalConnectivityBase(object):
                     self._check_bd_l3out(aim_ctx, aim_bd, 'l1')
 
                     self._validate()
+                rtr_contracts[router['id']] = (prov, cons)
             vrf_objs[tenant] = a_ext_net
 
         # Remove the router interfaces
@@ -8230,17 +8252,30 @@ class TestExternalConnectivityBase(object):
             a_ext_net = vrf_objs.pop(tenant)
             num_router = len(router_list)
             for router, subnets, addr_scope in router_list:
+                prov, cons = rtr_contracts[router['id']]
                 if addr_scope:
                     a_vrf.name = self.name_mapper.address_scope(
                         None, addr_scope['id'])
                 self.fix_l3out_vrf(self.t1_aname, 'l1', a_vrf.name)
                 contract = self.name_mapper.router(None, router['id'])
-                a_ext_net.provided_contract_names.remove(contract)
-                a_ext_net.consumed_contract_names.remove(contract)
+                prov.remove(aim_resource.ExternalNetworkProvidedContract(
+                    tenant_name=a_ext_net.tenant_name,
+                    l3out_name=a_ext_net.l3out_name,
+                    ext_net_name=a_ext_net.name, name=contract))
+                cons.remove(aim_resource.ExternalNetworkConsumedContract(
+                    tenant_name=a_ext_net.tenant_name,
+                    l3out_name=a_ext_net.l3out_name,
+                    ext_net_name=a_ext_net.name, name=contract))
                 for c in router[PROV]:
-                    a_ext_net.provided_contract_names.remove(c)
+                    prov.remove(aim_resource.ExternalNetworkProvidedContract(
+                        tenant_name=a_ext_net.tenant_name,
+                        l3out_name=a_ext_net.l3out_name,
+                        ext_net_name=a_ext_net.name, name=c))
                 for c in router[CONS]:
-                    a_ext_net.consumed_contract_names.remove(c)
+                    cons.remove(aim_resource.ExternalNetworkConsumedContract(
+                        tenant_name=a_ext_net.tenant_name,
+                        l3out_name=a_ext_net.l3out_name,
+                        ext_net_name=a_ext_net.name, name=c))
 
                 for idx in range(0, len(subnets)):
                     self.mock_ns.reset_mock()
@@ -8254,8 +8289,12 @@ class TestExternalConnectivityBase(object):
                     if idx == len(subnets) - 1:
                         num_router -= 1
                         if num_router:
-                            cv.assert_called_once_with(mock.ANY, a_ext_net,
-                                                       a_vrf)
+                            provided = sorted(prov, key=lambda x: x.name)
+                            consumed = sorted(cons, key=lambda x: x.name)
+                            cv.assert_called_once_with(
+                                mock.ANY, a_ext_net, a_vrf,
+                                provided_contracts=provided,
+                                consumed_contracts=consumed)
                         else:
                             dv.assert_called_once_with(mock.ANY, a_ext_net,
                                                        a_vrf)
@@ -8337,10 +8376,27 @@ class TestExternalConnectivityBase(object):
                                                  ext_net1['id']}}})
         contract = self.name_mapper.router(None, router['id'])
         a_ext_net1 = aim_resource.ExternalNetwork(
-            tenant_name=self.t1_aname, l3out_name='l1', name='n1',
-            provided_contract_names=sorted(['pr-1', contract]),
-            consumed_contract_names=sorted(['co-1', contract]))
-        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf)
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1')
+        p1_ext1 = aim_resource.ExternalNetworkProvidedContract(
+            tenant_name=a_ext_net1.tenant_name,
+            l3out_name=a_ext_net1.l3out_name,
+            ext_net_name=a_ext_net1.name, name='pr-1')
+        prc_ext1 = aim_resource.ExternalNetworkProvidedContract(
+            tenant_name=a_ext_net1.tenant_name,
+            l3out_name=a_ext_net1.l3out_name,
+            ext_net_name=a_ext_net1.name, name=contract)
+        c1_ext1 = aim_resource.ExternalNetworkConsumedContract(
+            tenant_name=a_ext_net1.tenant_name,
+            l3out_name=a_ext_net1.l3out_name,
+            ext_net_name=a_ext_net1.name, name='co-1')
+        crc_ext1 = aim_resource.ExternalNetworkConsumedContract(
+            tenant_name=a_ext_net1.tenant_name,
+            l3out_name=a_ext_net1.l3out_name,
+            ext_net_name=a_ext_net1.name, name=contract)
+        provided = sorted([prc_ext1, p1_ext1], key=lambda x: x.name)
+        consumed = sorted([crc_ext1, c1_ext1], key=lambda x: x.name)
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf,
+            provided_contracts=provided, consumed_contracts=consumed)
 
         self.mock_ns.reset_mock()
         self._update('routers', router['id'],
@@ -8348,39 +8404,58 @@ class TestExternalConnectivityBase(object):
                       {'external_gateway_info': {'network_id':
                                                  ext_net2['id']}}})
         a_ext_net2 = aim_resource.ExternalNetwork(
-            tenant_name=self.t1_aname, l3out_name='l2', name='n2',
-            provided_contract_names=sorted(['pr-1', contract]),
-            consumed_contract_names=sorted(['co-1', contract]))
+            tenant_name=self.t1_aname, l3out_name='l2', name='n2')
+        p1_ext2 = aim_resource.ExternalNetworkProvidedContract(
+            tenant_name=a_ext_net2.tenant_name,
+            l3out_name=a_ext_net2.l3out_name,
+            ext_net_name=a_ext_net2.name, name='pr-1')
+        prc_ext2 = aim_resource.ExternalNetworkProvidedContract(
+            tenant_name=a_ext_net2.tenant_name,
+            l3out_name=a_ext_net2.l3out_name,
+            ext_net_name=a_ext_net2.name, name=contract)
+        c1_ext2 = aim_resource.ExternalNetworkConsumedContract(
+            tenant_name=a_ext_net2.tenant_name,
+            l3out_name=a_ext_net2.l3out_name,
+            ext_net_name=a_ext_net2.name, name='co-1')
+        c2_ext2 = aim_resource.ExternalNetworkConsumedContract(
+            tenant_name=a_ext_net2.tenant_name,
+            l3out_name=a_ext_net2.l3out_name,
+            ext_net_name=a_ext_net2.name, name='co-2')
+        crc_ext2 = aim_resource.ExternalNetworkConsumedContract(
+            tenant_name=a_ext_net2.tenant_name,
+            l3out_name=a_ext_net2.l3out_name,
+            ext_net_name=a_ext_net2.name, name=contract)
         a_ext_net1.provided_contract_names = []
         a_ext_net1.consumed_contract_names = []
         dv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf)
-        cv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf)
+        provided = sorted([prc_ext2, p1_ext2], key=lambda x: x.name)
+        consumed = sorted([crc_ext2, c1_ext2], key=lambda x: x.name)
+        cv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf,
+            provided_contracts=provided, consumed_contracts=consumed)
 
         self.mock_ns.reset_mock()
         self._update('routers', router['id'],
                      {'router':
                       {PROV: []}})
         a_ext_net2 = aim_resource.ExternalNetwork(
-            tenant_name=self.t1_aname, l3out_name='l2', name='n2',
-            provided_contract_names=sorted([contract]),
-            consumed_contract_names=sorted(['co-1', contract]))
-        cv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf)
+            tenant_name=self.t1_aname, l3out_name='l2', name='n2')
+        consumed = sorted([crc_ext2, c1_ext2], key=lambda x: x.name)
+        cv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf,
+            provided_contracts=[prc_ext2], consumed_contracts=consumed)
 
         self.mock_ns.reset_mock()
         self._update('routers', router['id'],
                      {'router':
                       {CONS: ['co-1', 'co-2']}})
         a_ext_net2 = aim_resource.ExternalNetwork(
-            tenant_name=self.t1_aname, l3out_name='l2', name='n2',
-            provided_contract_names=sorted([contract]),
-            consumed_contract_names=sorted(['co-1', 'co-2', contract]))
-        cv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf)
+            tenant_name=self.t1_aname, l3out_name='l2', name='n2')
+        consumed = sorted([crc_ext2, c1_ext2, c2_ext2], key=lambda x: x.name)
+        cv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf,
+            provided_contracts=[prc_ext2], consumed_contracts=consumed)
 
         self.mock_ns.reset_mock()
         self._update('routers', router['id'],
                      {'router': {'external_gateway_info': {}}})
-        a_ext_net2.provided_contract_names = []
-        a_ext_net2.consumed_contract_names = []
         dv.assert_called_once_with(mock.ANY, a_ext_net2, a_vrf)
 
     def test_router_gateway(self):
@@ -8486,40 +8561,62 @@ class TestExternalConnectivityBase(object):
         self._validate()
 
         self._add_external_gateway_to_router(routers[0], ext_nets[0])
-        a_ext_nets[0].provided_contract_names = [contracts[0]]
-        a_ext_nets[0].consumed_contract_names = [contracts[0]]
-        cv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf)
+        prov_ext1 = []
+        cons_ext1 = []
+        for con in contracts:
+            prov_ext1.append(aim_resource.ExternalNetworkProvidedContract(
+                tenant_name=a_ext_nets[0].tenant_name,
+                l3out_name=a_ext_nets[0].l3out_name,
+                ext_net_name=a_ext_nets[0].name, name=con))
+            cons_ext1.append(aim_resource.ExternalNetworkConsumedContract(
+                tenant_name=a_ext_nets[0].tenant_name,
+                l3out_name=a_ext_nets[0].l3out_name,
+                ext_net_name=a_ext_nets[0].name, name=con))
+        cv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf,
+            provided_contracts=[prov_ext1[0]],
+            consumed_contracts=[cons_ext1[0]])
         self._validate()
 
         self.mock_ns.reset_mock()
+        prov_ext2 = []
+        cons_ext2 = []
+        for con in contracts:
+            prov_ext2.append(aim_resource.ExternalNetworkProvidedContract(
+                tenant_name=a_ext_nets[1].tenant_name,
+                l3out_name=a_ext_nets[1].l3out_name,
+                ext_net_name=a_ext_nets[1].name, name=con))
+            cons_ext2.append(aim_resource.ExternalNetworkConsumedContract(
+                tenant_name=a_ext_nets[1].tenant_name,
+                l3out_name=a_ext_nets[1].l3out_name,
+                ext_net_name=a_ext_nets[1].name, name=con))
         self._add_external_gateway_to_router(routers[1], ext_nets[1])
         if shared_l3out:
-            a_ext_nets[1].provided_contract_names = sorted(contracts)
-            a_ext_nets[1].consumed_contract_names = sorted(contracts)
+            provided = sorted(prov_ext2, key=lambda x: x.name)
+            consumed = sorted(cons_ext2, key=lambda x: x.name)
+            p_con = provided
+            c_con = consumed
         else:
-            a_ext_nets[1].provided_contract_names = [contracts[1]]
-            a_ext_nets[1].consumed_contract_names = [contracts[1]]
-        cv.assert_called_once_with(mock.ANY, a_ext_nets[1], a_vrf)
+            p_con = [prov_ext2[1]]
+            c_con = [cons_ext2[1]]
+        cv.assert_called_once_with(mock.ANY, a_ext_nets[1], a_vrf,
+            provided_contracts=p_con,
+            consumed_contracts=c_con)
         self._validate()
 
         self.mock_ns.reset_mock()
         self._router_interface_action('remove', routers[0], sub1['id'], None)
         if shared_l3out:
-            a_ext_nets[0].provided_contract_names = [contracts[1]]
-            a_ext_nets[0].consumed_contract_names = [contracts[1]]
-            cv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf)
+            cv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf,
+                provided_contracts=[prov_ext2[1]],
+                consumed_contracts=[cons_ext2[1]])
             dv.assert_not_called()
         else:
-            a_ext_nets[0].provided_contract_names = []
-            a_ext_nets[0].consumed_contract_names = []
             dv.assert_called_once_with(mock.ANY, a_ext_nets[0], a_vrf)
             cv.assert_not_called()
         self._validate()
 
         self.mock_ns.reset_mock()
         self._router_interface_action('remove', routers[1], sub1['id'], None)
-        a_ext_nets[1].provided_contract_names = []
-        a_ext_nets[1].consumed_contract_names = []
         dv.assert_called_once_with(mock.ANY, a_ext_nets[1], a_vrf)
         self._validate()
 
@@ -8787,9 +8884,15 @@ class TestExternalConnectivityBase(object):
 
         contract = self.name_mapper.router(None, router['id'])
         a_ext_net1 = aim_resource.ExternalNetwork(
-            tenant_name=self.t1_aname, l3out_name='l1', name='n1',
-            provided_contract_names=[contract],
-            consumed_contract_names=[contract])
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1')
+        prov = aim_resource.ExternalNetworkProvidedContract(
+            tenant_name=a_ext_net1.tenant_name,
+            l3out_name=a_ext_net1.l3out_name,
+            ext_net_name=a_ext_net1.name, name=contract)
+        cons = aim_resource.ExternalNetworkConsumedContract(
+            tenant_name=a_ext_net1.tenant_name,
+            l3out_name=a_ext_net1.l3out_name,
+            ext_net_name=a_ext_net1.name, name=contract)
         a_ext_net1_no_contracts = aim_resource.ExternalNetwork(
             tenant_name=self.t1_aname, l3out_name='l1', name='n1')
 
@@ -8803,7 +8906,8 @@ class TestExternalConnectivityBase(object):
         a_vrf1 = aim_resource.VRF(
             tenant_name=self.name_mapper.project(None, 'tenant_1'),
             name='DefaultVRF')
-        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf1)
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf1,
+            provided_contracts=[prov], consumed_contracts=[cons])
         dv.assert_not_called()
 
         # 2. Create shared network net2 in tenant tenant_2, then connect
@@ -8817,7 +8921,8 @@ class TestExternalConnectivityBase(object):
         a_vrf2 = aim_resource.VRF(
             tenant_name=self.name_mapper.project(None, 'tenant_2'),
             name='DefaultVRF')
-        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf2)
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf2,
+            provided_contracts=[prov], consumed_contracts=[cons])
         dv.assert_called_once_with(mock.ANY, a_ext_net1_no_contracts, a_vrf1)
 
         # 3. Create unshared network net3 in tenant test-tenant, then connect
@@ -8840,7 +8945,8 @@ class TestExternalConnectivityBase(object):
         # 5. Disconnect net2 from r1
         self.mock_ns.reset_mock()
         self._router_interface_action('remove', router['id'], sub2['id'], None)
-        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf1)
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, a_vrf1,
+            provided_contracts=[prov], consumed_contracts=[cons])
         dv.assert_called_once_with(mock.ANY, a_ext_net1_no_contracts, a_vrf2)
 
         # 6. Disconnect net1 from r1
@@ -8882,9 +8988,15 @@ class TestExternalConnectivityBase(object):
 
         contract = self.name_mapper.router(None, router['id'])
         a_ext_net1 = aim_resource.ExternalNetwork(
-            tenant_name=self.t1_aname, l3out_name='l1', name='n1',
-            provided_contract_names=[contract],
-            consumed_contract_names=[contract])
+            tenant_name=self.t1_aname, l3out_name='l1', name='n1')
+        prov = aim_resource.ExternalNetworkProvidedContract(
+            tenant_name=a_ext_net1.tenant_name,
+            l3out_name=a_ext_net1.l3out_name,
+            ext_net_name=a_ext_net1.name, name=contract)
+        cons = aim_resource.ExternalNetworkConsumedContract(
+            tenant_name=a_ext_net1.tenant_name,
+            l3out_name=a_ext_net1.l3out_name,
+            ext_net_name=a_ext_net1.name, name=contract)
 
         # create private stuff
         net = self._make_network(self.fmt, 'net1', True)['network']
@@ -8896,12 +9008,11 @@ class TestExternalConnectivityBase(object):
         dv.assert_not_called()
 
         self._router_interface_action('add', router['id'], subnet['id'], None)
-        cv.assert_called_once_with(mock.ANY, a_ext_net1, vrf)
+        cv.assert_called_once_with(mock.ANY, a_ext_net1, vrf,
+            provided_contracts=[prov], consumed_contracts=[cons])
         dv.assert_not_called()
 
         self.mock_ns.reset_mock()
-        a_ext_net1.provided_contract_names = []
-        a_ext_net1.consumed_contract_names = []
         self._router_interface_action('remove', router['id'], subnet['id'],
                                       None)
         cv.assert_not_called()
