@@ -31,6 +31,8 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/yoga
+        - openstack-tox-py39:
+            voting: false
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -59,3 +61,5 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/yoga
+        - openstack-tox-py39:
+            voting: false

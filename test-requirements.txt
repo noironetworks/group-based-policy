@@ -36,3 +36,4 @@ unittest2>=1.1.0
 # seem to be ignored, so we list them here too.
 -e git+https://github.com/noironetworks/acitoolkit.git@noiro-lite#egg=acitoolkit
 -e git+https://github.com/noironetworks/aci-integration-module.git@master#egg=aci-integration-module
+
