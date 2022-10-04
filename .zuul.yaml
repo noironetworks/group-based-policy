@@ -21,11 +21,6 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/yoga
-        - openstack-tox-py37:
-            nodeset: ubuntu-bionic
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/yoga
         - openstack-tox-py38:
             nodeset: ubuntu-bionic
             required-projects:
@@ -45,11 +40,6 @@
               - name: openstack/requirements
                 override-checkout: stable/yoga
         - openstack-tox-py36:
-            nodeset: ubuntu-bionic
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/yoga
-        - openstack-tox-py37:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
