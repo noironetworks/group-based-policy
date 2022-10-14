@@ -255,6 +255,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                keystone_notification_exchange)
         self.keystone_notification_topic = (cfg.CONF.ml2_apic_aim.
                                             keystone_notification_topic)
+        self.keystone_notification_pool = (cfg.CONF.ml2_apic_aim.
+                                           keystone_notification_pool)
         self._setup_keystone_notification_listeners()
         self.apic_optimized_dhcp_lease_time = (cfg.CONF.ml2_apic_aim.
                                                apic_optimized_dhcp_lease_time)
@@ -601,10 +603,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     exchange=self.keystone_notification_exchange,
                     topic=self.keystone_notification_topic, fanout=True)]
         endpoints = [KeystoneNotificationEndpoint(self)]
-        pool = "cisco_aim_listener-workers"
         server = oslo_messaging.get_notification_listener(
             n_rpc.NOTIFICATION_TRANSPORT, targets, endpoints,
-            executor='eventlet', pool=pool)
+            executor='eventlet', pool=self.keystone_notification_pool)
         server.start()
 
     def ensure_tenant(self, plugin_context, project_id):
