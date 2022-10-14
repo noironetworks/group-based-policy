@@ -29,6 +29,14 @@ apic_opts = [
                default='notifications',
                help=("The topic used to subscribe to Keystone "
                      "notifications")),
+    cfg.StrOpt('keystone_notification_pool',
+               default=None,
+               help=("The pool used to subscribe to Keystone "
+                     "notifications. This value should only be configured "
+                     "to a value other than 'None' when there are other "
+                     "notification listeners subscribed to the same "
+                     "keystone exchange and topic, whose pool is set "
+                     "to 'None'.")),
     cfg.IntOpt('apic_optimized_dhcp_lease_time', default=0,
                help=("Number of seconds for the optimized DHCP lease time. "
                      "Default is 0 which means using opflex agent's default "
