@@ -277,6 +277,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 res_dict.get(cisco_apic.ACTIVE_ACTIVE_AAP, False))
             result[cisco_apic.SNAT_SUBNET_ONLY] = (
                 res_dict.get(cisco_apic.SNAT_SUBNET_ONLY, False))
+            result[cisco_apic.EPG_SUBNET] = (
+                res_dict.get(cisco_apic.EPG_SUBNET, False))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -296,6 +298,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     res_dict.get(cisco_apic.ACTIVE_ACTIVE_AAP, False))
                 result[cisco_apic.SNAT_SUBNET_ONLY] = (
                     res_dict.get(cisco_apic.SNAT_SUBNET_ONLY, False))
+                result[cisco_apic.EPG_SUBNET] = (
+                    res_dict.get(cisco_apic.EPG_SUBNET, False))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -310,7 +314,9 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     cisco_apic.ACTIVE_ACTIVE_AAP:
                     data.get(cisco_apic.ACTIVE_ACTIVE_AAP, False),
                     cisco_apic.SNAT_SUBNET_ONLY:
-                    data.get(cisco_apic.SNAT_SUBNET_ONLY, False)}
+                    data.get(cisco_apic.SNAT_SUBNET_ONLY, False),
+                    cisco_apic.EPG_SUBNET:
+                    data.get(cisco_apic.EPG_SUBNET, False)}
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
         result.update(res_dict)
