@@ -131,6 +131,7 @@ BGP = 'apic:bgp_enable'
 ASN = 'apic:bgp_asn'
 BGP_TYPE = 'apic:bgp_type'
 SNAT_SUBNET_ONLY = 'apic:snat_subnet_only'
+EPG_SUBNET = 'apic:epg_subnet'
 
 
 def sort_if_list(attr):
@@ -273,7 +274,7 @@ class ApicAimTestMixin(object):
 
     def _create_subnet_with_extension(self, fmt, net, gateway,
                                       cidr, **kwargs):
-        data = {'subnet': {'network_id': net['network']['id'],
+        data = {'subnet': {'network_id': net['id'],
                            'ip_version': 4,
                            'enable_dhcp': True,
                            'tenant_id': self._tenant_id}}
@@ -354,7 +355,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self._app_profile_name = self.driver.ap_name
         self.extension_attributes = ('router:external', DN,
                                      'apic:nat_type', SNAT_POOL,
-                                     ACTIVE_ACTIVE_AAP,
+                                     ACTIVE_ACTIVE_AAP, EPG_SUBNET,
                                      CIDR, PROV, CONS, SVI,
                                      BGP, BGP_TYPE, ASN,
                                      'provider:network_type'
@@ -7254,7 +7255,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual(resp.status_code, 400)
 
         subnet1 = self._create_subnet_with_extension(
-            self.fmt, net, '10.1.0.1', '10.1.0.0/24',
+            self.fmt, net['network'], '10.1.0.1', '10.1.0.0/24',
             **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
         self.assertTrue(subnet1[ACTIVE_ACTIVE_AAP])
 
@@ -7265,6 +7266,24 @@ class TestExtensionAttributes(ApicAimTestCase):
                           self.l3_plugin.add_router_interface,
                           n_context.get_admin_context(), router['id'],
                           {'subnet_id': subnet1['id']})
+
+    def test_epg_subnet(self):
+        net = self._make_network(self.fmt, 'net1', True)
+        subnet = self._make_subnet(
+            self.fmt, net, '10.0.0.1', '10.0.0.0/24')['subnet']
+        subnet = self._show('subnets', subnet['id'])['subnet']
+        self.assertFalse(subnet[EPG_SUBNET])
+
+        # Update is not allowed
+        data = {'subnet': {EPG_SUBNET: True}}
+        req = self.new_update_request('subnets', data, subnet['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(resp.status_code, 400)
+
+        subnet1 = self._create_subnet_with_extension(
+            self.fmt, net['network'], '10.1.0.1', '10.1.0.0/24',
+            **{EPG_SUBNET: 'True'})['subnet']
+        self.assertTrue(subnet1[EPG_SUBNET])
 
     def test_external_subnet_lifecycle(self):
         session = db_api.get_reader_session()
@@ -7329,6 +7348,21 @@ class TestExtensionAttributes(ApicAimTestCase):
         subnet2 = self._list(
             'subnets', query_params=('id=%s' % subnet2['id']))['subnets'][0]
         self.assertTrue(subnet2[SNAT_POOL])
+
+        # create EPG subnet
+        epg_subnet = self._create_subnet_with_extension(
+            self.fmt, net1, '10.1.0.1', '10.1.0.0/24',
+            **{EPG_SUBNET: 'True'})['subnet']
+        epg_subnet = self._show('subnets', epg_subnet['id'])['subnet']
+        self.assertTrue(epg_subnet[EPG_SUBNET])
+
+        epg_subnet = self._list(
+            'subnets', query_params=('id=%s' % epg_subnet['id']))['subnets'][0]
+        self.assertTrue(epg_subnet[EPG_SUBNET])
+
+        # delete EPG subnet
+        self._delete('subnets', epg_subnet['id'])
+        self.assertFalse(extn.get_subnet_extn_db(session, epg_subnet['id']))
 
     def test_router_lifecycle(self):
         session = db_api.get_reader_session()
@@ -8079,10 +8113,31 @@ class TestExternalConnectivityBase(object):
         self.mock_ns.delete_subnet.assert_called_once_with(
             mock.ANY, l3out, '10.0.0.251/24')
 
+        # create EPG subnet
+        epg_subnet = self._create_subnet_with_extension(
+            self.fmt, net1, '20.0.0.1', '20.0.0.0/24',
+            **{EPG_SUBNET: 'True'})['subnet']
+        epg_subnet = self._show('subnets', epg_subnet['id'])['subnet']
+
+        l3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
+        self.mock_ns.create_epg_subnet.assert_called_once_with(
+            mock.ANY, l3out, '20.0.0.1/24')
+        ext_epg_sub = aim_resource.EPGSubnet(
+            tenant_name=self.t1_aname, app_profile_name='OpenStack',
+            epg_name='EXT-l1', gw_ip_mask='20.0.0.1/24')
+        self._check_dn(epg_subnet, ext_epg_sub, 'Subnet')
+        self._validate()
+
+        # delete EPG subnet
+        self.mock_ns.reset_mock()
+        self._delete('subnets', epg_subnet['id'])
+        self.mock_ns.delete_epg_subnet.assert_called_once_with(
+            mock.ANY, l3out, '20.0.0.1/24')
+
     def test_unmanaged_external_subnet_lifecycle(self):
-        net1 = self._make_ext_network('net1')
+        net = self._make_network(self.fmt, 'net1', True)
         subnet = self._make_subnet(
-            self.fmt, {'network': net1}, '10.0.0.1', '10.0.0.0/24',
+            self.fmt, {'network': net['network']}, '10.0.0.1', '10.0.0.0/24',
             allocation_pools=[{'start': '10.0.0.2',
                                'end': '10.0.0.250'}])['subnet']
 
@@ -12089,7 +12144,7 @@ class TestOpflexRpc(ApicAimTestCase):
         ]
         if active_active_aap:
             subnet1 = self._create_subnet_with_extension(
-                self.fmt, net, '10.0.1.1', '10.0.1.0/24',
+                self.fmt, net['network'], '10.0.1.1', '10.0.1.0/24',
                 dns_nameservers=dns_nameservers1,
                 host_routes=host_routes1,
                 **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
@@ -12105,7 +12160,7 @@ class TestOpflexRpc(ApicAimTestCase):
         ]
         if active_active_aap:
             subnet2 = self._create_subnet_with_extension(
-                self.fmt, net, '10.0.2.1', '10.0.2.0/24',
+                self.fmt, net['network'], '10.0.2.1', '10.0.2.0/24',
                 host_routes=host_routes2,
                 **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
         else:
@@ -12116,7 +12171,7 @@ class TestOpflexRpc(ApicAimTestCase):
 
         if active_active_aap:
             subnet3 = self._create_subnet_with_extension(
-                self.fmt, net, '10.0.3.1', '10.0.3.0/24',
+                self.fmt, net['network'], '10.0.3.1', '10.0.3.0/24',
                 **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
         else:
             subnet3 = self._make_subnet(

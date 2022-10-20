@@ -5621,10 +5621,10 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         sub2 = self._make_subnet(self.fmt, net, '1.2.3.1', '1.2.3.0/24')[
             'subnet']
         sub_active_aap = self._create_subnet_with_extension(
-                self.fmt, net, '2.2.3.1', '2.2.3.0/24',
+                self.fmt, net['network'], '2.2.3.1', '2.2.3.0/24',
                 **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
         sub_active_aap1 = self._create_subnet_with_extension(
-                self.fmt, net, '3.2.3.1', '3.2.3.0/24',
+                self.fmt, net['network'], '3.2.3.1', '3.2.3.0/24',
                 **{ACTIVE_ACTIVE_AAP: 'True'})['subnet']
 
         allow_addr_active_aap = [{'ip_address': '2.2.3.250',
