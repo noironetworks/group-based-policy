@@ -52,6 +52,7 @@ EPG_CONTRACT_MASTERS = 'apic:epg_contract_masters'
 ERSPAN_CONFIG = 'apic:erspan_config'
 POLICY_ENFORCEMENT_PREF = 'apic:policy_enforcement_pref'
 SNAT_SUBNET_ONLY = 'apic:snat_subnet_only'
+EPG_SUBNET = 'apic:epg_subnet'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -388,6 +389,12 @@ EXT_SUBNET_ATTRIBUTES = {
     SNAT_SUBNET_ONLY: {
         # Whether this subnet can be used for assigning snat addresses only
         'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': False,
+        'convert_to': conv.convert_to_boolean,
+    },
+    EPG_SUBNET: {
+        # Whether this subnet is EPG subnet or regular subnet
+        'allow_post': True, 'allow_put': False,
         'is_visible': True, 'default': False,
         'convert_to': conv.convert_to_boolean,
     }

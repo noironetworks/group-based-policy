@@ -101,6 +101,7 @@ class ValidationManager(object):
                 db.AddressScopeMapping,
                 aim_resource.L3Outside,
                 aim_resource.Subnet,
+                aim_resource.EPGSubnet,
                 aim_resource.VRF,
                 aim_resource.Tenant,
                 aim_resource.ApplicationProfile,
