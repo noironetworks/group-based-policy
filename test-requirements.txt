@@ -10,7 +10,7 @@ neutron
 python-heatclient
 python-keystoneclient
 
--e git+https://opendev.org/openstack/neutron-lbaas.git@stable/stein#egg=neutron-lbaas
+-e git+https://github.com/openstack-archive/neutron-lbaas.git@stable/stein#egg=neutron-lbaas
 -e git+https://opendev.org/openstack/neutron-fwaas.git@stein-eol#egg=neutron-fwaas
 -e git+https://opendev.org/openstack/networking-sfc.git@refs/changes/48/646648/1#egg=networking-sfc
 
