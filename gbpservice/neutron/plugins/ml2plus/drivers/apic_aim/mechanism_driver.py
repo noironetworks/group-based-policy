@@ -1478,11 +1478,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     models_v2.Subnet.network_id.in_(other_nets)).all())
 
                 cidrs = netaddr.IPSet([c[0] for c in cidrs])
+
                 if cidrs & netaddr.IPSet([current['cidr']]):
                     raise exceptions.ExternalSubnetOverlapInL3Out(
                         cidr=current['cidr'], l3out=l3out.dn)
-            ns.create_subnet(aim_ctx, l3out,
-                             self._subnet_to_gw_ip_mask(current))
+            if current[cisco_apic.EPG_SUBNET]:
+                ns.create_epg_subnet(aim_ctx, l3out,
+                    self._subnet_to_gw_ip_mask(current))
+            else:
+                ns.create_subnet(aim_ctx, l3out,
+                                 self._subnet_to_gw_ip_mask(current))
             # Send a port update for those existing VMs because
             # SNAT info has been added.
             if current[cisco_apic.SNAT_HOST_POOL]:
@@ -1625,8 +1630,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                                network_db)
             if not ext_net:
                 return  # Unmanaged external network
-            ns.delete_subnet(aim_ctx, l3out,
-                             self._subnet_to_gw_ip_mask(current))
+            if current[cisco_apic.EPG_SUBNET]:
+                ns.delete_epg_subnet(aim_ctx, l3out,
+                    self._subnet_to_gw_ip_mask(current))
+            else:
+                ns.delete_subnet(aim_ctx, l3out,
+                                 self._subnet_to_gw_ip_mask(current))
             # Send a port update for those existing VMs because
             # SNAT info has been deleted.
             if current[cisco_apic.SNAT_HOST_POOL]:
@@ -1721,16 +1730,33 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         res_dict_by_aim_res_dn[sub.dn] = (
                             res_dict_and_aim_status_track)
                         aim_resources.append(sub)
+
+                    epg_sub = ns.get_epg_subnet(aim_ctx, l3out,
+                                        self._subnet_to_gw_ip_mask(subnet_db))
+                    if epg_sub:
+                        dist_names[cisco_apic.SUBNET] = epg_sub.dn
+                        res_dict_by_aim_res_dn[epg_sub.dn] = (
+                            res_dict_and_aim_status_track)
+                        aim_resources.append(epg_sub)
             elif network_db.aim_mapping and network_db.aim_mapping.bd_name:
                 bd = self._get_network_bd(network_db.aim_mapping)
 
                 for gw_ip, router_id in self._subnet_router_ips(session,
                                                                 subnet_db.id):
-                    sn = self._map_subnet(subnet_db, gw_ip, bd)
-                    dist_names[gw_ip] = sn.dn
-                    res_dict_by_aim_res_dn[sn.dn] = (
-                        res_dict_and_aim_status_track)
-                    aim_resources.append(sn)
+                    sn_ext = self.get_subnet_extn_db(session, subnet_db.id)
+                    if sn_ext.get(cisco_apic.EPG_SUBNET, False):
+                        epg = self._get_network_epg(network_db.aim_mapping)
+                        epg_sn = self._map_epg_subnet(subnet_db, gw_ip, epg)
+                        dist_names[gw_ip] = epg_sn.dn
+                        res_dict_by_aim_res_dn[epg_sn.dn] = (
+                            res_dict_and_aim_status_track)
+                        aim_resources.append(epg_sn)
+                    else:
+                        sn = self._map_subnet(subnet_db, gw_ip, bd)
+                        dist_names[gw_ip] = sn.dn
+                        res_dict_by_aim_res_dn[sn.dn] = (
+                            res_dict_and_aim_status_track)
+                        aim_resources.append(sn)
 
             # Track the number of AIM resources in aim_status_track,
             # decrement count each time we process a status obj related to
@@ -2339,9 +2365,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     router_db.name + "-" +
                     (subnet['name'] or subnet['cidr']))
 
-                sn = self._map_subnet(subnet, gw_ip, bd)
-                sn.display_name = dname
-                sn = self.aim.create(aim_ctx, sn)
+                sn_ext = self.get_subnet_extn_db(session, subnet['id'])
+                if sn_ext.get(cisco_apic.EPG_SUBNET, False):
+                    epg_sn = self._map_epg_subnet(subnet, gw_ip, epg)
+                    epg_sn.display_name = dname
+                    epg_sn = self.aim.create(aim_ctx, epg_sn)
+                else:
+                    sn = self._map_subnet(subnet, gw_ip, bd)
+                    sn.display_name = dname
+                    sn = self.aim.create(aim_ctx, sn)
 
         # Ensure network's EPG provides/consumes router's Contract.
         contract = self._map_router(session, router_db, True)
@@ -2443,8 +2475,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # Remove AIM Subnet(s) for each removed Neutron subnet.
             for subnet in subnets:
                 gw_ip = self._ip_for_subnet(subnet, port['fixed_ips'])
-                sn = self._map_subnet(subnet, gw_ip, bd)
-                self.aim.delete(aim_ctx, sn)
+                sn_ext = self.get_subnet_extn_db(session, subnet['id'])
+                if sn_ext.get(cisco_apic.EPG_SUBNET, False):
+                    epg_sn = self._map_epg_subnet(subnet, gw_ip, epg)
+                    self.aim.delete(aim_ctx, epg_sn)
+                else:
+                    sn = self._map_subnet(subnet, gw_ip, bd)
+                    self.aim.delete(aim_ctx, sn)
         # SVI network with auto l3out.
         elif network_db.aim_mapping.l3out_name:
             epg = self._get_network_l3out_ext_net(network_db.aim_mapping)
@@ -4455,6 +4492,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                  gw_ip_mask=gw_ip_mask)
         return sn
 
+    def _map_epg_subnet(self, subnet, gw_ip, epg):
+        prefix_len = subnet['cidr'].split('/')[1]
+        gw_ip_mask = gw_ip + '/' + prefix_len
+
+        epg_sn = aim_resource.EPGSubnet(tenant_name=epg.tenant_name,
+                                 app_profile_name=epg.app_profile_name,
+                                 epg_name=epg.name,
+                                 gw_ip_mask=gw_ip_mask)
+        return epg_sn
+
     def _map_address_scope(self, session, scope):
         id = scope['id']
         tenant_aname = self.name_mapper.project(session, scope['tenant_id'])
@@ -6426,6 +6473,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mgr.register_aim_resource_class(aim_resource.SecurityGroupRule)
         mgr.register_aim_resource_class(aim_resource.SecurityGroupSubject)
         mgr.register_aim_resource_class(aim_resource.Subnet)
+        mgr.register_aim_resource_class(aim_resource.EPGSubnet)
         mgr.register_aim_resource_class(aim_resource.Tenant)
         mgr.register_aim_resource_class(aim_resource.VMMDomain)
         mgr.register_aim_resource_class(aim_resource.VRF)
@@ -6931,9 +6979,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         res_dict = {
             cisco_apic.SNAT_HOST_POOL: False,
-            cisco_apic.ACTIVE_ACTIVE_AAP: False
+            cisco_apic.ACTIVE_ACTIVE_AAP: False,
+            cisco_apic.EPG_SUBNET: False
         }
-        self.set_subnet_extn_db(mgr.actual_session, subnet_db.id, res_dict)
+        subnet_db.aim_extension_mapping = self.set_subnet_extn_db(
+            mgr.actual_session, subnet_db.id, res_dict)
+        # In queens, there is an issue with the visibility of the
+        # re-added extension, likely due to serialization between different
+        # DB transactions. Add it back here to address those cases.
 
     def _validate_normal_network(self, mgr, net_db, network_vrfs, router_dbs,
                                  routed_nets):
@@ -7088,10 +7141,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 "missing external VRF for external network %s" % net_db.id)
 
         for subnet_db in net_db.subnets:
+            if not subnet_db.aim_extension_mapping:
+                self._missing_subnet_extension_mapping(mgr, subnet_db)
             if subnet_db.gateway_ip:
-                ns.create_subnet(
-                    mgr.expected_aim_ctx, l3out,
-                    self._subnet_to_gw_ip_mask(subnet_db))
+                if subnet_db.aim_extension_mapping.epg_subnet:
+                    ns.create_epg_subnet(
+                        mgr.expected_aim_ctx, l3out,
+                        self._subnet_to_gw_ip_mask(subnet_db))
+                else:
+                    ns.create_subnet(
+                        mgr.expected_aim_ctx, l3out,
+                        self._subnet_to_gw_ip_mask(subnet_db))
 
         # REVISIT: Process each AIM ExternalNetwork rather than each
         # external Neutron network?
