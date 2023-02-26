@@ -136,6 +136,21 @@ class NetworkExtEpgContractMasterDb(model_base.BASEV2):
                                    lazy='joined', cascade='delete'))
 
 
+class NetworkExtensionNoNatCidrsDb(model_base.BASEV2):
+
+    __tablename__ = 'apic_aim_network_no_nat_cidrs'
+
+    network_id = sa.Column(
+        sa.String(36), sa.ForeignKey('networks.id', ondelete="CASCADE"),
+        primary_key=True)
+    cidr = sa.Column(sa.String(64), primary_key=True)
+    network = orm.relationship(models_v2.Network,
+                               backref=orm.backref(
+                                   'aim_extension_no_nat_cidrs_mapping',
+                                   lazy='joined', uselist=True,
+                                   cascade='delete'))
+
+
 class SubnetExtensionDb(model_base.BASEV2):
 
     __tablename__ = 'apic_aim_subnet_extensions'
@@ -243,10 +258,19 @@ class ExtensionDbMixin(object):
         db_masters = session.query(NetworkExtEpgContractMasterDb).filter(
             NetworkExtEpgContractMasterDb.network_id.in_(network_ids)).all()
 
+        query = BAKERY(lambda s: s.query(
+            NetworkExtensionNoNatCidrsDb))
+        query += lambda q: q.filter(
+            NetworkExtensionNoNatCidrsDb.network_id.in_(
+                sa.bindparam('network_ids', expanding=True)))
+        db_no_nat_cidrs = query(session).params(
+            network_ids=network_ids).all()
+
         cidrs_by_net_id = {}
         vlans_by_net_id = {}
         contracts_by_net_id = {}
         masters_by_net_id = {}
+        no_nat_cidrs_by_net_id = {}
         for db_cidr in db_cidrs:
             cidrs_by_net_id.setdefault(db_cidr.network_id, []).append(
                 db_cidr)
@@ -259,6 +283,9 @@ class ExtensionDbMixin(object):
         for db_master in db_masters:
             masters_by_net_id.setdefault(db_master.network_id, []).append(
                 db_master)
+        for db_no_nat_cidr in db_no_nat_cidrs:
+            no_nat_cidrs_by_net_id.setdefault(db_no_nat_cidr.network_id,
+            []).append(db_no_nat_cidr)
 
         result = {}
         for db_obj in db_objs:
@@ -267,11 +294,13 @@ class ExtensionDbMixin(object):
                 db_obj, cidrs_by_net_id.get(net_id, []),
                 vlans_by_net_id.get(net_id, []),
                 contracts_by_net_id.get(net_id, []),
-                masters_by_net_id.get(net_id, [])))
+                masters_by_net_id.get(net_id, []),
+                no_nat_cidrs_by_net_id.get(net_id, [])))
         return result
 
     def make_network_extn_db_conf_dict(self, ext_db, db_cidrs, db_vlans,
-                                       db_contracts, db_masters):
+                                       db_contracts, db_masters,
+                                       db_no_nat_cidrs):
         net_res = {}
         db_obj = ext_db
         if db_obj:
@@ -306,6 +335,8 @@ class ExtensionDbMixin(object):
                  'name': m.name} for m in db_masters]
             net_res[cisco_apic.POLICY_ENFORCEMENT_PREF] = db_obj[
                 'policy_enforcement_pref']
+            net_res[cisco_apic.NO_NAT_CIDRS] = [
+                c.cidr for c in db_no_nat_cidrs]
         if net_res.get(cisco_apic.EXTERNAL_NETWORK):
             net_res[cisco_apic.EXTERNAL_CIDRS] = [c.cidr for c in db_cidrs]
         return net_res
@@ -385,6 +416,12 @@ class ExtensionDbMixin(object):
                         ('app_profile_name', 'name'),
                         res_dict[cisco_apic.EPG_CONTRACT_MASTERS],
                         network_id=network_id)
+
+            if cisco_apic.NO_NAT_CIDRS in res_dict:
+                self._update_list_attr(session, NetworkExtensionNoNatCidrsDb,
+                                       'cidr',
+                                       res_dict[cisco_apic.NO_NAT_CIDRS],
+                                       network_id=network_id)
 
     def get_network_ids_by_ext_net_dn(self, session, dn, lock_update=False):
         query = BAKERY(lambda s: s.query(

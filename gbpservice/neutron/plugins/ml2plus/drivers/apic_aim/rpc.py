@@ -454,7 +454,8 @@ class ApicRpcHandlerMixin(object):
 
                     # Query for VRF subnets.
                     info['vrf_subnets'] = self._query_vrf_subnets(
-                        session, port_info.vrf_tenant_name, port_info.vrf_name)
+                        session, port_info.vrf_tenant_name, port_info.vrf_name,
+                        ext_net_info=info['ext_net_info'])
 
                     # Let the GBP policy driver do its queries and add
                     # its info.
@@ -843,14 +844,20 @@ class ApicRpcHandlerMixin(object):
         return [x for x, in query(session).params(
             network_id=network_id)]
 
-    def _query_vrf_subnets(self, session, vrf_tenant_name, vrf_name):
+    def _query_vrf_subnets(self, session, vrf_tenant_name, vrf_name,
+                           ext_net_info=None):
         # A VRF mapped from one or two (IPv4 and/or IPv6)
         # address_scopes cannot be associated with unscoped
         # subnets. So first see if the VRF is mapped from
         # address_scopes, and if so, return the subnetpool CIDRs
         # associated with those address_scopes.
+        result = []
+        sub_ids = []
+        net_ids = []
         query = BAKERY(lambda s: s.query(
-            models_v2.SubnetPoolPrefix.cidr))
+            models_v2.SubnetPoolPrefix.cidr,
+            models_v2.Subnet.id,
+            models_v2.Network.id))
         query += lambda q: q.join(
             models_v2.SubnetPool,
             models_v2.SubnetPool.id ==
@@ -859,15 +866,33 @@ class ApicRpcHandlerMixin(object):
             db.AddressScopeMapping,
             db.AddressScopeMapping.scope_id ==
             models_v2.SubnetPool.address_scope_id)
+        query += lambda q: q.join(
+            db.NetworkMapping,
+            db.NetworkMapping.network_id ==
+            models_v2.Network.id)
         query += lambda q: q.filter(
             db.AddressScopeMapping.vrf_name ==
             sa.bindparam('vrf_name'),
             db.AddressScopeMapping.vrf_tenant_name ==
+            sa.bindparam('vrf_tenant_name'),
+            db.NetworkMapping.vrf_name ==
+            sa.bindparam('vrf_name'),
+            db.NetworkMapping.vrf_tenant_name ==
             sa.bindparam('vrf_tenant_name'))
-        result = [x for x, in query(session).params(
-            vrf_name=vrf_name,
-            vrf_tenant_name=vrf_tenant_name)]
+        for cidr, sub_id, net_id in query(session).params(vrf_name=vrf_name,
+                        vrf_tenant_name=vrf_tenant_name).all():
+            result.append(cidr)
+            sub_ids.append(sub_id)
+            net_ids.append(net_id)
         if result:
+            # query to fetch no nat cidrs extension from the networks
+            if not ext_net_info:
+                ext_net_info = self._query_endpoint_ext_net_info(
+                    session, sub_ids)
+            net_ids.extend(list(ext_net_info.keys()))
+            cidrs = self._query_no_nat_cidrs_extension(session, net_ids)
+            if cidrs:
+                result.extend(cidrs)
             return result
 
         # If the VRF is not mapped from address_scopes, return the
@@ -880,7 +905,9 @@ class ApicRpcHandlerMixin(object):
         # subnets' CIDRs being returned, even for the scoped case
         # where they are not needed, so it may not be a win.
         query = BAKERY(lambda s: s.query(
-            models_v2.Subnet.cidr))
+            models_v2.Subnet.cidr,
+            models_v2.Subnet.id,
+            models_v2.Subnet.network_id))
         query += lambda q: q.join(
             db.NetworkMapping,
             db.NetworkMapping.network_id ==
@@ -890,9 +917,35 @@ class ApicRpcHandlerMixin(object):
             sa.bindparam('vrf_name'),
             db.NetworkMapping.vrf_tenant_name ==
             sa.bindparam('vrf_tenant_name'))
-        return [x for x, in query(session).params(
-            vrf_name=vrf_name,
-            vrf_tenant_name=vrf_tenant_name)]
+        for cidr, sub_id, net_id in query(session).params(vrf_name=vrf_name,
+                        vrf_tenant_name=vrf_tenant_name).all():
+            result.append(cidr)
+            sub_ids.append(sub_id)
+            net_ids.append(net_id)
+        if not ext_net_info:
+            ext_net_info = self._query_endpoint_ext_net_info(
+                session, sub_ids)
+        net_ids.extend(list(ext_net_info.keys()))
+        # query to fetch no nat cidrs extension from the networks
+        cidrs = self._query_no_nat_cidrs_extension(session, net_ids)
+        if cidrs:
+            result.extend(cidrs)
+        return result
+
+    def _query_no_nat_cidrs_extension(self, session, net_ids):
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        query = session.query(
+            extension_db.NetworkExtensionNoNatCidrsDb.cidr)
+        query = query.join(
+            models_v2.Network,
+            models_v2.Network.id ==
+            extension_db.NetworkExtensionNoNatCidrsDb.network_id)
+        query = query.filter(
+            extension_db.NetworkExtensionNoNatCidrsDb.network_id.in_(
+                net_ids))
+        query = query.distinct()
+        cidrs = [x for x, in query]
+        return cidrs
 
     def _build_endpoint_neutron_details(self, info):
         port_info = info['port_info']
