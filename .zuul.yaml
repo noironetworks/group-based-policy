@@ -19,6 +19,7 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/rocky
+            voting: false
         - openstack-tox-py35:
             required-projects:
               - name: openstack/requirements
@@ -39,6 +40,7 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/rocky
+            voting: false
         - openstack-tox-py35:
             required-projects:
               - name: openstack/requirements
