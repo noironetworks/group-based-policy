@@ -4411,12 +4411,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _expand_topology_for_networks(self, session, visited_networks,
                                       visited_router_ids, new_networks):
         LOG.debug("Adding networks %s to topology",
-                  [net.id for net in new_networks])
+                  [new_net.id for new_net in new_networks])
         added_ids = []
-        for net in new_networks:
-            if net.id not in visited_networks:
-                visited_networks[net.id] = net
-                added_ids.append(net.id)
+        for new_net in new_networks:
+            if new_net.id not in visited_networks:
+                visited_networks[new_net.id] = new_net
+                added_ids.append(new_net.id)
         if added_ids:
             LOG.debug("Querying for routers interfaced to networks %s",
                       added_ids)
