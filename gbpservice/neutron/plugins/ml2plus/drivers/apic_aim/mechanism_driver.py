@@ -1417,7 +1417,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     net_db.aim_extension_cidr_mapping,
                     net_db.aim_extension_domain_mapping,
                     net_db.aim_extension_extra_contract_mapping,
-                    net_db.aim_extension_epg_contract_masters)
+                    net_db.aim_extension_epg_contract_masters,
+                    net_db.aim_extension_no_nat_cidrs_mapping)
             if cisco_apic.EXTERNAL_NETWORK in ext_dict:
                 dn = ext_dict.pop(cisco_apic.EXTERNAL_NETWORK)
                 a_ext_net = aim_resource.ExternalNetwork.from_dn(dn)
