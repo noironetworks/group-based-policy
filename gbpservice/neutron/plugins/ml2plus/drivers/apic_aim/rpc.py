@@ -858,12 +858,12 @@ class ApicRpcHandlerMixin(object):
         # address_scopes, and if so, return the subnetpool CIDRs
         # associated with those address_scopes.
         result = []
-        sub_ids = []
         net_ids = []
+        sub_ids = []
+        subpool_ids = []
         query = BAKERY(lambda s: s.query(
             models_v2.SubnetPoolPrefix.cidr,
-            models_v2.Subnet.id,
-            models_v2.Network.id))
+            models_v2.SubnetPoolPrefix.subnetpool_id))
         query += lambda q: q.join(
             models_v2.SubnetPool,
             models_v2.SubnetPool.id ==
@@ -872,25 +872,33 @@ class ApicRpcHandlerMixin(object):
             db.AddressScopeMapping,
             db.AddressScopeMapping.scope_id ==
             models_v2.SubnetPool.address_scope_id)
-        query += lambda q: q.join(
-            db.NetworkMapping,
-            db.NetworkMapping.network_id ==
-            models_v2.Network.id)
         query += lambda q: q.filter(
             db.AddressScopeMapping.vrf_name ==
             sa.bindparam('vrf_name'),
             db.AddressScopeMapping.vrf_tenant_name ==
-            sa.bindparam('vrf_tenant_name'),
-            db.NetworkMapping.vrf_name ==
-            sa.bindparam('vrf_name'),
-            db.NetworkMapping.vrf_tenant_name ==
             sa.bindparam('vrf_tenant_name'))
-        for cidr, sub_id, net_id in query(session).params(vrf_name=vrf_name,
-                        vrf_tenant_name=vrf_tenant_name).all():
+        query += lambda q: q.distinct()
+        for cidr, subpool_id in query(session).params(vrf_name=vrf_name,
+                            vrf_tenant_name=vrf_tenant_name).all():
             result.append(cidr)
-            sub_ids.append(sub_id)
-            net_ids.append(net_id)
+            subpool_ids.append(subpool_id)
         if result:
+            # We need a list of subnets to query for the no-NAT CIDRs,
+            # and also a list of networks that might have this extension.
+            query = BAKERY(lambda s: s.query(
+                models_v2.Subnet.id,
+                models_v2.Subnet.network_id))
+            query += lambda q: q.join(
+                models_v2.SubnetPool,
+                models_v2.SubnetPool.id ==
+                models_v2.Subnet.subnetpool_id)
+            query += lambda q: q.filter(
+                models_v2.Subnet.subnetpool_id.in_(
+                    sa.bindparam('subpool_ids', expanding=True)))
+            for sub_id, net_id in query(session).params(
+                    subpool_ids=subpool_ids).all():
+                sub_ids.append(sub_id)
+                net_ids.append(net_id)
             # query to fetch no nat cidrs extension from the networks
             if not ext_net_info:
                 ext_net_info = self._query_endpoint_ext_net_info(
