@@ -12805,6 +12805,29 @@ class TestExtensionNoNatCidrsScenarios(TestOpflexRpc, ApicAimTestCase):
         self.assertEqual(set(['10.0.1.0/24', '10.10.10.0/24']),
             set(response['vrf_subnets']))
 
+        with mock.patch.object(
+                self.driver.notifier, 'port_update',
+                autospec=True) as notifier:
+            # Test update with no nat cidrs extension
+            net = self._update(
+                'networks', net_id,
+                {'network':
+                 {'apic:no_nat_cidrs': ['20.20.20.0/24']}})['network']
+            self.assertItemsEqual(['20.20.20.0/24'],
+                net['apic:no_nat_cidrs'])
+
+            # The mechanism driver adds the bound drivers when
+            # it makes the call for the notification, so add those in.
+            port['binding:vif_details']['bound_drivers'] = {
+                '0': 'apic_aim', '1': 'apic_aim'}
+            notifier.assert_called_once_with(mock.ANY, port)
+        # Verify that the new CIDR is added, and the old one is
+        # deleted.
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host=host)
+        self.assertEqual(set(['10.0.1.0/24', '20.20.20.0/24']),
+            set(response['gbp_details']['vrf_subnets']))
+
     def test_no_nat_cidrs_external_network(self):
         # test no nat cidrs extension for external network
         ext_net = self._make_ext_network('ext-net1',
