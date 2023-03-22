@@ -1060,6 +1060,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self.aim.update(
                 aim_ctx, epg, policy_enforcement_pref=curr_masters)
 
+        # Update no-NAT CIDRs if changed.
+        curr_cidrs = current[cisco_apic.NO_NAT_CIDRS]
+        orig_cidrs = original[cisco_apic.NO_NAT_CIDRS]
+        ports_to_notify = set()
+        if curr_cidrs != orig_cidrs:
+            port_ids = self._get_non_router_ports_in_networks(
+                session, [current['id']])
+            ports_to_notify.update(port_ids)
+        if ports_to_notify:
+            self._add_postcommit_port_notifications(context._plugin_context,
+                                                    ports_to_notify)
+
         if is_ext:
             _, ext_net, ns = self._get_aim_nat_strategy(current)
             if ext_net:
@@ -1180,6 +1192,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                     aggregate=aggregate)
                     self.aim.update(aim_ctx, l3out_ext_subnet_v6, scope=scope,
                                     aggregate=aggregate)
+
+    def update_network_postcommit(self, context):
+        self._send_postcommit_notifications(context._plugin_context)
 
     def delete_network_precommit(self, context):
         current = context.current
