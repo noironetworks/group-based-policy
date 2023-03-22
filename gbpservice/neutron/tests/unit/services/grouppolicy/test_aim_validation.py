@@ -474,6 +474,7 @@ class TestNeutronMapping(AimValidationTestCase):
                                                  'name': 'ec3'},
                                                 {'app_profile_name': 'ap2',
                                                  'name': 'ec4'}],
+                  'apic:no_nat_cidrs': ['10.10.10.0/24', '20.20.20.0/24'],
                   'apic:policy_enforcement_pref': 'unenforced'}
         if preexisting_bd:
             kwargs.update(
