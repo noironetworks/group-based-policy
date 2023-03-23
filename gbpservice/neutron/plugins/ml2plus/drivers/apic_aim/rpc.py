@@ -883,7 +883,7 @@ class ApicRpcHandlerMixin(object):
             # Baked queries using in_ require sqlalchemy >=1.2.
             query = session.query(
                 models_v2.Subnet.id,
-                models_v2.Subnet.network_id))
+                models_v2.Subnet.network_id)
             query = query.join(
                 models_v2.SubnetPool,
                 models_v2.SubnetPool.id ==
