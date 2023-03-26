@@ -891,7 +891,7 @@ class ApicRpcHandlerMixin(object):
             query = query.filter(
                 models_v2.Subnet.subnetpool_id.in_(
                     subpool_ids))
-            for sub_id, net_id in query(session).all():
+            for sub_id, net_id in query.all():
                 sub_ids.append(sub_id)
                 net_ids.append(net_id)
             # query to fetch no nat cidrs extension from the networks
