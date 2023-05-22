@@ -43,10 +43,10 @@ def upgrade():
             session = sa.orm.Session(bind=bind, autocommit=True)
             data_migrations.do_apic_aim_security_group_migration(session)
         except ImportError:
-            util.warn("AIM schema present, but failed to import AIM libraries"
-                      " - SG data not migrated.")
+            util.warning("AIM schema present, but failed to import AIM"
+                        "libraries - SG data not migrated.")
         except Exception as e:
-            util.warn("Caught exception migrating SG data: %s" % e)
+            util.warning("Caught exception migrating SG data: %s" % e)
 
 
 def downgrade():

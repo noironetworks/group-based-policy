@@ -43,7 +43,7 @@ if [[ $ENABLE_NFP = True ]]; then
         # Make sure that your public interface is not attached to any bridge.
         PUBLIC_INTERFACE=
 
-        enable_plugin neutron-fwaas http://opendev.org/openstack/neutron-fwaas.git stable/train
+        enable_plugin neutron-fwaas http://opendev.org/openstack/neutron-fwaas.git train-eol
         enable_plugin neutron-lbaas https://opendev.org/openstack/neutron-lbaas.git stable/train
         enable_plugin neutron https://opendev.org/openstack/neutron.git stable/train
         enable_plugin neutron-vpnaas https://opendev.org/openstack/neutron-vpnaas.git train-eol
