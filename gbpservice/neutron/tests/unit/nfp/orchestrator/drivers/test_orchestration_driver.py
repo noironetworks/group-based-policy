@@ -11,12 +11,11 @@
 #    under the License.
 
 import uuid as pyuuid
-
+import unittest
 from unittest import mock
 
 from mock import patch
 from oslo_config import cfg
-import unittest2
 
 from gbpservice.nfp.common import constants as nfp_constants
 from gbpservice.nfp.common import exceptions
@@ -45,7 +44,7 @@ NFP_NEUTRON_NETWORK_DRIVER_CLASS_PATH = ('gbpservice.nfp.orchestrator'
 @patch(NFP_NEUTRON_NETWORK_DRIVER_CLASS_PATH +
        '.NFPNeutronNetworkDriver.__init__',
        mock.MagicMock(return_value=None))
-class OrchestrationDriverTestCase(unittest2.TestCase):
+class OrchestrationDriverTestCase(unittest.TestCase):
 
     def test_create_network_function_device(self):
         driver = orchestration_driver.OrchestrationDriver(

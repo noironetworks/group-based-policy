@@ -14,11 +14,11 @@
 import copy
 import uuid as pyuuid
 
+import unittest
 from unittest import mock
 
 from mock import patch
 from oslo_config import cfg
-import unittest2
 
 from gbpservice.nfp.lib import transport
 from gbpservice.nfp.orchestrator.db import nfp_db as nfpdb
@@ -131,7 +131,7 @@ NDO_CLASS_PATH = ('gbpservice.nfp.orchestrator'
                   '.modules.device_orchestrator')
 
 
-class NDOModuleTestCase(unittest2.TestCase):
+class NDOModuleTestCase(unittest.TestCase):
 
     @mock.patch.object(device_orchestrator, 'events_init')
     @mock.patch.object(device_orchestrator, 'rpc_init')
@@ -194,7 +194,7 @@ class NDORpcHandlerTestCase(object):
 
 @patch(NDO_CLASS_PATH + '.NDOConfiguratorRpcApi.__init__',
        mock.MagicMock(return_value=None))
-class NDORpcApiTestCase(unittest2.TestCase):
+class NDORpcApiTestCase(unittest.TestCase):
 
     def setUp(self):
         super(NDORpcApiTestCase, self).setUp()
@@ -264,7 +264,7 @@ class NDORpcApiTestCase(unittest2.TestCase):
        mock.MagicMock(return_value=orchestration_driver))
 @patch(NDO_CLASS_PATH + '.NDOConfiguratorRpcApi.__init__',
        mock.MagicMock(return_value=None))
-class DeviceOrchestratorTestCase(unittest2.TestCase):
+class DeviceOrchestratorTestCase(unittest.TestCase):
 
     def _initialize_ndo_handler(self):
         ndo_handler = device_orchestrator.DeviceOrchestrator(
@@ -272,7 +272,7 @@ class DeviceOrchestratorTestCase(unittest2.TestCase):
         self.event = DummyEvent(dummy_data, 'PENDING_CREATE')
         return ndo_handler
 
-    @unittest2.skip('skipping')
+    @unittest.skip('skipping')
     @mock.patch.object(device_orchestrator.DeviceOrchestrator,
                        'device_configuration_complete')
     def test_handle_event(self, mock_device_configuration_complete):
@@ -788,7 +788,7 @@ class DeviceOrchestratorTestCase(unittest2.TestCase):
 
 
 def main():
-    unittest2.main()
+    unittest.main()
 
 
 if __name__ == '__main__':
