@@ -258,13 +258,9 @@ class ExtensionDbMixin(object):
         db_masters = session.query(NetworkExtEpgContractMasterDb).filter(
             NetworkExtEpgContractMasterDb.network_id.in_(network_ids)).all()
 
-        query = BAKERY(lambda s: s.query(
-            NetworkExtensionNoNatCidrsDb))
-        query += lambda q: q.filter(
-            NetworkExtensionNoNatCidrsDb.network_id.in_(
-                sa.bindparam('network_ids', expanding=True)))
-        db_no_nat_cidrs = query(session).params(
-            network_ids=network_ids).all()
+        # Baked queries using in_ require sqlalchemy >=1.2.
+        db_no_nat_cidrs = session.query(NetworkExtensionNoNatCidrsDb).filter(
+            NetworkExtensionNoNatCidrsDb.network_id.in_(network_ids)).all()
 
         cidrs_by_net_id = {}
         vlans_by_net_id = {}
