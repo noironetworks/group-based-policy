@@ -357,7 +357,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                      ACTIVE_ACTIVE_AAP, EPG_SUBNET,
                                      CIDR, PROV, CONS, SVI,
                                      BGP, BGP_TYPE, ASN,
-                                     'provider:network_type'
+                                     'provider:network_type',
+                                     'apic:multi_ext_nets'
                                      )
         self.name_mapper = apic_mapper.APICNameMapper()
         self.t1_aname = self.name_mapper.project(None, 't1')
@@ -447,7 +448,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                       self.fmt)
         return self.deserialize(self.fmt, req.get_response(self.api))
 
-    def _make_ext_network(self, name, dn=None, nat_type=None, cidrs=None):
+    def _make_ext_network(self, name, dn=None, nat_type=None, cidrs=None,
+                          multi_ext_nets=False):
         kwargs = {'router:external': True}
         if dn:
             kwargs[DN] = {'ExternalNetwork': dn}
@@ -457,6 +459,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             kwargs['apic:nat_type'] = self.nat_type
         if cidrs:
             kwargs[CIDR] = cidrs
+        if multi_ext_nets:
+            kwargs['apic:multi_ext_nets'] = True
 
         return self._make_network(self.fmt, name, True,
                                   arg_list=self.extension_attributes,
@@ -4103,8 +4107,10 @@ class TestSyncState(ApicAimTestCase):
                             TestSyncState._mocked_get_statuses):
                 self._test_router('error')
 
-    def _test_external_network(self, expected_state, dn=None, msg=None):
-        net = self._make_ext_network('net1', dn=dn)
+    def _test_external_network(self, expected_state, dn=None, msg=None,
+                               multi_ext_nets=True):
+        net = self._make_ext_network('net1', dn=dn,
+                            multi_ext_nets=multi_ext_nets)
         self.assertEqual(expected_state, net['apic:synchronization_state'],
                          msg)
         net = self._show('networks', net['id'])['network']
@@ -4144,6 +4150,38 @@ class TestSyncState(ApicAimTestCase):
                         self._test_external_network(expected_status,
                                                     dn=self.dn_t1_l1_n1,
                                                     msg='%s' % a_res)
+
+    def test_external_network_multi_ext_networks(self):
+        ext_net = aim_resource.ExternalNetwork.from_dn(self.dn_t1_l1_n1)
+        ext_net.monitored = True
+        aim_ctx = aim_context.AimContext(self.db_session)
+        self.aim_mgr.create(aim_ctx, ext_net)
+
+        with mock.patch('aim.aim_manager.AimManager.get_status',
+                        TestSyncState._get_synced_status):
+            with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                            TestSyncState._mocked_get_statuses):
+                self._test_external_network('synced',
+                                            dn=self.dn_t1_l1_n1,
+                                            multi_ext_nets=True)
+
+        for expected_status, status_func in [
+                ('build', TestSyncState._get_pending_status_for_type),
+                ('error', TestSyncState._get_failed_status_for_type)]:
+            for a_res in [aim_resource.ExternalNetwork,
+                          aim_resource.EndpointGroup,
+                          aim_resource.BridgeDomain,
+                          aim_resource.VRF]:
+                def get_status(self, context, resource, create_if_absent=True):
+                    return status_func(context, resource, a_res)
+                with mock.patch('aim.aim_manager.AimManager.get_status',
+                                get_status):
+                    with mock.patch('aim.aim_manager.AimManager.get_statuses',
+                                    TestSyncState._mocked_get_statuses):
+                        self._test_external_network(expected_status,
+                                                    dn=self.dn_t1_l1_n1,
+                                                    msg='%s' % a_res,
+                                                    multi_ext_nets=True)
 
     def test_unmanaged_external_network(self):
         self._test_external_network('build')
@@ -7252,6 +7290,94 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertFalse(extn.get_network_extn_db(session, net1['id']))
         self.assertFalse(extn.get_network_extn_db(session, net2['id']))
 
+    def test_external_network_with_multi_nets_lifecycle(self):
+        session = db_api.get_reader_session()
+        extn = extn_db.ExtensionDbMixin()
+
+        # create with APIC DN, nat_typeand default CIDR
+        net1 = self._make_ext_network('net1',
+                                      dn=self.dn_t1_l1_n1,
+                                      nat_type='',
+                                      multi_ext_nets=True)
+
+        self.assertEqual(self.dn_t1_l1_n1,
+                         net1[DN]['ExternalNetwork'])
+        self.assertEqual('', net1['apic:nat_type'])
+        self.assertEqual(['0.0.0.0/0'], net1[CIDR])
+
+        net1 = self._list(
+            'networks', query_params=('id=%s' % net1['id']))['networks'][0]
+        self.assertEqual(self.dn_t1_l1_n1,
+                         net1[DN]['ExternalNetwork'])
+        self.assertEqual('', net1['apic:nat_type'])
+        self.assertEqual(['0.0.0.0/0'], net1[CIDR])
+
+        # create with nat_type set to default, and CIDR specified
+        net2 = self._make_ext_network('net2',
+                                      dn=self.dn_t1_l2_n2,
+                                      cidrs=['5.5.5.0/24', '10.20.0.0/16'],
+                                      multi_ext_nets=True)
+        self.assertEqual('distributed', net2['apic:nat_type'])
+        self.assertEqual(['10.20.0.0/16', '5.5.5.0/24'],
+                         sorted(net2[CIDR]))
+
+        net2 = self._list(
+            'networks', query_params=('id=%s' % net2['id']))['networks'][0]
+        self.assertEqual('distributed', net2['apic:nat_type'])
+        self.assertEqual(['10.20.0.0/16', '5.5.5.0/24'],
+                         sorted(net2[CIDR]))
+
+        # update CIDR
+        net2 = self._update('networks', net2['id'],
+            {'network': {CIDR: ['20.20.30.0/24']}})['network']
+        self.assertEqual('distributed', net2['apic:nat_type'])
+        self.assertEqual(['20.20.30.0/24'], net2[CIDR])
+
+        net2 = self._list(
+            'networks', query_params=('id=%s' % net2['id']))['networks'][0]
+        self.assertEqual('distributed', net2['apic:nat_type'])
+        self.assertEqual(['20.20.30.0/24'], net2[CIDR])
+
+        net2 = self._update('networks', net2['id'],
+            {'network': {CIDR: []}})['network']
+        self.assertEqual([], net2[CIDR])
+
+        net2 = self._list(
+            'networks', query_params=('id=%s' % net2['id']))['networks'][0]
+        self.assertEqual([], net2[CIDR])
+
+        # create without APIC DN -> this is an unmanaged network
+        net3 = self._make_ext_network('net3')
+        self.assertTrue(DN not in net3 or 'ExternalNetwork' not in net3[DN])
+        self.assertFalse('apic:nat_type' in net3)
+        self.assertFalse(CIDR in net3)
+
+        net3 = self._list(
+            'networks', query_params=('id=%s' % net3['id']))['networks'][0]
+        self.assertTrue(DN not in net3 or 'ExternalNetwork' not in net3[DN])
+        self.assertFalse('apic:nat_type' in net3)
+        self.assertFalse(CIDR in net3)
+
+        # updating CIDR of unmanaged network is no-op
+        net3 = self._update('networks', net3['id'],
+            {'network': {CIDR: ['30.30.20.0/24']}})['network']
+        self.assertTrue(DN not in net3 or 'ExternalNetwork' not in net3[DN])
+        self.assertFalse('apic:nat_type' in net3)
+        self.assertFalse(CIDR in net3)
+
+        net3 = self._list(
+            'networks', query_params=('id=%s' % net3['id']))['networks'][0]
+        self.assertTrue(DN not in net3 or 'ExternalNetwork' not in net3[DN])
+        self.assertFalse('apic:nat_type' in net3)
+        self.assertFalse(CIDR in net3)
+
+        # delete the external networks
+        self._delete('networks', net2['id'])
+        self._delete('networks', net1['id'])
+
+        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
+        self.assertFalse(extn.get_network_extn_db(session, net2['id']))
+
     def test_external_network_fail(self):
         # APIC DN not specified
         resp = self._create_network(self.fmt, 'net1', True,
@@ -8023,11 +8149,11 @@ class TestExternalConnectivityBase(object):
         self.mock_ns.create_l3outside.assert_called_once_with(
             mock.ANY,
             aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'),
-            vmm_domains=[])
+            vmm_domains=[], epg_name=None)
         a_ext_net = aim_resource.ExternalNetwork(
             tenant_name=self.t1_aname, l3out_name='l1', name='n1')
         self.mock_ns.create_external_network.assert_called_once_with(
-            mock.ANY, a_ext_net)
+            mock.ANY, a_ext_net, epg_name=None)
         self.mock_ns.update_external_cidrs.assert_called_once_with(
             mock.ANY, a_ext_net, ['20.10.0.0/16', '4.4.4.0/24'])
         ext_epg = aim_resource.EndpointGroup(
@@ -8076,7 +8202,7 @@ class TestExternalConnectivityBase(object):
         self._make_ext_network('net2',
                                dn=self.dn_t1_l1_n1)
         self.mock_ns.create_external_network.assert_called_once_with(
-            mock.ANY, a_ext_net)
+            mock.ANY, a_ext_net, epg_name=None)
         self.mock_ns.update_external_cidrs.assert_called_once_with(
             mock.ANY, a_ext_net, ['0.0.0.0/0'])
         self._validate()
@@ -9148,11 +9274,11 @@ class TestExternalConnectivityBase(object):
         self.mock_ns.create_l3outside.assert_called_once_with(
             mock.ANY,
             aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'),
-            vmm_domains=vmm_domains)
+            vmm_domains=vmm_domains, epg_name=None)
         a_ext_net = aim_resource.ExternalNetwork(
             tenant_name=self.t1_aname, l3out_name='l1', name='n1')
         self.mock_ns.create_external_network.assert_called_once_with(
-            mock.ANY, a_ext_net)
+            mock.ANY, a_ext_net, epg_name=None)
         self.mock_ns.update_external_cidrs.assert_called_once_with(
             mock.ANY, a_ext_net, ['20.10.0.0/16', '4.4.4.0/24'])
         ext_epg = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup,
@@ -9201,17 +9327,17 @@ class TestExternalConnectivityBase(object):
         a_ext_net = aim_resource.ExternalNetwork(
             tenant_name=self.t1_aname, l3out_name='l1', name='n1')
         self.mock_ns.create_l3outside.assert_called_once_with(
-            mock.ANY, a_l3out, vmm_domains=[])
+            mock.ANY, a_l3out, vmm_domains=[], epg_name=None)
         self.mock_ns.create_external_network.assert_called_once_with(
-            mock.ANY, a_ext_net)
+            mock.ANY, a_ext_net, epg_name=None)
 
         # create second network that shares APIC l3out and external-network
         self.mock_ns.reset_mock()
         net2 = self._make_ext_network('net2', dn=self.dn_t1_l1_n1)
         self.mock_ns.create_l3outside.assert_called_once_with(
-            mock.ANY, a_l3out, vmm_domains=[])
+            mock.ANY, a_l3out, vmm_domains=[], epg_name=None)
         self.mock_ns.create_external_network.assert_called_once_with(
-            mock.ANY, a_ext_net)
+            mock.ANY, a_ext_net, epg_name=None)
 
         # create third network that shares APIC l3out only
         self.mock_ns.reset_mock()
@@ -9220,9 +9346,9 @@ class TestExternalConnectivityBase(object):
         a_ext_net3 = aim_resource.ExternalNetwork(
             tenant_name=self.t1_aname, l3out_name='l1', name='n2')
         self.mock_ns.create_l3outside.assert_called_once_with(
-            mock.ANY, a_l3out, vmm_domains=[])
+            mock.ANY, a_l3out, vmm_domains=[], epg_name=None)
         self.mock_ns.create_external_network.assert_called_once_with(
-            mock.ANY, a_ext_net3)
+            mock.ANY, a_ext_net3, epg_name=None)
 
         # delete net2
         self.mock_ns.reset_mock()

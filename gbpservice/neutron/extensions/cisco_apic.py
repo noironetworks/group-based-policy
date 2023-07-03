@@ -54,6 +54,7 @@ POLICY_ENFORCEMENT_PREF = 'apic:policy_enforcement_pref'
 SNAT_SUBNET_ONLY = 'apic:snat_subnet_only'
 EPG_SUBNET = 'apic:epg_subnet'
 NO_NAT_CIDRS = 'apic:no_nat_cidrs'
+MULTI_EXT_NETS = 'apic:multi_ext_nets'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -360,6 +361,11 @@ NET_ATTRIBUTES = {
         'is_visible': True, 'default': None,
         'convert_to': convert_apic_none_to_empty_list,
         'validate': {'type:list_of_unique_strings': None},
+    },
+    MULTI_EXT_NETS: {
+        'allow_post': True, 'allow_put': False,
+        'is_visible': True, 'default': False,
+        'convert_to': conv.convert_to_boolean,
     },
 }
 
