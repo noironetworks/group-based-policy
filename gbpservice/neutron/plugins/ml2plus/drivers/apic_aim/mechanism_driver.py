@@ -808,6 +808,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         aim_ctx = aim_context.AimContext(session)
 
         is_ext = self._is_external(current)
+        multi_ext_nets_enb = self._is_multi_ext_nets_enabled(current)
+        wanted_epg_name = current['id'] if multi_ext_nets_enb else None
         is_svi = self._is_svi(current)
 
         if ((current[cisco_apic.EXTRA_PROVIDED_CONTRACTS] or
@@ -829,17 +831,28 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
             if not ext_net:
                 return  # Unmanaged external network
+
+            other_nets = self.get_network_ids_and_multi_by_l3out_dn(
+                            session, l3out.dn)
+            other_nets = [value for value in other_nets
+                          if value[0] != current['id']]
+            if len(other_nets) > 0 and other_nets[0][1] != multi_ext_nets_enb:
+                raise exceptions.MultiExtNetworkMixing()
+
             domains = self._get_vmm_domains(aim_ctx, ns)
-            ns.create_l3outside(aim_ctx, l3out, vmm_domains=domains)
-            ns.create_external_network(aim_ctx, ext_net)
+            ns.create_l3outside(aim_ctx, l3out, vmm_domains=domains,
+                epg_name=wanted_epg_name)
+            ns.create_external_network(aim_ctx, ext_net,
+                epg_name=wanted_epg_name)
             # Get external CIDRs for all external networks that share
             # this APIC external network.
             cidrs = sorted(
                 self.get_external_cidrs_by_ext_net_dn(
-                    session, ext_net.dn, lock_update=True))
+                    session, ext_net.dn))
             ns.update_external_cidrs(aim_ctx, ext_net, cidrs)
 
-            for resource in ns.get_l3outside_resources(aim_ctx, l3out):
+            for resource in ns.get_l3outside_resources(aim_ctx, l3out,
+                epg_name=wanted_epg_name):
                 if isinstance(resource, aim_resource.BridgeDomain):
                     bd = resource
                 elif isinstance(resource, aim_resource.EndpointGroup):
@@ -1206,21 +1219,33 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
             if not ext_net:
                 return  # Unmanaged external network
-            # REVISIT: lock_update=True is needed to handle races. Find
-            # alternative solutions since Neutron discourages using such
-            # queries.
-            other_nets = set(
-                self.get_network_ids_by_ext_net_dn(
-                    session, ext_net.dn, lock_update=True))
-            other_nets.discard(current['id'])
-            if not other_nets:
-                ns.delete_external_network(aim_ctx, ext_net)
-            other_nets = set(
-                self.get_network_ids_by_l3out_dn(
-                    session, l3out.dn, lock_update=True))
-            other_nets.discard(current['id'])
-            if not other_nets:
-                ns.delete_l3outside(aim_ctx, l3out)
+            multi_ext_nets_enb = self._is_multi_ext_nets_enabled(current)
+
+            if multi_ext_nets_enb:
+                cidrs_to_delete = self.get_external_cidrs_by_net_id(
+                    session, current['id'])
+                ns.delete_external_network(aim_ctx, ext_net,
+                        epg_name=current['id'],
+                        cidrs=cidrs_to_delete)
+                ns.delete_l3outside(aim_ctx, l3out, epg_name=current['id'],
+                                    cidrs=cidrs_to_delete)
+            else:
+                # REVISIT: lock_update=True is needed to handle races. Find
+                # alternative solutions since Neutron discourages using such
+                # queries.
+                other_nets = set(
+                    self.get_network_ids_by_ext_net_dn(
+                        session, ext_net.dn, lock_update=True))
+                other_nets.discard(current['id'])
+                if not other_nets:
+                    ns.delete_external_network(aim_ctx, ext_net)
+                other_nets = set(
+                    self.get_network_ids_by_l3out_dn(
+                        session, l3out.dn, lock_update=True))
+                other_nets.discard(current['id'])
+                if not other_nets:
+                    ns.delete_l3outside(aim_ctx, l3out)
+
         elif self._is_svi(current):
             l3out, ext_net, _ = self._get_aim_external_objects(current)
             aim_l3out = self.aim.get(aim_ctx, l3out)
@@ -4714,6 +4739,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _is_bgp_enabled(self, network):
         return network.get(cisco_apic.BGP)
 
+    def _is_multi_ext_nets_enabled(self, network):
+        return network.get(cisco_apic.MULTI_EXT_NETS)
+
     def _nat_type_to_strategy(self, nat_type):
         ns_cls = nat_strategy.DistributedNatStrategy
         if nat_type == '':
@@ -7076,6 +7104,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             cisco_apic.NESTED_DOMAIN_INFRA_VLAN: None,
             cisco_apic.NESTED_DOMAIN_SERVICE_VLAN: None,
             cisco_apic.NESTED_DOMAIN_NODE_NETWORK_VLAN: None,
+            cisco_apic.MULTI_EXT_NETS: False,
         }
         if net_db.aim_mapping and net_db.aim_mapping.get(cisco_apic.BD):
             res_dict.update({cisco_apic.BD: net_db.aim_mapping[cisco_apic.BD]})
