@@ -75,6 +75,7 @@ class NetworkExtensionDb(model_base.BASEV2):
     nested_domain_infra_vlan = sa.Column(sa.Integer, nullable=True)
     nested_domain_service_vlan = sa.Column(sa.Integer, nullable=True)
     nested_domain_node_network_vlan = sa.Column(sa.Integer, nullable=True)
+    multi_ext_nets = sa.Column(sa.Boolean, default=False, nullable=False)
 
 
 class NetworkExtensionCidrDb(model_base.BASEV2):
@@ -333,6 +334,7 @@ class ExtensionDbMixin(object):
                 'policy_enforcement_pref']
             net_res[cisco_apic.NO_NAT_CIDRS] = [
                 c.cidr for c in db_no_nat_cidrs]
+            net_res[cisco_apic.MULTI_EXT_NETS] = db_obj['multi_ext_nets']
         if net_res.get(cisco_apic.EXTERNAL_NETWORK):
             net_res[cisco_apic.EXTERNAL_CIDRS] = [c.cidr for c in db_cidrs]
         return net_res
@@ -381,6 +383,8 @@ class ExtensionDbMixin(object):
             if cisco_apic.POLICY_ENFORCEMENT_PREF in res_dict:
                 db_obj['policy_enforcement_pref'] = res_dict[
                         cisco_apic.POLICY_ENFORCEMENT_PREF]
+            if cisco_apic.MULTI_EXT_NETS in res_dict:
+                db_obj['multi_ext_nets'] = res_dict[cisco_apic.MULTI_EXT_NETS]
             session.add(db_obj)
 
             if cisco_apic.EXTERNAL_CIDRS in res_dict:
@@ -477,6 +481,15 @@ class ExtensionDbMixin(object):
 
         return [c[0] for c in cidrs]
 
+    def get_external_cidrs_by_net_id(self, session, nid):
+        query = BAKERY(lambda s: s.query(
+            NetworkExtensionCidrDb.cidr))
+        query += lambda q: q.filter_by(
+            network_id=sa.bindparam('nid'))
+        cidrs = query(session).params(nid=nid)
+
+        return [i[0] for i in cidrs]
+
     def get_subnet_extn_db(self, session, subnet_id):
         query = BAKERY(lambda s: s.query(
             SubnetExtensionDb))
@@ -550,6 +563,17 @@ class ExtensionDbMixin(object):
             else:
                 c_contracts.append(db_contract['contract_name'])
         return attr_dict
+
+    def get_network_ids_and_multi_by_l3out_dn(self, session, dn):
+        query = BAKERY(lambda s: s.query(
+            NetworkExtensionDb.network_id,
+            NetworkExtensionDb.multi_ext_nets))
+        query += lambda q: q.filter(
+            NetworkExtensionDb.external_network_dn.like(
+                sa.bindparam('dn') + "/%"))
+        ids_and_multis = query(session).params(dn=dn)
+
+        return [(i[0], i[1]) for i in ids_and_multis]
 
     def _update_list_attr(self, session, db_model, column,
                           new_values, **filters):
