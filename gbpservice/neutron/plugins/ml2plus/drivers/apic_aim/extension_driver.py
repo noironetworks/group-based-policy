@@ -137,6 +137,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         is_bgp_enabled = data.get(cisco_apic.BGP, False)
         bgp_type = data.get(cisco_apic.BGP_TYPE, "default_export")
         asn = data.get(cisco_apic.BGP_ASN, "0")
+        use_multi_ext_nets = data.get(cisco_apic.MULTI_EXT_NETS, False)
         self.validate_bgp_params(data)
         res_dict = {cisco_apic.SVI: is_svi,
                     cisco_apic.BGP: is_bgp_enabled,
@@ -162,6 +163,7 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     data.get(cisco_apic.POLICY_ENFORCEMENT_PREF, "unenforced"),
                     cisco_apic.NO_NAT_CIDRS:
                     data.get(cisco_apic.NO_NAT_CIDRS),
+                    cisco_apic.MULTI_EXT_NETS: use_multi_ext_nets,
                     }
         if cisco_apic.VLANS_LIST in (data.get(
                 cisco_apic.NESTED_DOMAIN_ALLOWED_VLANS) or {}):
@@ -225,8 +227,9 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 cisco_apic.EXTRA_CONSUMED_CONTRACTS,
                 cisco_apic.EPG_CONTRACT_MASTERS,
                 cisco_apic.POLICY_ENFORCEMENT_PREF,
-                cisco_apic.NO_NAT_CIDRS]
-        if not(set(update_attrs) & set(data.keys())):
+                cisco_apic.NO_NAT_CIDRS,
+                cisco_apic.MULTI_EXT_NETS]
+        if not (set(update_attrs) & set(data.keys())):
             return
 
         res_dict = {}
@@ -246,7 +249,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 cisco_apic.EXTRA_CONSUMED_CONTRACTS,
                 cisco_apic.EPG_CONTRACT_MASTERS,
                 cisco_apic.POLICY_ENFORCEMENT_PREF,
-                cisco_apic.NO_NAT_CIDRS]
+                cisco_apic.NO_NAT_CIDRS,
+                cisco_apic.MULTI_EXT_NETS]
         for e_k in ext_keys:
             if e_k in data:
                 res_dict.update({e_k: data[e_k]})

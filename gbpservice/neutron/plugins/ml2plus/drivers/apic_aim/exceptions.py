@@ -153,3 +153,8 @@ class InvalidNetworkForErspanSession(exceptions.BadRequest):
 
 class SnatPoolCannotBeUsedForGatewayIp(exceptions.BadRequest):
     message = _("Snat only subnet cannot be used to assign network gateway.")
+
+
+class MultiExtNetworkMixing(exceptions.BadRequest):
+    message = _("All external networks associated with a l3out must "
+                "use the same apic:multi_ext_nets setting. ")
