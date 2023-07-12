@@ -72,8 +72,8 @@ def upgrade():
             session = sa.orm.Session(bind=bind, autocommit=True)
             data_migrations.do_apic_aim_persist_migration(session)
         except ImportError:
-            util.warn("AIM schema present, but failed to import AIM libraries"
-                      " - data not migrated.")
+            util.warning("AIM schema present, but failed to import AIM"
+                        "libraries - data not migrated.")
 
     op.drop_table('apic_aim_addr_scope_extensions')
 
