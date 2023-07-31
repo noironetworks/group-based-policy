@@ -448,6 +448,18 @@ class ExtensionDbMixin(object):
 
         return [i[0] for i in ids]
 
+    def get_network_ids_by_l3out_dn_filter_multi(self, session, dn,
+                                              wanted_multi_val=False):
+        query = BAKERY(lambda s: s.query(
+            NetworkExtensionDb.network_id,
+            NetworkExtensionDb.multi_ext_nets))
+        query += lambda q: q.filter(
+            NetworkExtensionDb.external_network_dn.like(
+                sa.bindparam('dn') + "/%"))
+        ids = query(session).params(dn=dn)
+
+        return [i[0] for i in ids if i[1] is wanted_multi_val]
+
     def get_svi_network_ids_by_l3out_dn(self, session, dn, lock_update=False):
         query = BAKERY(lambda s: s.query(
             NetworkExtensionDb.network_id))
