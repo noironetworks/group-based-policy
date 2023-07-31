@@ -832,14 +832,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
             if not ext_net:
                 return  # Unmanaged external network
-
-            other_nets = self.get_network_ids_and_multi_by_l3out_dn(
-                            session, l3out.dn)
-            other_nets = [value for value in other_nets
-                          if value[0] != current['id']]
-            if len(other_nets) > 0 and other_nets[0][1] != multi_ext_nets_enb:
-                raise exceptions.MultiExtNetworkMixing()
-
             domains = self._get_vmm_domains(aim_ctx, ns)
             ns.create_l3outside(aim_ctx, l3out, vmm_domains=domains,
                 epg_name=wanted_epg_name)
@@ -1234,18 +1226,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # REVISIT: lock_update=True is needed to handle races. Find
                 # alternative solutions since Neutron discourages using such
                 # queries.
+                cidrs_to_delete = self.get_external_cidrs_by_net_id(
+                    session, current['id'])
                 other_nets = set(
                     self.get_network_ids_by_ext_net_dn(
                         session, ext_net.dn, lock_update=True))
                 other_nets.discard(current['id'])
                 if not other_nets:
-                    ns.delete_external_network(aim_ctx, ext_net)
+                    ns.delete_external_network(aim_ctx, ext_net,
+                                               cidrs=cidrs_to_delete)
                 other_nets = set(
-                    self.get_network_ids_by_l3out_dn(
-                        session, l3out.dn, lock_update=True))
+                    self.get_network_ids_by_l3out_dn_filter_multi(
+                        session, l3out.dn, False))
                 other_nets.discard(current['id'])
                 if not other_nets:
-                    ns.delete_l3outside(aim_ctx, l3out)
+                    ns.delete_l3outside(aim_ctx, l3out,
+                                        cidrs=cidrs_to_delete)
 
         elif self._is_svi(current):
             l3out, ext_net, _ = self._get_aim_external_objects(current)
