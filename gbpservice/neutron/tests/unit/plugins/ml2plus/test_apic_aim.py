@@ -8270,11 +8270,13 @@ class TestExternalConnectivityBase(object):
         self._delete('networks', net1['id'])
         self.mock_ns.delete_l3outside.assert_called_once_with(
             mock.ANY,
-            aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'))
+            aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1'),
+            cidrs=['33.33.33.0/30'])
         self.mock_ns.delete_external_network.assert_called_once_with(
             mock.ANY,
             aim_resource.ExternalNetwork(
-                tenant_name=self.t1_aname, l3out_name='l1', name='n1'))
+                tenant_name=self.t1_aname, l3out_name='l1', name='n1'),
+            cidrs=['33.33.33.0/30'])
 
         # create with default CIDR
         self.mock_ns.reset_mock()
@@ -9445,15 +9447,15 @@ class TestExternalConnectivityBase(object):
         self._delete('networks', net1['id'])
         self.mock_ns.delete_l3outside.assert_not_called()
         self.mock_ns.delete_external_network.assert_called_once_with(
-            mock.ANY, a_ext_net)
+            mock.ANY, a_ext_net, cidrs=['0.0.0.0/0'])
 
         # delete net3
         self.mock_ns.reset_mock()
         self._delete('networks', net3['id'])
         self.mock_ns.delete_l3outside.assert_called_once_with(
-            mock.ANY, a_l3out)
+            mock.ANY, a_l3out, cidrs=['0.0.0.0/0'])
         self.mock_ns.delete_external_network.assert_called_once_with(
-            mock.ANY, a_ext_net3)
+            mock.ANY, a_ext_net3, cidrs=['0.0.0.0/0'])
 
     def test_shared_l3out_external_subnet_overlap(self):
         net1 = self._make_ext_network('net1', dn=self.dn_t1_l1_n1)
