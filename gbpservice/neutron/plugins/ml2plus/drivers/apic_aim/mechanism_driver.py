@@ -3614,9 +3614,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             sg_ports = query(session).params(
                 sg_id=sg_rule['remote_group_id']).all()
 
+            ip_version = 0
+            if sg_rule['ethertype'] == 'IPv4':
+                ip_version = 4
+            elif sg_rule['ethertype'] == 'IPv6':
+                ip_version = 6
+
             for sg_port in sg_ports:
                 for fixed_ip in sg_port['fixed_ips']:
-                    remote_ips.append(fixed_ip['ip_address'])
+                    if ip_version == netaddr.IPAddress(
+                        fixed_ip['ip_address']).version:
+                        remote_ips.append(fixed_ip['ip_address'])
 
             remote_group_id = sg_rule['remote_group_id']
         else:
