@@ -15,6 +15,7 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/rocky
+            voting: false
         - openstack-tox-py27:
             required-projects:
               - name: openstack/requirements
@@ -24,6 +25,7 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/rocky
+            voting: false
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -36,6 +38,7 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/rocky
+            voting: false
         - openstack-tox-py27:
             required-projects:
               - name: openstack/requirements
@@ -45,3 +48,4 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/rocky
+            voting: false
