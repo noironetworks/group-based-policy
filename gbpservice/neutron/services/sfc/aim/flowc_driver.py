@@ -135,8 +135,14 @@ class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
             return classifier_ids
 
     @registry.receives(resources.NETWORK, [events.PRECOMMIT_DELETE])
-    def _handle_network_delete(self, rtype, event, trigger, context,
-                               network_id, **kwargs):
+    def _handle_network_delete(self, rtype, event, trigger, **kwargs):
+        if 'payload' in kwargs:
+            payload = kwargs['payload']
+            context = payload.context
+            network_id = payload.resource_id
+        else:
+            context = kwargs['context']
+            network_id = kwargs['network_id']
         flc_ids = self._get_classifiers_by_network_id(context, network_id)
         if flc_ids:
             # TODO(ivar): instead of raising, we could try deleting the flow

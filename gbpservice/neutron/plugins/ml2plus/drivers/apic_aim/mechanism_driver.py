@@ -1999,8 +1999,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self.aim.update(aim_ctx, vrf, display_name=dname)
 
     @registry.receives(resources.ROUTER, [events.PRECOMMIT_CREATE])
-    def _create_router_precommit(self, resource, event, trigger, context,
-                                 router, router_id, router_db):
+    def _create_router_precommit(self, resource, event, trigger, **kwargs):
+        if 'payload' in kwargs:
+            payload = kwargs['payload']
+            context = payload.context
+            router = payload.states[0]
+            router_id = payload.resource_id
+        else:
+            context = kwargs.get('context')
+            router = kwargs.get('router')
+            router_id = kwargs.get('router_id')
         LOG.debug("APIC AIM MD creating router: %s", router)
 
         session = context.session
@@ -2129,8 +2137,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self._add_postcommit_port_notifications(context, affected_port_ids)
 
     @registry.receives(resources.ROUTER, [events.PRECOMMIT_DELETE])
-    def _delete_router_precommit(self, resource, event, trigger, context,
-                                 router_db, router_id):
+    def _delete_router_precommit(self, resource, event, trigger, **kwargs):
+        if 'payload' in kwargs:
+            payload = kwargs['payload']
+            context = payload.context
+            router_db = payload.states[0]
+            router_id = payload.resource_id
+        else:
+            context = kwargs.get('context')
+            router_db = kwargs.get('router_db')
+            router_id = kwargs.get('router_id')
         LOG.debug("APIC AIM MD deleting router: %s", router_id)
 
         session = context.session
@@ -3184,9 +3200,24 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     # orig_binding and new_binding kwargs, and it is generated with
     # those args from _commit_port_binding.
     @registry.receives(resources.PORT, [events.BEFORE_UPDATE])
-    def _before_update_port(self, resource, event, trigger, context,
-                            port, original_port,
-                            orig_binding=None, new_binding=None):
+    def _before_update_port(self, resource, event, trigger, **kwargs):
+        orig_binding = None
+        new_binding = None
+        if 'payload' in kwargs:
+            payload = kwargs['payload']
+            context = payload.context
+            original_port = payload.states[0]
+            port = payload.states[1]
+            if payload.metadata:
+                orig_binding = payload.metadata['orig_binding']
+                new_binding = payload.metadata['new_binding']
+        else:
+            context = kwargs.get('context')
+            port = kwargs.get('port')
+            original_port = kwargs.get('original_port')
+            orig_binding = kwargs.get('orig_binding')
+            new_binding = kwargs.get('new_binding')
+
         if self._is_port_bound(original_port) and 'fixed_ips' in port:
             # When a bound port is updated with a subnet, if the port
             # is on a SVI network, we need to ensure that the SVI ports

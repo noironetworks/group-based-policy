@@ -899,8 +899,11 @@ class SfcAIMDriver(SfcAIMDriverBase):
     # layer (can't delete a flowclassifier if in use).
     @registry.receives(constants.GBP_FLOW_CLASSIFIER,
                        [events.PRECOMMIT_CREATE, events.PRECOMMIT_UPDATE])
-    def _handle_flow_classifier(self, rtype, event, trigger, driver_context,
-                                **kwargs):
+    def _handle_flow_classifier(self, rtype, event, trigger, **kwargs):
+        if 'payload' in kwargs:
+            driver_context = kwargs['payload'].context
+        else:
+            driver_context = kwargs.get('driver_context')
         if event == events.PRECOMMIT_UPDATE:
             if self._should_regenerate_flowc(driver_context):
                 for chain in self._get_chains_by_classifier_id(
@@ -912,8 +915,11 @@ class SfcAIMDriver(SfcAIMDriverBase):
                     self.update_port_chain_precommit(c_ctx, remap=True)
 
     @registry.receives(constants.GBP_PORT, [events.PRECOMMIT_UPDATE])
-    def _handle_port_bound(self, rtype, event, trigger, driver_context,
-                           **kwargs):
+    def _handle_port_bound(self, rtype, event, trigger, **kwargs):
+        if 'payload' in kwargs:
+            driver_context = kwargs['payload'].context
+        else:
+            driver_context = kwargs.get('driver_context')
         if event == events.PRECOMMIT_UPDATE:
             context = driver_context
             p_ctx = driver_context._plugin_context
@@ -949,8 +955,13 @@ class SfcAIMDriver(SfcAIMDriverBase):
 
     @registry.receives(constants.GBP_NETWORK_EPG, [events.PRECOMMIT_UPDATE])
     @registry.receives(constants.GBP_NETWORK_VRF, [events.PRECOMMIT_UPDATE])
-    def _handle_net_gbp_change(self, rtype, event, trigger, context,
-                               network_id, **kwargs):
+    def _handle_net_gbp_change(self, rtype, event, trigger, **kwargs):
+        if 'payload' in kwargs:
+            context = kwargs['payload'].context
+            network_id = kwargs['payload'].metadata['network_id']
+        else:
+            context = kwargs.get('context')
+            network_id = kwargs.get('network_id')
         chains = {}
         ppg_ids = self._get_group_ids_by_network_ids(context, [network_id])
         flowc_ids = self.aim_flowc._get_classifiers_by_network_id(
@@ -969,8 +980,17 @@ class SfcAIMDriver(SfcAIMDriverBase):
             self._validate_port_chain(context, chain, flowcs, ppgs)
 
     @registry.receives(constants.GBP_NETWORK_LINK, [events.PRECOMMIT_UPDATE])
-    def _handle_net_link_change(self, rtype, event, trigger, context,
-                                networks_map, host_links, host, **kwargs):
+    def _handle_net_link_change(self, rtype, event, trigger, **kwargs):
+        if 'payload' in kwargs:
+            context = kwargs['payload'].context
+            networks_map = kwargs['payload'].metadata['networks_map']
+            host_links = kwargs['payload'].metadata['host_links']
+            host = kwargs['payload'].metadata['host']
+        else:
+            context = kwargs.get('context')
+            networks_map = kwargs.get('networks_map')
+            host_links = kwargs.get('host_links')
+            host = kwargs.get('host')
         aim_ctx = aim_context.AimContext(db_session=context.session)
         cdis = self.aim.find(aim_ctx, aim_sg.ConcreteDeviceInterface,
                              host=host)
