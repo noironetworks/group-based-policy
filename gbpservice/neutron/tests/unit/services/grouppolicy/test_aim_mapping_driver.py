@@ -163,8 +163,10 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
             ml2_options=ml2_opts, l3_plugin=l3_plugin,
             sc_plugin=sc_plugin, qos_plugin=qos_plugin,
             trunk_plugin=trunk_plugin)
-        self.db_session = db_api.get_writer_session()
-        self.initialize_db_config(self.db_session)
+        ctx = nctx.get_admin_context()
+        with db_api.CONTEXT_WRITER.using(ctx):
+            self.db_session = ctx.session
+            self.initialize_db_config(self.db_session)
         self.l3_plugin = directory.get_plugin(pconst.L3)
         config.cfg.CONF.set_override('network_vlan_ranges',
                                      ['physnet1:1000:1099'],
@@ -839,7 +841,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
 
     def _get_nsp_ptg_fip_mapping(self, ptg_id):
         ctx = nctx.get_admin_context()
-        with ctx.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(ctx):
             return (ctx.session.query(
                         nsp_manager.ServicePolicyPTGFipMapping).
                     filter_by(policy_target_group_id=ptg_id).
@@ -1609,15 +1611,15 @@ class TestLegacyL3Policy(TestL3Policy):
                 aimd.AIMMappingDriver._create_per_l3p_implicit_contracts)
 
         def _create_per_l3p_implicit_contracts(self):
-            session = nctx.get_admin_context().session
-            with session.begin(subtransactions=True):
+            ctx = nctx.get_admin_context()
+            with db_api.CONTEXT_WRITER.using(ctx):
                 l3p_db = group_policy_mapping_db.L3PolicyMapping(
                         id='1234', tenant_id='some_tenant',
                         name='test-l3p', description='test-desc',
                         ip_version=4, ip_pool='10.0.0.0/8',
                         subnet_prefix_length=24, shared=False)
-                session.add(l3p_db)
-                session.flush()
+                ctx.session.add(l3p_db)
+                ctx.session.flush()
             orig_create_per_l3p_implicit_contracts(self)
             aimd.AIMMappingDriver._create_per_l3p_implicit_contracts = (
                     orig_create_per_l3p_implicit_contracts)
@@ -2386,47 +2388,50 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
             num_address_families=len(list(self.ip_dict.keys())))
 
         ptg_name = ptg['name']
-        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg_id, ptg_name,
-            context=self._neutron_context)
-        aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
-        aim_app_profile_name = self.mech_driver.ap_name
-        aim_app_profiles = self.aim_mgr.find(
-            self._aim_context, aim_resource.ApplicationProfile,
-            tenant_name=aim_tenant_name, name=aim_app_profile_name)
-        self.assertEqual(1, len(aim_app_profiles))
-        req = self.new_show_request('networks', l2p['network_id'],
-                                    fmt=self.fmt)
-        net = self.deserialize(self.fmt,
-                               req.get_response(self.api))['network']
-        bd = self.aim_mgr.get(
-            self._aim_context, aim_resource.BridgeDomain.from_dn(
-                net[DN][BD]))
-        aim_epgs = self.aim_mgr.find(
-            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
-        self.assertEqual(1, len(aim_epgs))
-        self.assertEqual(aim_epg_name, aim_epgs[0].name)
-        self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
-        self.assertEqual(bd.name, aim_epgs[0].bd_name)
+        with self.db_session.begin():
+            aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+                self._neutron_context.session, ptg_id, ptg_name,
+                context=self._neutron_context)
+            aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
+            aim_app_profile_name = self.mech_driver.ap_name
+            aim_app_profiles = self.aim_mgr.find(
+                self._aim_context, aim_resource.ApplicationProfile,
+                tenant_name=aim_tenant_name, name=aim_app_profile_name)
+            self.assertEqual(1, len(aim_app_profiles))
+            req = self.new_show_request('networks', l2p['network_id'],
+                                        fmt=self.fmt)
+            net = self.deserialize(self.fmt,
+                                req.get_response(self.api))['network']
+            bd = self.aim_mgr.get(
+                self._aim_context, aim_resource.BridgeDomain.from_dn(
+                    net[DN][BD]))
+            aim_epgs = self.aim_mgr.find(
+                self._aim_context, aim_resource.EndpointGroup,
+                name=aim_epg_name)
+            self.assertEqual(1, len(aim_epgs))
+            self.assertEqual(aim_epg_name, aim_epgs[0].name)
+            self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
+            self.assertEqual(bd.name, aim_epgs[0].bd_name)
 
-        self.assertEqual(aim_epgs[0].dn,
-                         ptg[DN][EPG])
-        self._test_aim_resource_status(aim_epgs[0], ptg)
-        self.assertEqual(aim_epgs[0].dn, ptg_show[DN][EPG])
+            self.assertEqual(aim_epgs[0].dn,
+                            ptg[DN][EPG])
+            self._test_aim_resource_status(aim_epgs[0], ptg)
+            self.assertEqual(aim_epgs[0].dn, ptg_show[DN][EPG])
 
-        new_name = 'new name'
-        new_prs_lists = self._get_provided_consumed_prs_lists()
-        self.update_policy_target_group(
-            ptg_id, expected_res_status=200, name=new_name,
-            provided_policy_rule_sets={new_prs_lists['provided']['id']:
-                                       'scope'},
-            consumed_policy_rule_sets={new_prs_lists['consumed']['id']:
-                                       'scope'})['policy_target_group']
-        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            self._neutron_context.session, ptg_id, new_name,
-            context=self._neutron_context)
-        aim_epgs = self.aim_mgr.find(
-            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
+            new_name = 'new name'
+            new_prs_lists = self._get_provided_consumed_prs_lists()
+            self.update_policy_target_group(
+                ptg_id, expected_res_status=200, name=new_name,
+                provided_policy_rule_sets={new_prs_lists['provided']['id']:
+                                        'scope'},
+                consumed_policy_rule_sets={new_prs_lists['consumed']['id']:
+                                        'scope'})['policy_target_group']
+            aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+                self._neutron_context.session, ptg_id, new_name,
+                context=self._neutron_context)
+            aim_epgs = self.aim_mgr.find(
+                self._aim_context, aim_resource.EndpointGroup,
+                name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self._validate_contracts(ptg, aim_epgs[0], new_prs_lists, l2p)
@@ -2442,8 +2447,11 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
         # Explicitly created L2P should not be deleted
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=200)
 
-        aim_epgs = self.aim_mgr.find(
-            self._aim_context, aim_resource.EndpointGroup, name=aim_epg_name)
+        # TODO(pulkit): replace with AIM reader context once API supports it.
+        with self.db_session.begin():
+            aim_epgs = self.aim_mgr.find(
+                self._aim_context, aim_resource.EndpointGroup,
+                name=aim_epg_name)
         self.assertEqual(0, len(aim_epgs))
 
     def _create_explicit_subnetpools(self):
@@ -2946,9 +2954,11 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
 
     def test_get_gbp_details_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
-        vrf = self.aim_mgr.create(
-            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
-                                      monitored=True))
+        # TODO(pulkit): replace with AIM writer context once API supports it.
+        with self.db_session.begin():
+            vrf = self.aim_mgr.create(
+                aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
+                                        monitored=True))
         self._do_test_get_gbp_details(pre_vrf=vrf)
 
 
@@ -3619,9 +3629,11 @@ class TestPolicyTarget(AIMBaseTestCase,
 
     def test_get_gbp_details_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
-        vrf = self.aim_mgr.create(
-            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
-                                      monitored=True))
+        # TODO(pulkit): replace with AIM writer context once API supports it.
+        with self.db_session.begin():
+            vrf = self.aim_mgr.create(
+                aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
+                                        monitored=True))
         self._do_test_get_gbp_details(pre_vrf=vrf)
 
     def test_get_gbp_details_no_pt(self):
@@ -3631,9 +3643,11 @@ class TestPolicyTarget(AIMBaseTestCase,
 
     def test_get_gbp_details_no_pt_pre_existing_vrf(self):
         aim_ctx = aim_context.AimContext(self.db_session)
-        vrf = self.aim_mgr.create(
-            aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
-                                      monitored=True))
+        # TODO(pulkit): replace with AIM writer context once API supports it.
+        with self.db_session.begin():
+            vrf = self.aim_mgr.create(
+                aim_ctx, aim_resource.VRF(tenant_name='common', name='ctx1',
+                                        monitored=True))
         self._do_test_gbp_details_no_pt(pre_vrf=vrf)
 
     def test_get_gbp_details_no_pt_no_as(self):
@@ -5519,29 +5533,30 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         p1 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:')['port']
         p1 = self._bind_port_to_host(p1['id'], 'host1')['port']
-        details = self.mech_driver.get_gbp_details(
-            self._neutron_admin_context, device='tap%s' % p1['id'],
-            host='host1')
-        self.assertFalse(details['promiscuous_mode'])
+        with self.db_session.begin():
+            details = self.mech_driver.get_gbp_details(
+                self._neutron_admin_context, device='tap%s' % p1['id'],
+                host='host1')
+            self.assertFalse(details['promiscuous_mode'])
 
-        p2 = self._make_port(self.fmt, net['network']['id'],
-                             arg_list=('port_security_enabled',),
-                             device_owner='compute:',
-                             port_security_enabled=True)['port']
-        p2 = self._bind_port_to_host(p2['id'], 'host1')['port']
-        details = self.mech_driver.get_gbp_details(
-            self._neutron_admin_context, device='tap%s' % p2['id'],
-            host='host1')
-        self.assertFalse(details['promiscuous_mode'])
+            p2 = self._make_port(self.fmt, net['network']['id'],
+                                arg_list=('port_security_enabled',),
+                                device_owner='compute:',
+                                port_security_enabled=True)['port']
+            p2 = self._bind_port_to_host(p2['id'], 'host1')['port']
+            details = self.mech_driver.get_gbp_details(
+                self._neutron_admin_context, device='tap%s' % p2['id'],
+                host='host1')
+            self.assertFalse(details['promiscuous_mode'])
 
-        p3 = self._make_port(self.fmt, net['network']['id'],
-                             arg_list=('port_security_enabled',),
-                             device_owner='compute:',
-                             port_security_enabled=False)['port']
-        p3 = self._bind_port_to_host(p3['id'], 'host1')['port']
-        details = self.mech_driver.get_gbp_details(
-            self._neutron_admin_context, device='tap%s' % p3['id'],
-            host='host1')
+            p3 = self._make_port(self.fmt, net['network']['id'],
+                                arg_list=('port_security_enabled',),
+                                device_owner='compute:',
+                                port_security_enabled=False)['port']
+            p3 = self._bind_port_to_host(p3['id'], 'host1')['port']
+            details = self.mech_driver.get_gbp_details(
+                self._neutron_admin_context, device='tap%s' % p3['id'],
+                host='host1')
         self.assertTrue(details['promiscuous_mode'])
 
         # Test RPC without a PortSecurityBinding record, which should
