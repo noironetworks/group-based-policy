@@ -329,20 +329,22 @@ class DbMixin(object):
     # HAIPAddressToPortAssociation functions.
 
     def _get_ha_ipaddress(self, ipaddress, network_id, session=None):
-        session = session or db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
 
-        query = BAKERY(lambda s: s.query(
-            HAIPAddressToPortAssociation))
-        query += lambda q: q.filter_by(
-            ha_ip_address=sa.bindparam('ipaddress'),
-            network_id=sa.bindparam('network_id'))
-        return query(session).params(
-            ipaddress=ipaddress, network_id=network_id).first()
+        with db_api.CONTEXT_READER.using(ctx):
+            query = BAKERY(lambda s: s.query(
+                HAIPAddressToPortAssociation))
+            query += lambda q: q.filter_by(
+                ha_ip_address=sa.bindparam('ipaddress'),
+                network_id=sa.bindparam('network_id'))
+            return query(ctx.session).params(
+                ipaddress=ipaddress, network_id=network_id).first()
 
     def get_port_for_ha_ipaddress(self, ipaddress, network_id,
                                   session=None):
         """Returns the Neutron Port ID for the HA IP Addresss."""
-        session = session or db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
+
         query = BAKERY(lambda s: s.query(
             HAIPAddressToPortAssociation))
         query += lambda q: q.join(
@@ -355,20 +357,30 @@ class DbMixin(object):
             sa.bindparam('network_id'))
         query += lambda q: q.filter(
             models_v2.Port.network_id == sa.bindparam('network_id'))
-        port_ha_ip = query(session).params(
-            ipaddress=ipaddress, network_id=network_id).first()
+        if session:
+            port_ha_ip = query(session).params(
+                ipaddress=ipaddress, network_id=network_id).first()
+        else:
+            with db_api.CONTEXT_READER.using(ctx):
+                port_ha_ip = query(ctx.session).params(
+                    ipaddress=ipaddress, network_id=network_id).first()
         return port_ha_ip
 
     def get_ha_ipaddresses_for_port(self, port_id, session=None):
         """Returns the HA IP Addressses associated with a Port."""
-        session = session or db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
 
         query = BAKERY(lambda s: s.query(
             HAIPAddressToPortAssociation))
         query += lambda q: q.filter_by(
             port_id=sa.bindparam('port_id'))
-        objs = query(session).params(
-            port_id=port_id).all()
+        if session:
+            objs = query(session).params(
+                port_id=port_id).all()
+        else:
+            with db_api.CONTEXT_READER.using(ctx):
+                objs = query(ctx.session).params(
+                    port_id=port_id).all()
 
         # REVISIT: Do the sorting in the UT?
         return sorted([x['ha_ip_address'] for x in objs])
@@ -376,9 +388,9 @@ class DbMixin(object):
     def update_port_id_for_ha_ipaddress(self, port_id, ipaddress, network_id,
                                         session=None):
         """Stores a Neutron Port Id as owner of HA IP Addr (idempotent API)."""
-        session = session or db_api.get_writer_session()
+        ctx = session or n_context.get_admin_context()
         try:
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_WRITER.using(ctx) as session:
                 obj = self._get_ha_ipaddress(ipaddress, network_id, session)
                 if obj:
                     haip_ip = HAIPAddressToPortAssociation.ha_ip_address
@@ -401,8 +413,8 @@ class DbMixin(object):
 
     def delete_port_id_for_ha_ipaddress(self, port_id, ipaddress,
                                         session=None):
-        session = session or db_api.get_writer_session()
-        with session.begin(subtransactions=True):
+        ctx = session or n_context.get_admin_context()
+        with db_api.CONTEXT_WRITER.using(ctx) as session:
             try:
                 # REVISIT: Can this query be baked? The
                 # sqlalchemy.ext.baked.Result class does not have a
@@ -418,11 +430,12 @@ class DbMixin(object):
 
     # REVISIT: This method is only called from unit tests.
     def get_ha_port_associations(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
 
-        query = BAKERY(lambda s: s.query(
-            HAIPAddressToPortAssociation))
-        return query(session).all()
+        with db_api.CONTEXT_READER.using(ctx):
+            query = BAKERY(lambda s: s.query(
+                HAIPAddressToPortAssociation))
+            return query(ctx.session).all()
 
     # REVISIT: Move this method to the mechanism_driver or rpc module,
     # as it is above the DB level. This will also require some rework
@@ -446,17 +459,17 @@ class DbMixin(object):
             if not ipa:
                 continue
             try:
-                session = db_api.get_writer_session()
-                with session.begin(subtransactions=True):
+                ctx = n_context.get_admin_context()
+                with db_api.CONTEXT_WRITER.using(ctx):
                     net_id = port['network_id']
                     old_owner = self.get_port_for_ha_ipaddress(
                         ipa, network_id or net_id,
-                        session=session)
+                        session=ctx.session)
                     old_owner_port_id = None
                     if old_owner:
                         old_owner_port_id = old_owner['port_id']
                     self.update_port_id_for_ha_ipaddress(
-                        port_id, ipa, net_id, session)
+                        port_id, ipa, net_id, ctx.session)
                     if old_owner_port_id and old_owner_port_id != port_id:
                         ports_to_update.add(old_owner_port_id)
             except db_exc.DBReferenceError as dbe:

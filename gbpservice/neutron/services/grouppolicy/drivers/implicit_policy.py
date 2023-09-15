@@ -19,6 +19,7 @@ import sqlalchemy as sa
 
 from gbpservice._i18n import _
 from gbpservice.network.neutronv2 import local_api
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.extensions import driver_proxy_group as pg_ext
 from gbpservice.neutron.extensions import group_policy as gbp_ext
 from gbpservice.neutron.services.grouppolicy import (
@@ -175,7 +176,7 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
             session.add(owned)
 
     def _l2_policy_is_owned(self, session, l2p_id):
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             return (session.query(OwnedL2Policy).
                     filter_by(l2_policy_id=l2p_id).
                     first() is not None)
@@ -186,20 +187,26 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
             session.add(owned)
 
     def _l3_policy_is_owned(self, session, l3p_id):
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             return (session.query(OwnedL3Policy).
                     filter_by(l3_policy_id=l3p_id).
                     first() is not None)
 
     def _cleanup_l3_policy(self, context, l3p_id):
-        if self._l3_policy_is_owned(context._plugin_context.session, l3p_id):
+        with db_api.CONTEXT_READER.using(context._plugin_context):
+            res = self._l3_policy_is_owned(context._plugin_context.session,
+                                           l3p_id)
+        if res:
             # REVISIT(rkukura): Add check_unused parameter to
             # local_api._delete_l3_policy()?
             context._plugin.delete_l3_policy(context._plugin_context, l3p_id,
                                              check_unused=True)
 
     def _cleanup_l2_policy(self, context, l2p_id):
-        if self._l2_policy_is_owned(context._plugin_context.session, l2p_id):
+        with db_api.CONTEXT_READER.using(context._plugin_context):
+            res = self._l2_policy_is_owned(context._plugin_context.session,
+                                           l2p_id)
+        if res:
             try:
                 self._delete_l2_policy(context._plugin_context, l2p_id)
             except gbp_ext.L2PolicyInUse:

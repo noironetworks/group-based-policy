@@ -31,6 +31,7 @@ from aim.api import resource as aim_resource
 from aim import context as aim_context
 from aim import utils as aim_utils
 from alembic import util as alembic_util
+from gbpservice.neutron.db import api as db_api
 from neutron.db.migration.cli import CONF
 from neutron.db.models import address_scope as as_db
 from neutron.db.models import securitygroup as sg_models
@@ -132,7 +133,7 @@ def do_apic_aim_persist_migration(session):
     aim_ctx = aim_context.AimContext(session)
     mapper = apic_mapper.APICNameMapper()
 
-    with session.begin(subtransactions=True):
+    with db_api.CONTEXT_WRITER.using(session):
         # Migrate address scopes.
         scope_dbs = (session.query(as_db.AddressScope)
                      .options(lazyload('*')).all())
@@ -269,7 +270,7 @@ def do_ap_name_change(session, conf=None):
     aim_ctx = aim_context.AimContext(session)
     system_id = cfg.apic_system_id
     alembic_util.msg("APIC System ID: %s" % system_id)
-    with session.begin(subtransactions=True):
+    with db_api.CONTEXT_WRITER.using(session):
         net_dbs = session.query(models_v2.Network).options(lazyload('*')).all()
         for net_db in net_dbs:
             ext_db = _get_network_extn_db(session, net_db.id)
@@ -361,7 +362,7 @@ def do_apic_aim_security_group_migration(session):
     aim = aim_manager.AimManager()
     aim_ctx = aim_context.AimContext(session)
     mapper = apic_mapper.APICNameMapper()
-    with session.begin(subtransactions=True):
+    with db_api.CONTEXT_WRITER.using(session):
         # Migrate SG.
         sg_dbs = (session.query(sg_models.SecurityGroup).
                   options(lazyload('*')).all())
@@ -433,7 +434,7 @@ def do_sg_rule_remote_group_id_insertion(session):
     aim = aim_manager.AimManager()
     aim_ctx = aim_context.AimContext(session)
     mapper = apic_mapper.APICNameMapper()
-    with session.begin(subtransactions=True):
+    with db_api.CONTEXT_WRITER.using(session):
         sg_rule_dbs = (session.query(sg_models.SecurityGroupRule).
                        options(lazyload('*')).all())
         for sg_rule_db in sg_rule_dbs:
@@ -463,7 +464,7 @@ def do_ha_ip_duplicate_entries_removal(session):
     haip_ip = HAIPAddressToPortAssociation.c.ha_ip_address
     haip_port_id = HAIPAddressToPortAssociation.c.port_id
 
-    with session.begin(subtransactions=True):
+    with db_api.CONTEXT_WRITER.using(session):
         port_and_haip_dbs = (session.query(models_v2.Port,
                              HAIPAddressToPortAssociation).join(
                              HAIPAddressToPortAssociation,
@@ -495,7 +496,7 @@ def do_ha_ip_network_id_insertion(session):
     haip_ip = HAIPAddressToPortAssociation.c.ha_ip_address
     haip_port_id = HAIPAddressToPortAssociation.c.port_id
 
-    with session.begin(subtransactions=True):
+    with db_api.CONTEXT_WRITER.using(session):
         haip_ip = HAIPAddressToPortAssociation.c.ha_ip_address
         haip_port_id = HAIPAddressToPortAssociation.c.port_id
         port_and_haip_dbs = (session.query(models_v2.Port,
