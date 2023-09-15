@@ -13,6 +13,7 @@
 from neutron_lib.plugins import directory
 from oslo_log import helpers as log
 
+from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.services.grouppolicy.common import exceptions as exc
 from gbpservice.neutron.services.grouppolicy.drivers import (
     implicit_policy as ipd)
@@ -45,8 +46,9 @@ class CommonNeutronBase(ipd.ImplicitPolicyBase, rmd.OwnedResourcesOperations,
     def create_l2_policy_postcommit(self, context):
         if not context.current['l3_policy_id']:
             self._use_implicit_l3_policy(context)
-        l3p_db = context._plugin._get_l3_policy(
-            context._plugin_context, context.current['l3_policy_id'])
+        with db_api.CONTEXT_READER.using(context._plugin_context):
+            l3p_db = context._plugin._get_l3_policy(
+                context._plugin_context, context.current['l3_policy_id'])
         if not context.current['network_id']:
             self._use_implicit_network(
                 context, address_scope_v4=l3p_db['address_scope_v4_id'],

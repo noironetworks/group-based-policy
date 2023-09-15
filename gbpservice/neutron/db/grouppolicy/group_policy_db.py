@@ -445,7 +445,13 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
 
     def _get_l3_policy(self, context, l3_policy_id):
         try:
-            return db_api.get_by_id(context, L3Policy, l3_policy_id)
+            l3p_db = db_api.get_by_id(context, L3Policy, l3_policy_id)
+            # REVISIT: l3p_db is a db variable. Can't use it outside the
+            # session becuase at some places it is throwing an error that
+            # l3p_db should be bound to a session. Hence, reassigning.
+            for l3p in l3p_db:
+                l3p_db[l3p[0]] = l3p[1]
+            return l3p_db
         except exc.NoResultFound:
             raise gpolicy.L3PolicyNotFound(l3_policy_id=l3_policy_id)
 
@@ -529,7 +535,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
         if not action_id_list:
             pr_db.policy_actions = []
             return
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             # We will first check if the new list of actions is valid
             filters = {'id': [a_id for a_id in action_id_list]}
             actions_in_db = db_api.get_collection_query(context, PolicyAction,
@@ -557,7 +563,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
 
     def _validate_policy_rule_set_list(self, context,
                                        policy_rule_sets_id_list):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(context):
             filters = {'id': [c_id for c_id in policy_rule_sets_id_list]}
             policy_rule_sets_in_db = db_api.get_collection_query(
                 context, PolicyRuleSet, filters=filters)
@@ -599,7 +605,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
             else:
                 db_res.consumed_policy_rule_sets = []
                 return
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             policy_rule_sets_id_list = list(policy_rule_sets_dict.keys())
             # We will first check if the new list of policy_rule_sets is valid
             self._validate_policy_rule_set_list(
@@ -630,7 +636,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
             # Only one hierarchy level allowed for now
             raise gpolicy.ThreeLevelPolicyRuleSetHierarchyNotSupported(
                 policy_rule_set_id=policy_rule_set_db['id'])
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             # We will first check if the new list of policy_rule_sets is valid
 
             policy_rule_sets_in_db = self._validate_policy_rule_set_list(
@@ -657,7 +663,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
         if not rule_id_list:
             prs_db.policy_rules = []
             return
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             # We will first check if the new list of rules is valid
             filters = {'id': [r_id for r_id in rule_id_list]}
             rules_in_db = db_api.get_collection_query(context, PolicyRule,
@@ -702,24 +708,24 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
         return res
 
     def _set_l3_policy_for_l2_policy(self, context, l2p_id, l3p_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l2p_db = self._get_l2_policy(context, l2p_id)
             l2p_db.l3_policy_id = l3p_id
 
     def _set_l2_policy_for_policy_target_group(self, context, ptg_id, l2p_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             ptg_db = self._get_policy_target_group(context, ptg_id)
             ptg_db.l2_policy_id = l2p_id
 
     def _set_application_policy_group_for_policy_target_group(
         self, context, ptg_id, apg_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             ptg_db = self._get_policy_target_group(context, ptg_id)
             ptg_db.application_policy_group_id = apg_id
 
     def _set_network_service_policy_for_policy_target_group(
             self, context, ptg_id, nsp_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             ptg_db = self._get_policy_target_group(context, ptg_id)
             ptg_db.network_service_policy_id = nsp_id
 
@@ -730,7 +736,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
         if not params:
             nsp_db.network_service_params = []
             return
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             nsp_db.network_service_params = []
             for param in params:
                 param_db = NetworkServiceParam(
@@ -744,7 +750,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
         if not es_id_list:
             ep_db.external_segments = []
             return
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             filters = {'id': es_id_list}
             eps_in_db = db_api.get_collection_query(
                 context, ExternalSegment, filters=filters)
@@ -776,7 +782,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
         if not es_dict:
             l3p_db.external_segments = []
             return
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             # Validate ESs exist
             es_set = set(es_dict.keys())
             filters = {'id': es_set}
@@ -934,7 +940,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
             res['child_policy_rule_sets'] = [
                 child_prs['id'] for child_prs in prs['child_policy_rule_sets']]
         else:
-            with ctx.session.begin(subtransactions=True):
+            with db_api.CONTEXT_READER.using(ctx):
                 filters = {'parent_id': [prs['id']]}
                 child_prs_in_db = db_api.get_collection_query(
                     ctx, PolicyRuleSet, filters=filters)

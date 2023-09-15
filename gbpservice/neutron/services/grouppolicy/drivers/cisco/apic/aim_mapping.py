@@ -373,8 +373,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def create_l2_policy_postcommit(self, context):
         if not context.current['l3_policy_id']:
             self._use_implicit_l3_policy(context)
-        l3p_db = context._plugin._get_l3_policy(
-            context._plugin_context, context.current['l3_policy_id'])
+        with db_api.CONTEXT_READER.using(context._plugin_context):
+            l3p_db = context._plugin._get_l3_policy(
+                context._plugin_context, context.current['l3_policy_id'])
         if not context.current['network_id']:
             self._use_implicit_network(
                 context, address_scope_v4=l3p_db['address_scope_v4_id'],
@@ -433,14 +434,15 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
     def delete_l2_policy_postcommit(self, context):
         auto_ptg_id = self._get_auto_ptg_id(context.current['id'])
         try:
-            auto_ptg = context._plugin._get_policy_target_group(
-                context._plugin_context, auto_ptg_id)
-            l3p_db = context._plugin._get_l3_policy(
-                context._plugin_context, context.current['l3_policy_id'])
-            subnet_ids = [assoc['subnet_id'] for assoc in auto_ptg.subnets]
-            router_ids = [assoc.router_id for assoc in l3p_db.routers]
-            context._plugin._remove_subnets_from_policy_target_group(
-                context._plugin_context, auto_ptg_id)
+            with db_api.CONTEXT_WRITER.using(context._plugin_context):
+                auto_ptg = context._plugin._get_policy_target_group(
+                    context._plugin_context, auto_ptg_id)
+                l3p_db = context._plugin._get_l3_policy(
+                    context._plugin_context, context.current['l3_policy_id'])
+                subnet_ids = [assoc['subnet_id'] for assoc in auto_ptg.subnets]
+                router_ids = [assoc.router_id for assoc in l3p_db.routers]
+                context._plugin._remove_subnets_from_policy_target_group(
+                    context._plugin_context, auto_ptg_id)
             self._process_subnets_for_ptg_delete(
                 context, subnet_ids, router_ids)
             # REVISIT: Consider calling the actual GBP plugin instead
@@ -632,8 +634,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
         l2p_id = ptg['l2_policy_id']
         if l2p_id:
-            l2p_db = context._plugin._get_l2_policy(
-                context._plugin_context, l2p_id)
+            with db_api.CONTEXT_READER.using(context):
+                l2p_db = context._plugin._get_l2_policy(
+                    context._plugin_context, l2p_id)
             if not l2p_db['policy_target_groups'] or (
                 (len(l2p_db['policy_target_groups']) == 1) and (
                     self._is_auto_ptg(l2p_db['policy_target_groups'][0]))):
@@ -1748,8 +1751,9 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
                       "_process_contracts_for_default_epg(), create and "
                       "delete cannot be True at the same time")
             raise
-        session = context._plugin_context.session
-        aim_ctx = aim_context.AimContext(session)
+        with db_api.CONTEXT_WRITER.using(context._plugin_context):
+            session = context._plugin_context.session
+            aim_ctx = aim_context.AimContext(session)
 
         # Infra Services' FilterEntries and attributes
         infra_entries = alib.get_service_contract_filter_entries()
