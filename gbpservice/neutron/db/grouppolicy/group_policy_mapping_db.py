@@ -153,7 +153,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
 
     def _get_subnetpools(self, id_list):
         context = get_current_context().elevated()
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(context):
             filters = {'id': id_list}
             return db_api.get_collection_query(
                 context, models_v2.SubnetPool, filters=filters).all()
@@ -196,43 +196,43 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         return db_api.resource_fields(res, fields)
 
     def _set_port_for_policy_target(self, context, pt_id, port_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             pt_db = self._get_policy_target(context, pt_id)
             pt_db.port_id = port_id
 
     def _add_subnet_to_policy_target_group(self, context, ptg_id, subnet_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             ptg_db = self._get_policy_target_group(context, ptg_id)
             assoc = PTGToSubnetAssociation(policy_target_group_id=ptg_id,
                                            subnet_id=subnet_id)
             ptg_db.subnets.append(assoc)
-        return [subnet.subnet_id for subnet in ptg_db.subnets]
+            return [subnet.subnet_id for subnet in ptg_db.subnets]
 
     def _remove_subnets_from_policy_target_groups(self, context, subnet_ids):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             assocs = context.session.query(PTGToSubnetAssociation).filter(
                 PTGToSubnetAssociation.subnet_id.in_(subnet_ids)).all()
             for assoc in assocs:
                 context.session.delete(assoc)
 
     def _remove_subnets_from_policy_target_group(self, context, ptg_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             ptg_db = self._get_policy_target_group(context, ptg_id)
             assocs = (context.session.query(PTGToSubnetAssociation).
                       filter_by(policy_target_group_id=ptg_id).all())
             ptg_db.update({'subnets': []})
             for assoc in assocs:
                 context.session.delete(assoc)
-        return []
+            return []
 
     def _set_network_for_l2_policy(self, context, l2p_id, network_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l2p_db = self._get_l2_policy(context, l2p_id)
             l2p_db.network_id = network_id
 
     def _set_address_scope_for_l3_policy_by_id(
         self, context, l3p_id, address_scope_id, ip_version=4):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = self._get_l3_policy(context, l3p_id)
             self._set_address_scope_for_l3_policy(
                 context, l3p_db, address_scope_id, ip_version)
@@ -242,7 +242,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         if not address_scope_id:
             return
         # TODO(Sumit): address_scope_id validation
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             if ip_version == 4:
                 l3p_db.address_scope_v4_id = address_scope_id
             else:
@@ -250,7 +250,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
 
     def _add_subnetpool_to_l3_policy_by_id(self, context, l3p_id,
                                            subnetpool_id, ip_version=4):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = self._get_l3_policy(context, l3p_id)
             return self._add_subnetpool_to_l3_policy(
                 context, l3p_db, subnetpool_id, ip_version)
@@ -258,7 +258,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
     def _add_subnetpool_to_l3_policy(self, context, l3p_db,
                                      subnetpool_id, ip_version=4):
         # TODO(Sumit): subnetpool_id validation
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             if ip_version == 4:
                 assoc = L3PolicySubnetpoolV4Association(
                     l3_policy_id=l3p_db['id'], subnetpool_id=subnetpool_id)
@@ -267,12 +267,12 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                 assoc = L3PolicySubnetpoolV6Association(
                     l3_policy_id=l3p_db['id'], subnetpool_id=subnetpool_id)
                 l3p_db.subnetpools_v6.append(assoc)
-        return {4: [sp.subnetpool_id for sp in l3p_db.subnetpools_v4],
-                6: [sp.subnetpool_id for sp in l3p_db.subnetpools_v6]}
+            return {4: [sp.subnetpool_id for sp in l3p_db.subnetpools_v4],
+                    6: [sp.subnetpool_id for sp in l3p_db.subnetpools_v6]}
 
     def _add_subnetpools_to_l3_policy_by_id(self, context, l3p_id,
                                             subnetpools, ip_version=4):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = self._get_l3_policy(context, l3p_id)
             self._add_subnetpools_to_l3_policy(
                 context, l3p_db, subnetpools, ip_version)
@@ -285,7 +285,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
 
     def _remove_subnetpool_from_l3_policy(self, context, l3p_id,
                                           subnetpool_id, ip_version=4):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = self._get_l3_policy(context, l3p_id)
             if ip_version == 4:
                 assoc = (context.session.query(
@@ -300,8 +300,8 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                         subnetpool_id=subnetpool_id).one())
                 l3p_db.subnetpools_v6.remove(assoc)
             context.session.delete(assoc)
-        return {4: [sp.subnetpool_id for sp in l3p_db.subnetpools_v4],
-                6: [sp.subnetpool_id for sp in l3p_db.subnetpools_v6]}
+            return {4: [sp.subnetpool_id for sp in l3p_db.subnetpools_v4],
+                    6: [sp.subnetpool_id for sp in l3p_db.subnetpools_v6]}
 
     def _update_subnetpools_for_l3_policy(self, context, l3p_id,
                                           subnetpools, ip_version=4):
@@ -310,7 +310,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
         # there is no PT present on a subnet which belongs to that subnetpool
         if not subnetpools:
             return
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = self._get_l3_policy(context, l3p_id)
             new_subnetpools = set(subnetpools)
             if ip_version == 4:
@@ -342,35 +342,35 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
                 context.session.delete(assoc)
 
     def _add_router_to_l3_policy(self, context, l3p_id, router_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = self._get_l3_policy(context, l3p_id)
             assoc = L3PolicyRouterAssociation(l3_policy_id=l3p_id,
                                               router_id=router_id)
             l3p_db.routers.append(assoc)
-        return [router.router_id for router in l3p_db.routers]
+            return [router.router_id for router in l3p_db.routers]
 
     def _remove_router_from_l3_policy(self, context, l3p_id, router_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = self._get_l3_policy(context, l3p_id)
             assoc = (context.session.query(L3PolicyRouterAssociation).
                      filter_by(l3_policy_id=l3p_id, router_id=router_id).
                      one())
             l3p_db.routers.remove(assoc)
             context.session.delete(assoc)
-        return [router.router_id for router in l3p_db.routers]
+            return [router.router_id for router in l3p_db.routers]
 
     def _set_subnet_to_es(self, context, es_id, subnet_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             es_db = self._get_external_segment(context, es_id)
             es_db.subnet_id = subnet_id
 
     def _set_subnet_to_np(self, context, np_id, subnet_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             np_db = self._get_nat_pool(context, np_id)
             np_db.subnet_id = subnet_id
 
     def _update_ess_for_l3p(self, context, l3p_id, ess):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             l3p_db = self._get_l3_policy(context, l3p_id)
             self._set_ess_for_l3p(context, l3p_db, ess)
 
@@ -391,7 +391,7 @@ class GroupPolicyMappingDbPlugin(gpdb.GroupPolicyDbPlugin):
             return mapping['l3_policy_id']
 
     def _set_db_np_subnet(self, context, nat_pool, subnet_id):
-        with context.session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(context):
             nat_pool['subnet_id'] = subnet_id
             db_np = self._get_nat_pool(context, nat_pool['id'])
             db_np.subnet_id = nat_pool['subnet_id']
