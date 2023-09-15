@@ -175,6 +175,7 @@ class ApicL3Plugin(extraroute_db.ExtraRoute_db_mixin,
     # Overwrite the upstream implementation to take advantage
     # of the bulk extension support.
     @db_api.retry_if_session_inactive()
+    @db_api.CONTEXT_READER
     def get_routers(self, context, filters=None, fields=None,
                     sorts=None, limit=None, marker=None,
                     page_reverse=False):

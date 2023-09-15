@@ -56,7 +56,7 @@ from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib.callbacks import resources
 from neutron_lib import constants as n_constants
-from neutron_lib import context as nctx
+from neutron_lib import context as n_context
 from neutron_lib import exceptions as n_exceptions
 from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
@@ -186,18 +186,22 @@ class KeystoneNotificationEndpoint(object):
             # we only update tenants which have been created in APIC. For other
             # cases, their nameAlias will be set when the first resource is
             # being created under that tenant
-            session = db_api.get_writer_session()
-            tenant_aname = self._driver.name_mapper.project(session, tenant_id)
-            aim_ctx = aim_context.AimContext(session)
-            tenant = aim_resource.Tenant(name=tenant_aname)
-            if not self._driver.aim.get(aim_ctx, tenant):
-                return None
+            ctx = n_context.get_admin_context()
+            # TODO(pulkit): replace with AIM writer context once API
+            # supports it.
+            with db_api.CONTEXT_WRITER.using(ctx):
+                tenant_aname = self._driver.name_mapper.project(ctx.session,
+                                                                tenant_id)
+                aim_ctx = aim_context.AimContext(ctx.session)
+                tenant = aim_resource.Tenant(name=tenant_aname)
+                if not self._driver.aim.get(aim_ctx, tenant):
+                    return None
 
-            disp_name = aim_utils.sanitize_display_name(prj_details[0])
-            descr = aim_utils.sanitize_description(prj_details[1])
-            self._driver.aim.update(
-                aim_ctx, tenant, display_name=disp_name, descr=descr)
-            return oslo_messaging.NotificationResult.HANDLED
+                disp_name = aim_utils.sanitize_display_name(prj_details[0])
+                descr = aim_utils.sanitize_description(prj_details[1])
+                self._driver.aim.update(
+                    aim_ctx, tenant, display_name=disp_name, descr=descr)
+                return oslo_messaging.NotificationResult.HANDLED
 
         if event_type == 'identity.project.deleted':
             if not self._driver.enable_keystone_notification_purge:
@@ -210,13 +214,17 @@ class KeystoneNotificationEndpoint(object):
             self._driver.project_details_cache.purge_gbp(tenant_id)
 
             # delete the tenant and AP in AIM also
-            session = db_api.get_writer_session()
-            tenant_aname = self._driver.name_mapper.project(session, tenant_id)
-            aim_ctx = aim_context.AimContext(session)
-            tenant = aim_resource.Tenant(name=tenant_aname)
-            self._driver.aim.delete(aim_ctx, tenant, cascade=True)
+            ctx = n_context.get_admin_context()
+            # TODO(pulkit): replace with AIM writer context once API
+            # supports it.
+            with db_api.CONTEXT_WRITER.using(ctx):
+                tenant_aname = self._driver.name_mapper.project(ctx.session,
+                                                                tenant_id)
+                aim_ctx = aim_context.AimContext(ctx.session)
+                tenant = aim_resource.Tenant(name=tenant_aname)
+                self._driver.aim.delete(aim_ctx, tenant, cascade=True)
 
-            return oslo_messaging.NotificationResult.HANDLED
+                return oslo_messaging.NotificationResult.HANDLED
 
 
 @registry.has_registry_receivers
@@ -303,7 +311,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _update_nova_vm_name_cache(self):
         current_time = datetime.now()
-        context = nctx.get_admin_context()
+        context = n_context.get_admin_context()
         with db_api.CONTEXT_READER.using(context) as session:
             vm_name_update = self._get_vm_name_update(session)
         is_full_update = True
@@ -451,22 +459,24 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     @db_api.retry_db_errors
     def _ensure_static_resources(self):
-        session = db_api.get_writer_session()
-        aim_ctx = aim_context.AimContext(session)
-        self._ensure_common_tenant(aim_ctx)
-        self._ensure_unrouted_vrf(aim_ctx)
-        self._ensure_any_filter(aim_ctx)
-        self._setup_default_arp_dhcp_security_group_rules(aim_ctx)
+        ctx = n_context.get_admin_context()
+        # TODO(pulkit): replace with AIM writer context once API supports it.
+        with db_api.CONTEXT_WRITER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            self._ensure_common_tenant(aim_ctx)
+            self._ensure_unrouted_vrf(aim_ctx)
+            self._ensure_any_filter(aim_ctx)
+            self._setup_default_arp_dhcp_security_group_rules(aim_ctx)
 
-        # This is required for infra resources needed by ERSPAN
-        check_topology = self.aim.find(aim_ctx, aim_resource.Topology)
-        if not check_topology:
-            topology_aim = aim_resource.Topology()
-            self.aim.create(aim_ctx, topology_aim)
-        check_infra = self.aim.find(aim_ctx, aim_resource.Infra)
-        if not check_infra:
-            infra_aim = aim_resource.Infra()
-            self.aim.create(aim_ctx, infra_aim)
+            # This is required for infra resources needed by ERSPAN
+            check_topology = self.aim.find(aim_ctx, aim_resource.Topology)
+            if not check_topology:
+                topology_aim = aim_resource.Topology()
+                self.aim.create(aim_ctx, topology_aim)
+            check_infra = self.aim.find(aim_ctx, aim_resource.Infra)
+            if not check_infra:
+                infra_aim = aim_resource.Infra()
+                self.aim.create(aim_ctx, infra_aim)
 
     def _setup_default_arp_dhcp_security_group_rules(self, aim_ctx):
         sg_name = self._default_sg_name
@@ -2927,7 +2937,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def update_summary_resource(self, session, resources, network_id):
         for resource in resources:
             if type(resource) == aim_resource.SpanVepgSummary:
-                with session.begin(subtransactions=True):
+                with db_api.CONTEXT_READER.using(session):
                     query = BAKERY(lambda s: s.query(
                                 models_v2.Network))
                     query += lambda q: q.filter_by(
@@ -3075,7 +3085,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             raise exceptions.InvalidPortForErspanSession()
 
         # Not supported on SVI networks
-        ctx = nctx.get_admin_context()
+        ctx = n_context.get_admin_context()
         net_db = self.plugin._get_network(ctx, port['network_id'])
         if self._is_svi_db(net_db):
             raise exceptions.InvalidNetworkForErspanSession()
@@ -3234,7 +3244,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             new_subnets = list(set(curr) - set(orig))
             if not new_subnets:
                 return
-            ctx = nctx.get_admin_context()
+            ctx = n_context.get_admin_context()
             net_db = self.plugin._get_network(ctx, original_port['network_id'])
             if self._is_svi_db(net_db):
                 self._update_svi_ports_for_added_subnet(ctx, new_subnets,
@@ -3471,13 +3481,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 context._plugin_context, router_db, context.current, subnets)
 
     def _delete_router_port(self, session, port_id):
-        query = BAKERY(lambda s: s.query(
-            l3_db.RouterPort))
-        query += lambda q: q.filter_by(
-            port_id=sa.bindparam('port_id'))
-        db_obj = query(session).params(
-            port_id=port_id).one()
-        session.delete(db_obj)
+        with db_api.CONTEXT_WRITER.using(session):
+            query = BAKERY(lambda s: s.query(
+                l3_db.RouterPort))
+            query += lambda q: q.filter_by(
+                port_id=sa.bindparam('port_id'))
+            db_obj = query(session).params(
+                port_id=port_id).one()
+            session.delete(db_obj)
 
     def create_security_group_precommit(self, context):
         session = context._plugin_context.session
@@ -4013,7 +4024,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not self._dvs_notifier:
             self._dvs_notifier = importutils.import_object(
                 DVS_AGENT_KLASS,
-                nctx.get_admin_context_without_session()
+                n_context.get_admin_context_without_session()
             )
         return self._dvs_notifier
 
@@ -5004,16 +5015,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         ports_to_notify = [port_id]
         fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
         if fixed_ips:
-            query = BAKERY(lambda s: s.query(
-                n_addr_pair_db.AllowedAddressPair))
-            query += lambda q: q.join(
-                models_v2.Port,
-                models_v2.Port.id == n_addr_pair_db.AllowedAddressPair.port_id)
-            query += lambda q: q.filter(
-                models_v2.Port.network_id == sa.bindparam('network_id'))
-            addr_pair = query(plugin_context.session).params(
-                network_id=port['network_id']).all()
-            notify_pairs = []
+            with db_api.CONTEXT_READER.using(plugin_context):
+                query = BAKERY(lambda s: s.query(
+                    n_addr_pair_db.AllowedAddressPair))
+                query += lambda q: q.join(
+                    models_v2.Port,
+                    models_v2.Port.id == (
+                        n_addr_pair_db.AllowedAddressPair.port_id))
+                query += lambda q: q.filter(
+                    models_v2.Port.network_id == sa.bindparam('network_id'))
+                addr_pair = query(plugin_context.session).params(
+                    network_id=port['network_id']).all()
+                notify_pairs = []
             # In order to support use of CIDRs in allowed-address-pairs,
             # we can't include the fxied IPs in the DB query, and instead
             # have to qualify that with post-DB processing

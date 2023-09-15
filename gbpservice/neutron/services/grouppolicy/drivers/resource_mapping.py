@@ -166,7 +166,7 @@ class OwnedResourcesOperations(object):
             session.add(owned)
 
     def _port_is_owned(self, session, port_id):
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             return (session.query(OwnedPort).
                     filter_by(port_id=port_id).
                     first() is not None)
@@ -177,7 +177,7 @@ class OwnedResourcesOperations(object):
             session.add(owned)
 
     def _subnet_is_owned(self, session, subnet_id):
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             return (session.query(OwnedSubnet).
                     filter_by(subnet_id=subnet_id).
                     first() is not None)
@@ -188,7 +188,7 @@ class OwnedResourcesOperations(object):
             session.add(owned)
 
     def _network_is_owned(self, session, network_id):
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             return (session.query(OwnedNetwork).
                     filter_by(network_id=network_id).
                     first() is not None)
@@ -199,7 +199,7 @@ class OwnedResourcesOperations(object):
             session.add(owned)
 
     def _router_is_owned(self, session, router_id):
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             return (session.query(OwnedRouter).
                     filter_by(router_id=router_id).
                     first() is not None)
@@ -210,7 +210,7 @@ class OwnedResourcesOperations(object):
             session.add(owned)
 
     def _address_scope_is_owned(self, session, address_scope_id):
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             return (session.query(OwnedAddressScope).
                     filter_by(address_scope_id=address_scope_id).
                     first() is not None)
@@ -221,7 +221,7 @@ class OwnedResourcesOperations(object):
             session.add(owned)
 
     def _subnetpool_is_owned(self, session, subnetpool_id):
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             return (session.query(OwnedSubnetpool).
                     filter_by(subnetpool_id=subnetpool_id).
                     first() is not None)
@@ -310,8 +310,10 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         return address_scope
 
     def _cleanup_address_scope(self, plugin_context, address_scope_id):
-        if self._address_scope_is_owned(plugin_context.session,
-                                        address_scope_id):
+        with db_api.CONTEXT_READER.using(plugin_context):
+            res = self._address_scope_is_owned(plugin_context.session,
+                                        address_scope_id)
+        if res:
             subpools = self._get_subnetpools(plugin_context,
                                              filters={'address_scope_id':
                                                       [address_scope_id]})
@@ -350,8 +352,10 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                                ip_version=ip_version)
 
     def _cleanup_subnetpool(self, plugin_context, subnetpool_id):
-        if self._subnetpool_is_owned(plugin_context.session,
-                                     subnetpool_id):
+        with db_api.CONTEXT_READER.using(plugin_context):
+            res = self._subnetpool_is_owned(plugin_context.session,
+                                     subnetpool_id)
+        if res:
             subnets = self._get_subnets(plugin_context,
                                         filters={'subnetpool_id':
                                                  [subnetpool_id]})
@@ -382,7 +386,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         context.set_network_id(network['id'])
 
     def _cleanup_network(self, plugin_context, network_id):
-        if self._network_is_owned(plugin_context.session, network_id):
+        with db_api.CONTEXT_READER.using(plugin_context.session) as session:
+            res = self._network_is_owned(session, network_id)
+        if res:
             self._delete_network(plugin_context, network_id)
 
     def _generate_subnets_from_cidrs(self, context, l2p, l3p, cidrs,
@@ -433,14 +439,15 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             context, subnet_id)
 
     def _get_l3p_allocated_subnets(self, context, l3p_id):
-        ptgs = context._plugin._get_l3p_ptgs(
-            context._plugin_context.elevated(), l3p_id)
+        with db_api.CONTEXT_READER.using(context._plugin_context):
+            ptgs = context._plugin._get_l3p_ptgs(
+                context._plugin_context.elevated(), l3p_id)
         return self._get_ptg_cidrs(context, None, ptg_dicts=ptgs)
 
     def _validate_and_add_subnet(self, context, subnet, l3p_id):
         subnet_id = subnet['id']
         session = context._plugin_context.session
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             LOG.debug("starting validate_and_add_subnet transaction for "
                       "subnet %s", subnet_id)
             ptgs = context._plugin._get_l3p_ptgs(
@@ -619,8 +626,10 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     attrs.update(subnet_specifics)
                     subnet = self._create_subnet(context._plugin_context,
                                                  attrs)
-                    self._mark_subnet_owned(context._plugin_context.session,
-                                            subnet['id'])
+                    with db_api.CONTEXT_WRITER.using(context._plugin_context):
+                        self._mark_subnet_owned(
+                            context._plugin_context.session,
+                            subnet['id'])
                     LOG.debug("Allocated subnet %(sub)s from subnetpool: "
                               "%(sp)s.", {'sub': subnet['id'],
                                           'sp': pool['id']})
@@ -656,7 +665,10 @@ class ImplicitResourceOperations(local_api.LocalAPI,
             except ext_l3.RouterInterfaceNotFoundForSubnet:
                 LOG.debug("Ignoring RouterInterfaceNotFoundForSubnet cleaning "
                           "up subnet: %s", subnet_id)
-        if self._subnet_is_owned(plugin_context.session, subnet_id):
+        with db_api.CONTEXT_READER.using(plugin_context):
+            res = self._subnet_is_owned(plugin_context.session, subnet_id)
+
+        if res:
             self._delete_subnet(plugin_context, subnet_id)
 
     def _get_default_security_group(self, plugin_context, ptg_id,
@@ -729,7 +741,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         raise last
 
     def _cleanup_port(self, plugin_context, port_id):
-        if self._port_is_owned(plugin_context.session, port_id):
+        with db_api.CONTEXT_READER.using(plugin_context):
+            res = self._port_is_owned(plugin_context.session, port_id)
+        if res:
             try:
                 self._delete_port(plugin_context, port_id)
             except n_exc.PortNotFound:
@@ -770,7 +784,9 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         return router_id
 
     def _cleanup_router(self, plugin_context, router_id):
-        if self._router_is_owned(plugin_context.session, router_id):
+        with db_api.CONTEXT_READER.using(plugin_context):
+            res = self._router_is_owned(plugin_context.session, router_id)
+        if res:
             self._delete_router(plugin_context, router_id)
 
     def _plug_router_to_subnet(self, plugin_context, subnet_id, router_id):
@@ -919,8 +935,11 @@ class ImplicitResourceOperations(local_api.LocalAPI,
         if (context.original['external_segment_id'] !=
                 context.current['external_segment_id']):
             if context.original['subnet_id']:
-                if self._subnet_is_owned(context._plugin_context.session,
-                                         context.original['subnet_id']):
+                with db_api.CONTEXT_READER.using(context._plugin_context):
+                    res = self._subnet_is_owned(
+                        context._plugin_context.session,
+                        context.original['subnet_id'])
+                if res:
                     self._delete_subnet(context._plugin_context,
                                         context.original['subnet_id'])
             if (context.current['external_segment_id'] and not
@@ -980,8 +999,10 @@ class ImplicitResourceOperations(local_api.LocalAPI,
 
     def _delete_subnet_on_nat_pool_delete(self, context):
         if context.current['subnet_id']:
-            if self._subnet_is_owned(context._plugin_context.session,
-                                     context.current['subnet_id']):
+            with db_api.CONTEXT_READER.using(context._plugin_context):
+                res = self._subnet_is_owned(context._plugin_context.session,
+                                        context.current['subnet_id'])
+            if res:
                 self._delete_subnet(context._plugin_context,
                                     context.current['subnet_id'])
 
@@ -2679,7 +2700,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
 
     @staticmethod
     def _get_policy_rule_set_sg_mapping(session, policy_rule_set_id):
-        with session.begin(subtransactions=True):
+        with db_api.CONTEXT_READER.using(session):
             return (session.query(PolicyRuleSetSGsMapping).
                     filter_by(policy_rule_set_id=policy_rule_set_id).one())
 

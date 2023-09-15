@@ -187,7 +187,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             # current context, which should be available in
             # the session.info's dictionary, with a key of
             # 'using_context').
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_READER.using(session):
                 plugin.extension_manager.extend_network_dict(
                         session, netdb, result)
         else:
@@ -202,7 +202,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(netdb)
         if session and session.is_active:
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_READER.using(session):
                 plugin.extension_manager.extend_network_dict_bulk(session,
                                                                   results)
         else:
@@ -221,7 +221,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             # current context, which should be available in
             # the session.info's dictionary, with a key of
             # 'using_context').
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_READER.using(session):
                 plugin.extension_manager.extend_port_dict(
                         session, portdb, result)
         else:
@@ -236,7 +236,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(portdb)
         if session and session.is_active:
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_READER.using(session):
                 plugin.extension_manager.extend_port_dict_bulk(session,
                                                                results)
         else:
@@ -270,7 +270,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(subnetdb)
         if session and session.is_active:
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_READER.using(session):
                 plugin.extension_manager.extend_subnet_dict_bulk(session,
                                                                  results)
         else:
@@ -304,7 +304,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(subnetpooldb)
         if session and session.is_active:
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_READER.using(session):
                 plugin.extension_manager.extend_subnetpool_dict_bulk(session,
                                                                      results)
         else:
@@ -324,7 +324,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             # current context, which should be available in
             # the session.info's dictionary, with a key of
             # 'using_context').
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_READER.using(session):
                 plugin.extension_manager.extend_address_scope_dict(
                         session, address_scope, result)
         else:
@@ -339,7 +339,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         plugin = directory.get_plugin()
         session = db_api.get_session_from_obj(address_scope)
         if session and session.is_active:
-            with session.begin(subtransactions=True):
+            with db_api.CONTEXT_READER.using(session):
                 plugin.extension_manager.extend_address_scope_dict_bulk(
                     session, results)
         else:
