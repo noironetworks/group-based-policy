@@ -334,8 +334,11 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.useFixture(AimSqlFixture())
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
                                            service_plugins=service_plugins)
-        self.db_session = db_api.get_writer_session()
-        self.initialize_db_config(self.db_session)
+        ctx = n_context.get_admin_context()
+        # TODO(pulkit): replace with AIM writer context once API supports it.
+        with db_api.CONTEXT_WRITER.using(ctx):
+            self.db_session = ctx.session
+            self.initialize_db_config(self.db_session)
 
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
@@ -391,9 +394,11 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             pd_api.VALIDATION_PASSED, self.validation_mgr.validate())
 
     def _find_by_dn(self, dn, cls):
-        aim_ctx = aim_context.AimContext(self.db_session)
-        resource = cls.from_dn(dn)
-        return self.aim_mgr.get(aim_ctx, resource)
+        # TODO(pulkit): replace with AIM reader context once API supports it.
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
+            resource = cls.from_dn(dn)
+            return self.aim_mgr.get(aim_ctx, resource)
 
     def _check_dn_is_resource(self, dns, key, resource):
         dn = dns.pop(key, None)
@@ -489,60 +494,72 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         return self.deserialize(self.fmt, res)
 
     def _get_sg(self, sg_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        sg = aim_resource.SecurityGroup(tenant_name=tenant_name,
-                                        name=sg_name)
-        sg = self.aim_mgr.get(aim_ctx, sg)
-        self.assertIsNotNone(sg)
-        return sg
+        ctx = n_context.get_admin_context()
+        # TODO(pulkit): replace with AIM reader context once API supports it.
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            sg = aim_resource.SecurityGroup(tenant_name=tenant_name,
+                                            name=sg_name)
+            sg = self.aim_mgr.get(aim_ctx, sg)
+            self.assertIsNotNone(sg)
+            return sg
 
     def _sg_should_not_exist(self, sg_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        sgs = self.aim_mgr.find(
-            aim_ctx, aim_resource.SecurityGroup, name=sg_name)
-        self.assertEqual([], sgs)
+        ctx = n_context.get_admin_context()
+        # TODO(pulkit): replace with AIM reader context once API supports it.
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            sgs = self.aim_mgr.find(
+                aim_ctx, aim_resource.SecurityGroup, name=sg_name)
+            self.assertEqual([], sgs)
 
     def _get_sg_subject(self, sg_subject_name, sg_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        sg_subject = aim_resource.SecurityGroupSubject(
-            tenant_name=tenant_name, security_group_name=sg_name,
-            name=sg_subject_name)
-        sg_subject = self.aim_mgr.get(aim_ctx, sg_subject)
-        self.assertIsNotNone(sg_subject)
-        return sg_subject
+        ctx = n_context.get_admin_context()
+        # TODO(pulkit): replace with AIM reader context once API supports it.
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            sg_subject = aim_resource.SecurityGroupSubject(
+                tenant_name=tenant_name, security_group_name=sg_name,
+                name=sg_subject_name)
+            sg_subject = self.aim_mgr.get(aim_ctx, sg_subject)
+            self.assertIsNotNone(sg_subject)
+            return sg_subject
 
     def _get_sg_rule(self, sg_rule_name, sg_subject_name, sg_name,
                      tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        sg_rule = aim_resource.SecurityGroupRule(
-            tenant_name=tenant_name, security_group_name=sg_name,
-            security_group_subject_name=sg_subject_name, name=sg_rule_name)
-        sg_rule = self.aim_mgr.get(aim_ctx, sg_rule)
-        self.assertIsNotNone(sg_rule)
-        return sg_rule
+        ctx = n_context.get_admin_context()
+        # TODO(pulkit): replace with AIM reader context once API supports it.
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            sg_rule = aim_resource.SecurityGroupRule(
+                tenant_name=tenant_name, security_group_name=sg_name,
+                security_group_subject_name=sg_subject_name, name=sg_rule_name)
+            sg_rule = self.aim_mgr.get(aim_ctx, sg_rule)
+            self.assertIsNotNone(sg_rule)
+            return sg_rule
 
     def _get_contract(self, contract_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        contract = aim_resource.Contract(tenant_name=tenant_name,
-                                         name=contract_name)
-        contract = self.aim_mgr.get(aim_ctx, contract)
-        self.assertIsNotNone(contract)
-        return contract
+        ctx = n_context.get_admin_context()
+        # TODO(pulkit): replace with AIM reader context once API supports it.
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            contract = aim_resource.Contract(tenant_name=tenant_name,
+                                             name=contract_name)
+            contract = self.aim_mgr.get(aim_ctx, contract)
+            self.assertIsNotNone(contract)
+            return contract
 
     def _get_subject(self, subject_name, contract_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        subject = aim_resource.ContractSubject(tenant_name=tenant_name,
-                                               contract_name=contract_name,
-                                               name=subject_name)
-        subject = self.aim_mgr.get(aim_ctx, subject)
-        self.assertIsNotNone(subject)
-        return subject
+        ctx = n_context.get_admin_context()
+        # TODO(pulkit): replace with AIM reader context once API supports it.
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            subject = aim_resource.ContractSubject(tenant_name=tenant_name,
+                                                   contract_name=contract_name,
+                                                   name=subject_name)
+            subject = self.aim_mgr.get(aim_ctx, subject)
+            self.assertIsNotNone(subject)
+            return subject
 
     def _check_router(self, router):
         dns = copy.copy(router.get(DN))
@@ -569,11 +586,12 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.assertFalse(dns)
 
     def _sg_rule_should_not_exist(self, sg_rule_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        sg_rules = self.aim_mgr.find(
-            aim_ctx, aim_resource.SecurityGroupRule, name=sg_rule_name)
-        self.assertEqual([], sg_rules)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            sg_rules = self.aim_mgr.find(
+                aim_ctx, aim_resource.SecurityGroupRule, name=sg_rule_name)
+            self.assertEqual([], sg_rules)
 
     def port_notif_verifier(self):
         def verify(plugin_context, port):
@@ -644,8 +662,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             network['apic:distinguished_names']['EndpointGroup'])
 
     def _get_tenant(self, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
         tenant = aim_resource.Tenant(name=tenant_name)
         tenant = self.aim_mgr.get(aim_ctx, tenant)
         self.assertIsNotNone(tenant)
@@ -885,66 +904,73 @@ class TestAimMapping(ApicAimTestCase):
         super(TestAimMapping, self).tearDown()
 
     def _get_vrf(self, vrf_name, tenant_name, should_exist=True):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        vrf = aim_resource.VRF(tenant_name=tenant_name,
-                               name=vrf_name)
-        vrf = self.aim_mgr.get(aim_ctx, vrf)
-        if should_exist:
-            self.assertIsNotNone(vrf)
-            return vrf
-        else:
-            self.assertIsNone(vrf)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            vrf = aim_resource.VRF(tenant_name=tenant_name,
+                                name=vrf_name)
+            vrf = self.aim_mgr.get(aim_ctx, vrf)
+            if should_exist:
+                self.assertIsNotNone(vrf)
+                return vrf
+            else:
+                self.assertIsNone(vrf)
 
     def _vrf_should_not_exist(self, vrf_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        vrfs = self.aim_mgr.find(aim_ctx, aim_resource.VRF, name=vrf_name)
-        self.assertEqual([], vrfs)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            vrfs = self.aim_mgr.find(aim_ctx, aim_resource.VRF, name=vrf_name)
+            self.assertEqual([], vrfs)
 
     def _get_bd(self, bd_name, tenant_name, bd_dn=None):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        if bd_dn:
-            bd = aim_resource.BridgeDomain.from_dn(bd_dn)
-        else:
-            bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
-                                           name=bd_name)
-        bd = self.aim_mgr.get(aim_ctx, bd)
-        self.assertIsNotNone(bd)
-        return bd
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            if bd_dn:
+                bd = aim_resource.BridgeDomain.from_dn(bd_dn)
+            else:
+                bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
+                                               name=bd_name)
+            bd = self.aim_mgr.get(aim_ctx, bd)
+            self.assertIsNotNone(bd)
+            return bd
 
     def _bd_should_not_exist(self, bd_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        bds = self.aim_mgr.find(
-            aim_ctx, aim_resource.BridgeDomain, name=bd_name)
-        self.assertEqual([], bds)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            bds = self.aim_mgr.find(
+                aim_ctx, aim_resource.BridgeDomain, name=bd_name)
+            self.assertEqual([], bds)
 
     def _l3out_should_not_exist(self, l3out_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        l3outs = self.aim_mgr.find(
-            aim_ctx, aim_resource.L3Outside, name=l3out_name)
-        self.assertEqual([], l3outs)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            l3outs = self.aim_mgr.find(
+                aim_ctx, aim_resource.L3Outside, name=l3out_name)
+            self.assertEqual([], l3outs)
 
     def _get_subnet(self, gw_ip_mask, bd_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        subnet = aim_resource.Subnet(tenant_name=tenant_name,
-                                     bd_name=bd_name,
-                                     gw_ip_mask=gw_ip_mask)
-        subnet = self.aim_mgr.get(aim_ctx, subnet)
-        self.assertIsNotNone(subnet)
-        return subnet
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            subnet = aim_resource.Subnet(tenant_name=tenant_name,
+                                         bd_name=bd_name,
+                                         gw_ip_mask=gw_ip_mask)
+            subnet = self.aim_mgr.get(aim_ctx, subnet)
+            self.assertIsNotNone(subnet)
+            return subnet
 
     def _subnet_should_not_exist(self, gw_ip_mask, bd_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        subnets = self.aim_mgr.find(
-            aim_ctx, aim_resource.Subnet, bd_name=bd_name,
-            gw_ip_mask=gw_ip_mask)
-        self.assertEqual([], subnets)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            subnets = self.aim_mgr.find(
+                aim_ctx, aim_resource.Subnet, bd_name=bd_name,
+                gw_ip_mask=gw_ip_mask)
+            self.assertEqual([], subnets)
 
     def _get_epg(self, epg_name, tenant_name, app_profile_name):
         session = self.db_session
@@ -957,61 +983,68 @@ class TestAimMapping(ApicAimTestCase):
         return epg
 
     def _epg_should_not_exist(self, epg_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        epgs = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup,
-                                 name=epg_name)
-        self.assertEqual([], epgs)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            epgs = self.aim_mgr.find(aim_ctx, aim_resource.EndpointGroup,
+                                     name=epg_name)
+            self.assertEqual([], epgs)
 
     def _contract_should_not_exist(self, contract_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        contracts = self.aim_mgr.find(aim_ctx, aim_resource.Contract,
-                                      name=contract_name)
-        self.assertEqual([], contracts)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            contracts = self.aim_mgr.find(aim_ctx, aim_resource.Contract,
+                                          name=contract_name)
+            self.assertEqual([], contracts)
 
     def _subject_should_not_exist(self, subject_name, contract_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        subjects = self.aim_mgr.find(
-            aim_ctx, aim_resource.ContractSubject,
-            subject_name=subject_name, name=contract_name)
-        self.assertEqual([], subjects)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            subjects = self.aim_mgr.find(
+                aim_ctx, aim_resource.ContractSubject,
+                subject_name=subject_name, name=contract_name)
+            self.assertEqual([], subjects)
 
     def _get_filter(self, filter_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        filter = aim_resource.Filter(tenant_name=tenant_name,
-                                     name=filter_name)
-        filter = self.aim_mgr.get(aim_ctx, filter)
-        self.assertIsNotNone(filter)
-        return filter
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            filter = aim_resource.Filter(tenant_name=tenant_name,
+                                         name=filter_name)
+            filter = self.aim_mgr.get(aim_ctx, filter)
+            self.assertIsNotNone(filter)
+            return filter
 
     def _get_filter_entry(self, entry_name, filter_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        entry = aim_resource.FilterEntry(tenant_name=tenant_name,
-                                         filter_name=filter_name,
-                                         name=entry_name)
-        entry = self.aim_mgr.get(aim_ctx, entry)
-        self.assertIsNotNone(entry)
-        return entry
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            entry = aim_resource.FilterEntry(tenant_name=tenant_name,
+                                             filter_name=filter_name,
+                                             name=entry_name)
+            entry = self.aim_mgr.get(aim_ctx, entry)
+            self.assertIsNotNone(entry)
+            return entry
 
     def _get_l3out(self, l3out_name, tenant_name):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        l3out = aim_resource.L3Outside(tenant_name=tenant_name,
-                                       name=l3out_name)
-        l3out = self.aim_mgr.get(aim_ctx, l3out)
-        self.assertIsNotNone(l3out)
-        return l3out
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            l3out = aim_resource.L3Outside(tenant_name=tenant_name,
+                                           name=l3out_name)
+            l3out = self.aim_mgr.get(aim_ctx, l3out)
+            self.assertIsNotNone(l3out)
+            return l3out
 
     def _get_l3out_ext_net(self, aim_ext_net):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
-        aim_ext_net = self.aim_mgr.get(aim_ctx, aim_ext_net)
-        self.assertIsNotNone(aim_ext_net)
-        return aim_ext_net
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            aim_ext_net = self.aim_mgr.get(aim_ctx, aim_ext_net)
+            self.assertIsNotNone(aim_ext_net)
+            return aim_ext_net
 
     def _check_network(self, net, routers=None, scope=None, project=None,
                        vrf=None, preexisting_bd=None):
@@ -1511,53 +1544,55 @@ class TestAimMapping(ApicAimTestCase):
         self._delete('networks', net_id)
 
         # Test create with valid pre-existing BD.
-        aim_ctx = aim_context.AimContext(self.db_session)
-        tenant_name = self.name_mapper.project(None, net['tenant_id'])
-        bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
-                                       name='some_bd_name')
-        bd.monitored = True
-        bd = self.aim_mgr.create(aim_ctx, bd)
-        kwargs = {'apic:distinguished_names': {
-                      'BridgeDomain': bd.dn}}
-        resp = self._create_network(
-            self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
-            **kwargs)
-        result = self.deserialize(self.fmt, resp)
-        self.assertEqual(bd.dn,
-            result['network']['apic:distinguished_names']['BridgeDomain'])
-        net_id = result['network']['id']
-        # Test show.
-        net = self._show('networks', net_id)['network']
-        self._check_network(net, preexisting_bd=bd)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
+            tenant_name = self.name_mapper.project(None, net['tenant_id'])
+            bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
+                                        name='some_bd_name')
+            bd.monitored = True
+            bd = self.aim_mgr.create(aim_ctx, bd)
+            kwargs = {'apic:distinguished_names': {
+                        'BridgeDomain': bd.dn}}
+            resp = self._create_network(
+                self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
+                **kwargs)
+            result = self.deserialize(self.fmt, resp)
+            self.assertEqual(bd.dn,
+                result['network']['apic:distinguished_names']['BridgeDomain'])
+            net_id = result['network']['id']
+            # Test show.
+            net = self._show('networks', net_id)['network']
+            self._check_network(net, preexisting_bd=bd)
 
-        # Test invalid update - can't change the BD DN
-        data = {'network':
-                {'apic:distinguished_names': {
-                 'BridgeDomain': 'someotherbd'}}}
-        result = self._update('networks', net_id, data,
-                              expected_code=webob.exc.HTTPBadRequest.code)
-        err_msg = 'Cannot update read-only attribute apic:distinguished_names'
-        self.assertEqual('HTTPBadRequest', result['NeutronError']['type'])
-        self.assertEqual(err_msg, result['NeutronError']['message'])
+            # Test invalid update - can't change the BD DN
+            data = {'network':
+                    {'apic:distinguished_names': {
+                        'BridgeDomain': 'someotherbd'}}}
+            result = self._update('networks', net_id, data,
+                                expected_code=webob.exc.HTTPBadRequest.code)
+            err_msg = (
+                'Cannot update read-only attribute apic:distinguished_names')
+            self.assertEqual('HTTPBadRequest', result['NeutronError']['type'])
+            self.assertEqual(err_msg, result['NeutronError']['message'])
 
-        # Test valid update.
-        data = {'network':
-                {'name': 'newnamefornet',
-                 'apic:extra_provided_contracts': ['ep2', 'ep3'],
-                 'apic:extra_consumed_contracts': ['ec2', 'ec3']}}
-        net = self._update('networks', net_id, data)['network']
-        self._check_network(net, preexisting_bd=bd)
+            # Test valid update.
+            data = {'network':
+                    {'name': 'newnamefornet',
+                    'apic:extra_provided_contracts': ['ep2', 'ep3'],
+                    'apic:extra_consumed_contracts': ['ec2', 'ec3']}}
+            net = self._update('networks', net_id, data)['network']
+            self._check_network(net, preexisting_bd=bd)
 
-        # Test delete.
-        self._delete('networks', net_id)
-        self._check_network_deleted(net)
+            # Test delete.
+            self._delete('networks', net_id)
+            self._check_network_deleted(net)
 
-        # The BD should be deleted from AIM
-        bd_deleted = self.aim_mgr.get(aim_ctx, bd)
-        self.assertIsNone(bd_deleted)
+            # The BD should be deleted from AIM
+            bd_deleted = self.aim_mgr.get(aim_ctx, bd)
+            self.assertIsNone(bd_deleted)
 
     def test_svi_network_lifecycle(self):
-        session = db_api.get_writer_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         # test create.
@@ -1587,8 +1622,9 @@ class TestAimMapping(ApicAimTestCase):
 
         # test delete
         self._delete('networks', net['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net['id']))
-        self._check_network_deleted(net)
+        with db_api.CONTEXT_WRITER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net['id']))
+            self._check_network_deleted(net)
 
     def _test_invalid_network_exceptions(self, kwargs):
         # Verify creating network with extra provided contracts fails.
@@ -3647,7 +3683,8 @@ class TestAimMapping(ApicAimTestCase):
         self._validate()
 
     def test_address_scope_pre_existing_vrf(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         self.aim_mgr.create(
             aim_ctx, aim_resource.Tenant(name=self.t1_aname, monitored=True))
@@ -3674,42 +3711,47 @@ class TestAimMapping(ApicAimTestCase):
         self.assertEqual('CTX1', vrf.display_name)
 
     def test_network_in_address_scope_pre_existing_vrf(self, common_vrf=False):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
-        if not common_vrf:
-            tenant = aim_resource.Tenant(
-                name=self.t1_aname,
-                display_name=TEST_TENANT_NAMES['t1'],
-                monitored=True)
-            self.aim_mgr.create(aim_ctx, tenant)
-        vrf = aim_resource.VRF(
-            tenant_name='common' if common_vrf else self.t1_aname,
-            name='ctx1', monitored=True)
-        vrf = self.aim_mgr.create(aim_ctx, vrf)
+            if not common_vrf:
+                tenant = aim_resource.Tenant(
+                    name=self.t1_aname,
+                    display_name=TEST_TENANT_NAMES['t1'],
+                    monitored=True)
+                self.aim_mgr.create(aim_ctx, tenant)
+            vrf = aim_resource.VRF(
+                tenant_name='common' if common_vrf else self.t1_aname,
+                name='ctx1', monitored=True)
+            vrf = self.aim_mgr.create(aim_ctx, vrf)
 
-        scope = self._make_address_scope_for_vrf(vrf.dn,
-                                                 name='as1')['address_scope']
+            scope = self._make_address_scope_for_vrf(
+                vrf.dn,
+                name='as1')['address_scope']
 
-        pool = self._make_subnetpool(
-            self.fmt, ['10.0.0.0/8'], name='sp', address_scope_id=scope['id'],
-            tenant_id=scope['tenant_id'], default_prefixlen=24)['subnetpool']
+            pool = self._make_subnetpool(
+                self.fmt, ['10.0.0.0/8'], name='sp',
+                address_scope_id=scope['id'],
+                tenant_id=scope['tenant_id'],
+                default_prefixlen=24)['subnetpool']
 
-        net = self._make_network(self.fmt, 'net1', True)['network']
-        subnet = self._make_subnet(
-            self.fmt, {'network': net}, '10.0.1.1', '10.0.1.0/24',
-            subnetpool_id=pool['id'])['subnet']
-        self._check_network(net)
+            net = self._make_network(self.fmt, 'net1', True)['network']
+            subnet = self._make_subnet(
+                self.fmt, {'network': net}, '10.0.1.1', '10.0.1.0/24',
+                subnetpool_id=pool['id'])['subnet']
+            self._check_network(net)
 
-        router = self._make_router(self.fmt, self._tenant_id,
-                                   'router1')['router']
-        self._router_interface_action('add', router['id'], subnet['id'], None)
-        net = self._show('networks', net['id'])['network']
-        self._check_network(net, routers=[router], vrf=vrf)
+            router = self._make_router(self.fmt, self._tenant_id,
+                                    'router1')['router']
+            self._router_interface_action('add', router['id'], subnet['id'],
+                                          None)
+            net = self._show('networks', net['id'])['network']
+            self._check_network(net, routers=[router], vrf=vrf)
 
-        self._router_interface_action('remove', router['id'], subnet['id'],
-                                      None)
-        net = self._show('networks', net['id'])['network']
-        self._check_network(net)
+            self._router_interface_action('remove', router['id'], subnet['id'],
+                                        None)
+            net = self._show('networks', net['id'])['network']
+            self._check_network(net)
 
     def test_network_in_address_scope_pre_existing_common_vrf(self):
         self.test_network_in_address_scope_pre_existing_vrf(common_vrf=True)
@@ -4124,7 +4166,8 @@ class TestSyncState(ApicAimTestCase):
     def test_external_network(self):
         ext_net = aim_resource.ExternalNetwork.from_dn(self.dn_t1_l1_n1)
         ext_net.monitored = True
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         self.aim_mgr.create(aim_ctx, ext_net)
 
         with mock.patch('aim.aim_manager.AimManager.get_status',
@@ -4203,8 +4246,9 @@ class TestSyncState(ApicAimTestCase):
     def test_external_subnet(self):
         ext_net = aim_resource.ExternalNetwork.from_dn(self.dn_t1_l1_n1)
         ext_net.monitored = True
-        aim_ctx = aim_context.AimContext(self.db_session)
-        self.aim_mgr.create(aim_ctx, ext_net)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
+            self.aim_mgr.create(aim_ctx, ext_net)
 
         with mock.patch('aim.aim_manager.AimManager.get_status',
                         TestSyncState._get_synced_status):
@@ -4230,8 +4274,10 @@ class TestSyncState(ApicAimTestCase):
 
     def _test_erspan_sync(self, expected_state, with_erspan=True):
 
-        aim_ctx = aim_context.AimContext(
-                db_session=db_api.get_writer_session())
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(
+                    db_session=ctx.session)
         self._register_agent('host1', AGENT_CONF_OPFLEX)
         self._register_agent('host2', AGENT_CONF_OPFLEX)
         # Host 1: VPC host
@@ -4921,23 +4967,25 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
             self.fmt, 4, name='as1')['address_scope']
         scope1_id = scope['id']
         scope1_vrf = scope[DN]['VRF']
-        mapping = self._get_address_scope_mapping(self.db_session, scope1_id)
         with self.db_session.begin():
+            mapping = self._get_address_scope_mapping(self.db_session,
+                                                      scope1_id)
             self.db_session.delete(mapping)
 
-        # Create an address scope with pre-existing VRF, delete its
-        # mapping, and create record in old DB table.
-        tenant = aim_resource.Tenant(name=self.t1_aname, monitored=True)
-        self.aim_mgr.create(aim_ctx, tenant)
-        vrf = aim_resource.VRF(
-            tenant_name=self.t1_aname, name='pre_existing', monitored=True)
-        self.aim_mgr.create(aim_ctx, vrf)
+            # Create an address scope with pre-existing VRF, delete its
+            # mapping, and create record in old DB table.
+            tenant = aim_resource.Tenant(name=self.t1_aname, monitored=True)
+            self.aim_mgr.create(aim_ctx, tenant)
+            vrf = aim_resource.VRF(
+                tenant_name=self.t1_aname, name='pre_existing', monitored=True)
+            self.aim_mgr.create(aim_ctx, vrf)
         scope = self._make_address_scope_for_vrf(vrf.dn)['address_scope']
         scope2_id = scope['id']
         scope2_vrf = scope[DN]['VRF']
         self.assertEqual(vrf.dn, scope2_vrf)
-        mapping = self._get_address_scope_mapping(self.db_session, scope2_id)
         with self.db_session.begin():
+            mapping = self._get_address_scope_mapping(self.db_session,
+                                                      scope2_id)
             self.db_session.delete(mapping)
         old_db = data_migrations.DefunctAddressScopeExtensionDb(
             address_scope_id=scope2_id, vrf_dn=scope2_vrf)
@@ -4950,8 +4998,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         net1_bd = net[DN]['BridgeDomain']
         net1_epg = net[DN]['EndpointGroup']
         net1_vrf = net[DN]['VRF']
-        mapping = self._get_network_mapping(self.db_session, net1_id)
         with self.db_session.begin():
+            mapping = self._get_network_mapping(self.db_session, net1_id)
             self.db_session.delete(mapping)
 
         # Create an external network and delete its mapping.
@@ -4960,8 +5008,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         net2_bd = net[DN]['BridgeDomain']
         net2_epg = net[DN]['EndpointGroup']
         net2_vrf = net[DN]['VRF']
-        mapping = self._get_network_mapping(self.db_session, net2_id)
         with self.db_session.begin():
+            mapping = self._get_network_mapping(self.db_session, net2_id)
             self.db_session.delete(mapping)
 
         # Create an unmanaged external network and verify it has no
@@ -5079,7 +5127,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
         self._router_interface_action('add', router['id'], sub['id'], None)
 
         aim = self.aim_mgr
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         ns = self.driver._nat_type_to_strategy(None)
         ext_net = aim_resource.ExternalNetwork.from_dn(
             net[DN]['ExternalNetwork'])
@@ -5151,7 +5200,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
                               'Resource: %s still in AIM' % r)
 
     def test_security_group_migration_sanity(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         self._make_network(self.fmt, 'net1', True)
         sgs = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroup)
         for sg in sgs:
@@ -5202,7 +5252,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
             self._check_sg_rule(sg['id'], sg_rule)
 
         # Wipe out the remote_group_id of all the sg_rules.
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         sg_rules = self.aim_mgr.find(aim_ctx, aim_resource.SecurityGroupRule)
         for sg_rule in sg_rules:
             self.aim_mgr.update(aim_ctx, sg_rule, remote_group_id='')
@@ -5256,7 +5307,8 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
                          'ip_address_v4': owned_addr[0],
                          'network_id': p2['network_id']}
         self.update_ip_owner(ip_owner_info)
-        data_migrations.do_ha_ip_duplicate_entries_removal(self.db_session)
+        with db_api.CONTEXT_WRITER.using(self.db_session):
+            data_migrations.do_ha_ip_duplicate_entries_removal(self.db_session)
         dump = self.get_ha_port_associations()
         self.assertEqual(2, len(dump))
 
@@ -5293,7 +5345,7 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
                          'ip_address_v4': owned_addr[0],
                          'network_id': p2['network_id']}
         self.update_ip_owner(ip_owner_info)
-        with self.db_session.begin(subtransactions=True):
+        with db_api.CONTEXT_WRITER.using(self.db_session):
             dump = self.get_ha_port_associations()
             self.assertEqual(2, len(dump))
             obj = self.get_port_for_ha_ipaddress(
@@ -5473,7 +5525,8 @@ class TestPortBinding(ApicAimTestCase):
                          port['binding:vif_details'])
 
     def test_dualstack_svi_opflex_agent(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         hlink1 = aim_infra.HostLink(
             host_name='h1',
@@ -5576,7 +5629,8 @@ class TestPortBinding(ApicAimTestCase):
         self._test_dualstack_svi_opflex_agent_add_subnet(vpc=True)
 
     def _test_dualstack_svi_opflex_agent_add_subnet(self, vpc=False):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         if vpc:
             hlink1 = aim_infra.HostLink(
@@ -5804,7 +5858,8 @@ class TestPortBinding(ApicAimTestCase):
 
     def test_bind_opflex_agent_svi(self):
         self._register_agent('host1', AGENT_CONF_OPFLEX)
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         hlink_1 = aim_infra.HostLink(
             host_name='host1',
             interface_name='eth1',
@@ -6098,7 +6153,8 @@ class TestPortBinding(ApicAimTestCase):
         subports = []
         baremetal_physnet = 'physnet1'
         parent_physnet = subport_physnet = None
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         # All baremetal VNIC ports are bound to VLAN type segments. For
         # Hierarchical Port Binding (HPB) cases, the dynamically allocated
@@ -6828,7 +6884,8 @@ class TestDomains(ApicAimTestCase):
     # REVISIT: Does this test anything that is not covered by
     # TestPortOnPhysicalNode.test_mixed_ports_on_network_with_default_domains?
     def test_aim_epg_domains(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         self.aim_mgr.create(aim_ctx,
                             aim_resource.VMMDomain(type='OpenStack',
                                                    name='vm1'),
@@ -6896,7 +6953,7 @@ class TestMl2SubnetPoolsV2(test_plugin.TestSubnetPoolsV2,
 class TestExtensionAttributes(ApicAimTestCase):
 
     def test_bgp_enabled_network_lifecycle(self):
-        session = db_api.get_writer_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         # Test create SVI network without BGP.
@@ -6960,12 +7017,14 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Test delete.
         self._delete('networks', net1['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net1['id']))
         self._delete('networks', net2['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net2['id']))
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net2['id']))
 
     def test_network_with_nested_domain_lifecycle(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
         vlan_dict = {'vlans_list': ['2', '3', '4', '3'],
                      'vlan_ranges': [{'start': '6', 'end': '9'},
@@ -7013,14 +7072,15 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Test delete.
         self._delete('networks', net1['id'])
-        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
-        db_vlans = (session.query(
-            extn_db.NetworkExtNestedDomainAllowedVlansDb).filter_by(
-                network_id=net1['id']).all())
-        self.assertEqual([], db_vlans)
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net1['id']))
+            db_vlans = (ctx.session.query(
+                extn_db.NetworkExtNestedDomainAllowedVlansDb).filter_by(
+                    network_id=net1['id']).all())
+            self.assertEqual([], db_vlans)
 
     def test_network_with_extra_contracts_lifecycle(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         # Create network with extra contracts.
@@ -7064,14 +7124,15 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Test delete.
         self._delete('networks', net_id)
-        self.assertFalse(extn.get_network_extn_db(session, net_id))
-        db_contracts = (session.query(
-            extn_db.NetworkExtExtraContractDb).filter_by(
-                network_id=net_id).all())
-        self.assertEqual([], db_contracts)
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net_id))
+            db_contracts = (ctx.session.query(
+                extn_db.NetworkExtExtraContractDb).filter_by(
+                    network_id=net_id).all())
+            self.assertEqual([], db_contracts)
 
     def test_network_with_epg_contract_masters_lifecycle(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         # Create network with EPG contract masters
@@ -7112,14 +7173,15 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Test delete.
         self._delete('networks', net_id)
-        self.assertFalse(extn.get_network_extn_db(session, net_id))
-        db_masters = (session.query(
-            extn_db.NetworkExtEpgContractMasterDb).filter_by(
-                network_id=net_id).all())
-        self.assertEqual([], db_masters)
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net_id))
+            db_masters = (ctx.session.query(
+                extn_db.NetworkExtEpgContractMasterDb).filter_by(
+                    network_id=net_id).all())
+            self.assertEqual([], db_masters)
 
     def test_network_with_policy_enforcement_pref_lifecycle(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         # Create network with default Policy Enforcement Pref
@@ -7155,14 +7217,15 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Test delete.
         self._delete('networks', net_id)
-        self.assertFalse(extn.get_network_extn_db(session, net_id))
-        db_masters = (session.query(
-            extn_db.NetworkExtEpgContractMasterDb).filter_by(
-                network_id=net_id).all())
-        self.assertEqual([], db_masters)
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net_id))
+            db_masters = (ctx.session.query(
+                extn_db.NetworkExtEpgContractMasterDb).filter_by(
+                    network_id=net_id).all())
+            self.assertEqual([], db_masters)
 
     def test_network_with_no_nat_cidrs_lifecycle(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         # Create network with default no nat cidrs extension
@@ -7198,14 +7261,15 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # Test delete.
         self._delete('networks', net_id)
-        self.assertFalse(extn.get_network_extn_db(session, net_id))
-        db_masters = (session.query(
-            extn_db.NetworkExtensionNoNatCidrsDb).filter_by(
-                network_id=net_id).all())
-        self.assertEqual([], db_masters)
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net_id))
+            db_masters = (ctx.session.query(
+                extn_db.NetworkExtensionNoNatCidrsDb).filter_by(
+                    network_id=net_id).all())
+            self.assertEqual([], db_masters)
 
     def test_external_network_lifecycle(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         # create with APIC DN, nat_typeand default CIDR
@@ -7287,11 +7351,12 @@ class TestExtensionAttributes(ApicAimTestCase):
         self._delete('networks', net2['id'])
         self._delete('networks', net1['id'])
 
-        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
-        self.assertFalse(extn.get_network_extn_db(session, net2['id']))
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net1['id']))
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net2['id']))
 
     def test_external_network_with_multi_nets_lifecycle(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         # create with APIC DN, nat_typeand default CIDR
@@ -7375,8 +7440,9 @@ class TestExtensionAttributes(ApicAimTestCase):
         self._delete('networks', net2['id'])
         self._delete('networks', net1['id'])
 
-        self.assertFalse(extn.get_network_extn_db(session, net1['id']))
-        self.assertFalse(extn.get_network_extn_db(session, net2['id']))
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net1['id']))
+            self.assertFalse(extn.get_network_extn_db(ctx.session, net2['id']))
 
     def test_external_network_fail(self):
         # APIC DN not specified
@@ -7454,7 +7520,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertTrue(subnet1[EPG_SUBNET])
 
     def test_external_subnet_lifecycle(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         net1 = self._make_ext_network('net1',
@@ -7493,7 +7559,9 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # delete subnet
         self._delete('subnets', subnet['id'])
-        self.assertFalse(extn.get_subnet_extn_db(session, subnet['id']))
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_subnet_extn_db(ctx.session,
+                                                     subnet['id']))
 
         # Simulate a prior existing subnet (i.e. no extension attrs exist)
         # Get should give default value, and updates should stick
@@ -7501,11 +7569,11 @@ class TestExtensionAttributes(ApicAimTestCase):
             self.fmt, {'network': net1}, '20.0.0.1', '20.0.0.0/24')['subnet']
         self._update('subnets', subnet2['id'],
                      {'subnet': {SNAT_POOL: True}})
-        with session.begin(subtransactions=True):
-            db_obj = session.query(extn_db.SubnetExtensionDb).filter(
+        with db_api.CONTEXT_WRITER.using(ctx):
+            db_obj = ctx.session.query(extn_db.SubnetExtensionDb).filter(
                         extn_db.SubnetExtensionDb.subnet_id ==
                         subnet2['id']).one()
-            session.delete(db_obj)
+            ctx.session.delete(db_obj)
         subnet2 = self._show('subnets', subnet2['id'])['subnet']
         self.assertFalse(subnet2[SNAT_POOL])
 
@@ -7530,10 +7598,12 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # delete EPG subnet
         self._delete('subnets', epg_subnet['id'])
-        self.assertFalse(extn.get_subnet_extn_db(session, epg_subnet['id']))
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_subnet_extn_db(ctx.session,
+                                                     epg_subnet['id']))
 
     def test_router_lifecycle(self):
-        session = db_api.get_reader_session()
+        ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
         # create router with default values
@@ -7577,7 +7647,9 @@ class TestExtensionAttributes(ApicAimTestCase):
         rtr2 = self._make_router(self.fmt, 'test-tenant', 'router2',
             arg_list=self.extension_attributes,
             **{PROV: ['k'], CONS: ['k']})['router']
-        extn.set_router_extn_db(session, rtr2['id'], {PROV: [], CONS: []})
+        with db_api.CONTEXT_WRITER.using(ctx):
+            extn.set_router_extn_db(ctx.session, rtr2['id'],
+                                    {PROV: [], CONS: []})
         rtr2 = self._show('routers', rtr2['id'])['router']
         self.assertEqual([], rtr2[PROV])
         self.assertEqual([], rtr2[CONS])
@@ -7614,12 +7686,14 @@ class TestExtensionAttributes(ApicAimTestCase):
 
         # delete
         self._delete('routers', rtr1['id'])
-        self.assertEqual({PROV: [], CONS: []},
-            extn.get_router_extn_db(session, rtr1['id']))
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertEqual({PROV: [], CONS: []},
+                extn.get_router_extn_db(ctx.session, rtr1['id']))
 
     def test_address_scope_lifecycle(self):
-        session = db_api.get_writer_session()
-        aim_ctx = aim_context.AimContext(db_session=session)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(db_session=ctx.session)
 
         # Create VRF.
         self.aim_mgr.create(
@@ -7729,8 +7803,10 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertIn('is not valid VRF DN', resp['NeutronError']['message'])
 
         # Update APIC DN
-        aim_ctx = aim_context.AimContext(
-                db_session=db_api.get_writer_session())
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(
+                    db_session=ctx.session)
         self.aim_mgr.create(
             aim_ctx, aim_resource.Tenant(name=self.t1_aname, monitored=True))
         vrf = aim_resource.VRF(tenant_name=self.t1_aname, name='default',
@@ -7880,8 +7956,10 @@ class TestExtensionAttributes(ApicAimTestCase):
             result['NeutronError']['type'])
 
     def test_erspan_aim_config(self, network_type='opflex'):
-        aim_ctx = aim_context.AimContext(
-                db_session=db_api.get_writer_session())
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(
+                    db_session=ctx.session)
         self._register_agent('host1', AGENT_CONF_OPFLEX)
         self._register_agent('host2', AGENT_CONF_OPFLEX)
         # Host 1: VPC host
@@ -8334,8 +8412,9 @@ class TestExternalConnectivityBase(object):
 
     def _do_test_router_interface(self, use_addr_scope=False,
                                   single_tenant=False):
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
         cv = self.mock_ns.connect_vrf
         dv = self.mock_ns.disconnect_vrf
 
@@ -8695,8 +8774,9 @@ class TestExternalConnectivityBase(object):
         self._router_interface_action('add', router['id'], sub1['id'], None)
         self.mock_ns.connect_vrf.assert_not_called()
 
-        session = db_api.get_reader_session()
-        aim_ctx = aim_context.AimContext(session)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
         tenant_aname = self.name_mapper.project(None, net['tenant_id'])
         aname = self.name_mapper.network(None, net['id'])
         aim_bd = aim_resource.BridgeDomain(tenant_name=tenant_aname,
@@ -9169,12 +9249,14 @@ class TestExternalConnectivityBase(object):
         cv = self.mock_ns.connect_vrf
         dv = self.mock_ns.disconnect_vrf
 
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         # create pre-existing VRF
         vrf = aim_resource.VRF(tenant_name='common', name='ctx1',
                                monitored=True)
-        vrf = self.aim_mgr.create(aim_ctx, vrf)
+        with self.db_session.begin():
+            vrf = self.aim_mgr.create(aim_ctx, vrf)
         vrf.monitored = False
 
         # create address-scope for pre-existing VRF
@@ -9259,7 +9341,8 @@ class TestExternalConnectivityBase(object):
                     {'host': 'h1', 'name': 'ph1', 'type': 'PhysDom'},
                     {'host': 'h2', 'name': 'ph2', 'type': 'PhysDom'},
                     {'host': 'h3', 'name': 'ph3', 'type': 'PhysDom'}]
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         # test setup
         vmm_domains = self._create_domains_and_mappings(aim_ctx, mappings,
                                                         create_hds=create_hds)
@@ -9420,8 +9503,10 @@ class TestExternalNoNat(TestExternalConnectivityBase,
     def fix_l3out_vrf(self, l3out_tenant_name, l3out_name, vrf_name):
         l3out = aim_resource.L3Outside(tenant_name=l3out_tenant_name,
                                        name=l3out_name)
-        aim_ctx = aim_context.AimContext(self.db_session)
-        self.aim_mgr.update(aim_ctx, l3out, vrf_name=vrf_name)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
+        with self.db_session.begin():
+            self.aim_mgr.update(aim_ctx, l3out, vrf_name=vrf_name)
 
     def _validate(self):
         # REVISIT: Validation does not currently work for these NoNat
@@ -9668,7 +9753,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
             kwargs['tenant_network_types'] = ['vlan']
         super(TestPortVlanNetwork, self).setUp(**kwargs)
 
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         self.hlink1 = aim_infra.HostLink(
             host_name='h1',
             interface_name='eth0',
@@ -9680,7 +9766,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
         mock_notif = mock.Mock(side_effect=self.port_notif_verifier())
         self.driver.notifier.port_update = mock_notif
 
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         if external_net:
             net1 = self._make_ext_network('net1',
                                           dn=self.dn_t1_l1_n1)
@@ -9752,7 +9839,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self._do_test_port_lifecycle(external_net=True)
 
     def test_pre_existing_l3out_svi_bgp(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         myl3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
         self.aim_mgr.create(aim_ctx, myl3out)
@@ -9914,7 +10002,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self._check_no_dynamic_segment(net2['id'])
 
     def _test_multiple_ports_on_host(self, is_svi=False, bgp_enabled=False):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         if not is_svi:
             net1 = self._make_network(self.fmt, 'net1', True)['network']
@@ -10089,7 +10178,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self._test_multiple_ports_on_host(is_svi=True, bgp_enabled=True)
 
     def _test_multiple_networks_on_host(self, is_svi=False, bgp_enabled=False):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         if not is_svi:
             net1 = self._make_network(self.fmt, 'net1', True)['network']
@@ -10344,7 +10434,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self._test_multiple_networks_on_host(is_svi=True, bgp_enabled=True)
 
     def _test_ports_with_2_hostlinks(self, is_svi=False, bgp_enabled=False):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         hlink_1a = aim_infra.HostLink(
             host_name='h1',
             interface_name='eth1',
@@ -10686,7 +10777,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self._test_ports_with_2_hostlinks(is_svi=True, bgp_enabled=True)
 
     def _test_network_on_multiple_hosts(self, is_svi=False, bgp_enabled=False):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         if not is_svi:
             net1 = self._make_network(self.fmt, 'net1', True)['network']
@@ -10880,7 +10972,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self.driver.apic_router_id_pool = '199.199.199.1'
         self.driver.apic_router_id_subnet = netaddr.IPSet(
             [self.driver.apic_router_id_pool])
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         net1 = self._make_network(self.fmt, 'net1', True,
                                   arg_list=self.extension_attributes,
                                   **{'apic:svi': 'True'})['network']
@@ -10900,7 +10993,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
                                  result['NeutronError']['type'])
 
     def test_port_binding_missing_hostlink(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         net1 = self._make_network(self.fmt, 'net1', True)['network']
         epg1 = self._net_2_epg(net1)
@@ -10927,7 +11021,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
     def _test_topology_rpc_no_ports(self, is_svi=False):
         nctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         if is_svi:
             net1 = self._make_network(self.fmt, 'net1', True,
@@ -10975,7 +11070,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
     def _test_topology_rpc(self, is_svi=False):
         nctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         nets = []
         epgs = []
         vlans = []
@@ -11133,7 +11229,8 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             return [str(dom['name']) for dom in domains]
 
     def test_mixed_ports_on_network(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
 
         self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
 
@@ -11166,7 +11263,8 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 self._validate()
 
     def test_mixed_ports_on_network_with_default_domains(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         self.aim_mgr.create(aim_ctx,
                             aim_resource.VMMDomain(type='OpenStack',
                                                    name='vm1'),
@@ -11398,177 +11496,181 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             aim_sg_rule1.remote_group_id, sg_rule['remote_group_id'])
 
     def test_mixed_ports_on_network_with_specific_domains(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
-        hd_mapping = aim_infra.HostDomainMappingV2(host_name='opflex-1',
-                                                   domain_name='vm1',
-                                                   domain_type='OpenStack')
-        self.aim_mgr.create(aim_ctx, hd_mapping)
-        hd_mapping = aim_infra.HostDomainMappingV2(host_name='opflex-2',
-                                                   domain_name='vm2',
-                                                   domain_type='OpenStack')
-        self.aim_mgr.create(aim_ctx, hd_mapping)
-        hd_mapping = aim_infra.HostDomainMappingV2(host_name='opflex-2a',
-                                                   domain_name='vm2',
-                                                   domain_type='OpenStack')
-        self.aim_mgr.create(aim_ctx, hd_mapping)
-        hd_mapping = aim_infra.HostDomainMappingV2(host_name='*',
-                                                   domain_name='vm3',
-                                                   domain_type='OpenStack')
-        self.aim_mgr.create(aim_ctx, hd_mapping)
-        hd_mapping = aim_infra.HostDomainMappingV2(host_name='h1',
-                                                   domain_name='ph1',
-                                                   domain_type='PhysDom')
-        self.aim_mgr.create(aim_ctx, hd_mapping)
-        hd_mapping = aim_infra.HostDomainMappingV2(host_name='h2',
-                                                   domain_name='ph2',
-                                                   domain_type='PhysDom')
-        self.aim_mgr.create(aim_ctx, hd_mapping)
-        hd_mapping = aim_infra.HostDomainMappingV2(host_name='h2a',
-                                                   domain_name='ph2',
-                                                   domain_type='PhysDom')
-        self.aim_mgr.create(aim_ctx, hd_mapping)
-        hd_mapping = aim_infra.HostDomainMappingV2(host_name='*',
-                                                   domain_name='ph3',
-                                                   domain_type='PhysDom')
-        self.aim_mgr.create(aim_ctx, hd_mapping)
-        self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
-        self._register_agent('opflex-2', AGENT_CONF_OPFLEX)
-        self._register_agent('opflex-2a', AGENT_CONF_OPFLEX)
-        self._register_agent('opflex-3', AGENT_CONF_OPFLEX)
-        net1 = self._make_network(
-            self.fmt, 'net1', True,
-            arg_list=('provider:physical_network', 'provider:network_type'),
-            **{'provider:physical_network': 'physnet3',
-               'provider:network_type': 'opflex'})['network']
-        epg1 = self._net_2_epg(net1)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
+            hd_mapping = aim_infra.HostDomainMappingV2(host_name='opflex-1',
+                                                       domain_name='vm1',
+                                                       domain_type='OpenStack')
+            self.aim_mgr.create(aim_ctx, hd_mapping)
+            hd_mapping = aim_infra.HostDomainMappingV2(host_name='opflex-2',
+                                                       domain_name='vm2',
+                                                       domain_type='OpenStack')
+            self.aim_mgr.create(aim_ctx, hd_mapping)
+            hd_mapping = aim_infra.HostDomainMappingV2(host_name='opflex-2a',
+                                                       domain_name='vm2',
+                                                       domain_type='OpenStack')
+            self.aim_mgr.create(aim_ctx, hd_mapping)
+            hd_mapping = aim_infra.HostDomainMappingV2(host_name='*',
+                                                       domain_name='vm3',
+                                                       domain_type='OpenStack')
+            self.aim_mgr.create(aim_ctx, hd_mapping)
+            hd_mapping = aim_infra.HostDomainMappingV2(host_name='h1',
+                                                       domain_name='ph1',
+                                                       domain_type='PhysDom')
+            self.aim_mgr.create(aim_ctx, hd_mapping)
+            hd_mapping = aim_infra.HostDomainMappingV2(host_name='h2',
+                                                       domain_name='ph2',
+                                                       domain_type='PhysDom')
+            self.aim_mgr.create(aim_ctx, hd_mapping)
+            hd_mapping = aim_infra.HostDomainMappingV2(host_name='h2a',
+                                                       domain_name='ph2',
+                                                       domain_type='PhysDom')
+            self.aim_mgr.create(aim_ctx, hd_mapping)
+            hd_mapping = aim_infra.HostDomainMappingV2(host_name='*',
+                                                       domain_name='ph3',
+                                                       domain_type='PhysDom')
+            self.aim_mgr.create(aim_ctx, hd_mapping)
+            self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
+            self._register_agent('opflex-2', AGENT_CONF_OPFLEX)
+            self._register_agent('opflex-2a', AGENT_CONF_OPFLEX)
+            self._register_agent('opflex-3', AGENT_CONF_OPFLEX)
+            net1 = self._make_network(
+                self.fmt, 'net1', True,
+                arg_list=('provider:physical_network',
+                          'provider:network_type'),
+                **{'provider:physical_network': 'physnet3',
+                   'provider:network_type': 'opflex'})['network']
+            epg1 = self._net_2_epg(net1)
 
-        with self.subnet(network={'network': net1}) as sub1:
+            with self.subnet(network={'network': net1}) as sub1:
 
-            # "normal" port on opflex host
-            with self.port(subnet=sub1) as p1:
-                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-1')
-                epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual(set([('vm1', 'OpenStack')]),
-                                 set(self._doms(epg1.vmm_domains)))
-                self.assertEqual(set([]),
-                                 set(self._doms(epg1.physical_domains,
-                                                with_type=False)))
-                # move port to another host
-                p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-2')
+                # "normal" port on opflex host
+                with self.port(subnet=sub1) as p1:
+                    p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-1')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('vm1', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    # move port to another host
+                    p1 = self._bind_port_to_host(p1['port']['id'], 'opflex-2')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('vm2', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                # create another port on a host that belongs to the same domain
+                with self.port(subnet=sub1) as p1a:
+                    p1a = self._bind_port_to_host(p1a['port']['id'],
+                                                  'opflex-2a')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('vm2', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                # delete 1st port
+                self._delete('ports', p1['port']['id'])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm2', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
                 self.assertEqual(set([]),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
-            # create another port on a host that belongs to the same domain
-            with self.port(subnet=sub1) as p1a:
-                p1a = self._bind_port_to_host(p1a['port']['id'], 'opflex-2a')
+                # delete the last port
+                self._delete('ports', p1a['port']['id'])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual(set([('vm2', 'OpenStack')]),
+                self.assertEqual(set([]),
                                  set(self._doms(epg1.vmm_domains)))
                 self.assertEqual(set([]),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
-            # delete 1st port
-            self._delete('ports', p1['port']['id'])
-            epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(set([('vm2', 'OpenStack')]),
-                             set(self._doms(epg1.vmm_domains)))
-            self.assertEqual(set([]),
-                             set(self._doms(epg1.physical_domains,
-                                            with_type=False)))
-            # delete the last port
-            self._delete('ports', p1a['port']['id'])
-            epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(set([]),
-                             set(self._doms(epg1.vmm_domains)))
-            self.assertEqual(set([]),
-                             set(self._doms(epg1.physical_domains,
-                                            with_type=False)))
-            # create another port on a host that belongs to the wildcard domain
-            with self.port(subnet=sub1) as p3:
-                p3 = self._bind_port_to_host(p3['port']['id'], 'opflex-3')
+                # create another port on a host that belongs to the
+                # wildcard domain
+                with self.port(subnet=sub1) as p3:
+                    p3 = self._bind_port_to_host(p3['port']['id'], 'opflex-3')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('vm3', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set([]),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                # delete the wildcard port -- the domain should still
+                # be associated, since we aren't identifying all of the
+                # host-specific mappings
+                self._delete('ports', p3['port']['id'])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm3', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
                 self.assertEqual(set([]),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
-            # delete the wildcard port -- the domain should still
-            # be associated, since we aren't identifying all of the
-            # host-specific mappings
-            self._delete('ports', p3['port']['id'])
-            epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(set([('vm3', 'OpenStack')]),
-                             set(self._doms(epg1.vmm_domains)))
-            self.assertEqual(set([]),
-                             set(self._doms(epg1.physical_domains,
-                                            with_type=False)))
 
-            # port on non-opflex host
-            with self.port(subnet=sub1) as p2:
-                p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
-                epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual(set([('vm3', 'OpenStack')]),
-                                 set(self._doms(epg1.vmm_domains)))
-                self.assertEqual(set(['ph1']),
-                                 set(self._doms(epg1.physical_domains,
-                                                with_type=False)))
-                # move port to another host
-                p2 = self._bind_port_to_host(p2['port']['id'], 'h2')
+                # port on non-opflex host
+                with self.port(subnet=sub1) as p2:
+                    p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('vm3', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set(['ph1']),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                    # move port to another host
+                    p2 = self._bind_port_to_host(p2['port']['id'], 'h2')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('vm3', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set(['ph2']),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                # create another port on a host that belongs to the same domain
+                with self.port(subnet=sub1) as p2a:
+                    p2a = self._bind_port_to_host(p2a['port']['id'], 'h2a')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('vm3', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set(['ph2']),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+
+                # delete 1st port
+                self._delete('ports', p2['port']['id'])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm3', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
                 self.assertEqual(set(['ph2']),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
-            # create another port on a host that belongs to the same domain
-            with self.port(subnet=sub1) as p2a:
-                p2a = self._bind_port_to_host(p2a['port']['id'], 'h2a')
+                # delete the last port
+                self._delete('ports', p2a['port']['id'])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm3', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
-                self.assertEqual(set(['ph2']),
+                self.assertEqual(set([]),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
-
-            # delete 1st port
-            self._delete('ports', p2['port']['id'])
-            epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(set([('vm3', 'OpenStack')]),
-                             set(self._doms(epg1.vmm_domains)))
-            self.assertEqual(set(['ph2']),
-                             set(self._doms(epg1.physical_domains,
-                                            with_type=False)))
-            # delete the last port
-            self._delete('ports', p2a['port']['id'])
-            epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(set([('vm3', 'OpenStack')]),
-                             set(self._doms(epg1.vmm_domains)))
-            self.assertEqual(set([]),
-                             set(self._doms(epg1.physical_domains,
-                                            with_type=False)))
-            # create another port on a host that belongs
-            # to the wildcard mapping
-            with self.port(subnet=sub1) as p3:
-                p3 = self._bind_port_to_host(p3['port']['id'], 'h3')
+                # create another port on a host that belongs
+                # to the wildcard mapping
+                with self.port(subnet=sub1) as p3:
+                    p3 = self._bind_port_to_host(p3['port']['id'], 'h3')
+                    epg1 = self.aim_mgr.get(aim_ctx, epg1)
+                    self.assertEqual(set([('vm3', 'OpenStack')]),
+                                     set(self._doms(epg1.vmm_domains)))
+                    self.assertEqual(set(['ph3']),
+                                     set(self._doms(epg1.physical_domains,
+                                                    with_type=False)))
+                # delete the wildcard port -- the domain should still
+                # be associated, since we aren't identifying all of the
+                # host-specific mappings
+                self._delete('ports', p3['port']['id'])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm3', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
                 self.assertEqual(set(['ph3']),
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
-            # delete the wildcard port -- the domain should still
-            # be associated, since we aren't identifying all of the
-            # host-specific mappings
-            self._delete('ports', p3['port']['id'])
-            epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(set([('vm3', 'OpenStack')]),
-                             set(self._doms(epg1.vmm_domains)))
-            self.assertEqual(set(['ph3']),
-                             set(self._doms(epg1.physical_domains,
-                                            with_type=False)))
 
     def test_baremetal_vnic_2_nics_single_host(self):
         # Verify that the domain association and static
@@ -11648,23 +11750,25 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             self.assertIn(static_path_2, epg1.static_paths)
 
     def test_no_host_domain_mappings(self):
-        aim_ctx = aim_context.AimContext(self.db_session)
-        self.aim_mgr.create(aim_ctx,
-                            aim_resource.VMMDomain(type='OpenStack',
-                                                   name='ostack1'),
-                            overwrite=True)
-        self.aim_mgr.create(aim_ctx,
-                            aim_resource.VMMDomain(type='VMware',
-                                                   name='vmware1'),
-                            overwrite=True)
-        self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
-        self._register_agent('opflex-2', AGENT_CONF_OPFLEX)
-        net1 = self._make_network(
-            self.fmt, 'net1', True,
-            arg_list=('provider:physical_network', 'provider:network_type'),
-            **{'provider:physical_network': 'physnet3',
-               'provider:network_type': 'opflex'})['network']
-        epg1 = self._net_2_epg(net1)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
+            self.aim_mgr.create(aim_ctx,
+                                aim_resource.VMMDomain(type='OpenStack',
+                                                    name='ostack1'),
+                                overwrite=True)
+            self.aim_mgr.create(aim_ctx,
+                                aim_resource.VMMDomain(type='VMware',
+                                                    name='vmware1'),
+                                overwrite=True)
+            self._register_agent('opflex-1', AGENT_CONF_OPFLEX)
+            self._register_agent('opflex-2', AGENT_CONF_OPFLEX)
+            net1 = self._make_network(
+                self.fmt, 'net1', True,
+                arg_list=('provider:physical_network',
+                          'provider:network_type'),
+                **{'provider:physical_network': 'physnet3',
+                'provider:network_type': 'opflex'})['network']
+            epg1 = self._net_2_epg(net1)
 
         with self.subnet(network={'network': net1}) as sub1:
 
@@ -11711,7 +11815,8 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
     def test_no_nat_external_net_default_domains(self):
         # no-NAT external networks rely on port-binding
         # to dynamically associate domains to the external EPG
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         domains = [{'type': 'OpenStack', 'name': 'cloud-rtp-1-VMM'},
                    {'type': 'OpenStack', 'name': 'vm1'}]
         mappings = []
@@ -11781,7 +11886,8 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
     def test_no_nat_external_net_specific_domains(self):
         # no-NAT external networks rely on port-binding
         # to dynamically associate domains to the external EPG
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         domains = [{'type': 'OpenStack', 'name': 'cloud-rtp-1-VMM'},
                    {'type': 'OpenStack', 'name': 'vm1'}]
         mappings = [{'type': 'OpenStack',
@@ -12099,7 +12205,8 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
             expected_binding_info = None
         physical_domain = 'phys1'
         physical_network = 'physnet3'
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         hd_mapping = aim_infra.HostDomainMappingV2(host_name='*',
                                                    domain_name=physical_domain,
                                                    domain_type='PhysDom')
@@ -12381,7 +12488,9 @@ class TestOpflexRpc(ApicAimTestCase):
         port = self._make_port(self.fmt, net_id, fixed_ips=fixed_ips)['port']
         port_id = port['id']
 
-        self.driver._set_vm_name(self.db_session, 'someid', 'a name')
+        with db_api.CONTEXT_WRITER.using(self.db_session):
+            with self.db_session.begin():
+                self.driver._set_vm_name(self.db_session, 'someid', 'a name')
         port = self._bind_port_to_host(port_id, host)['port']
         self.assertEqual('ovs', port['binding:vif_type'])
 
@@ -12419,7 +12528,8 @@ class TestOpflexRpc(ApicAimTestCase):
     def _test_endpoint_details_bound_vlan_svi(self, apic_svi=False):
         self._register_agent('h1', AGENT_CONF_OPFLEX)
 
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         hlink_1 = aim_infra.HostLink(
             host_name='h1',
             interface_name='eth1',
@@ -12465,7 +12575,8 @@ class TestOpflexRpc(ApicAimTestCase):
     def _test_endpoint_details_bound_trunk_no_subport(self, apic_svi=False):
         self._register_agent('h1', AGENT_CONF_OPFLEX)
 
-        aim_ctx = aim_context.AimContext(self.db_session)
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
         hlink_1 = aim_infra.HostLink(
             host_name='h1',
             interface_name='eth1',
@@ -12535,9 +12646,10 @@ class TestOpflexRpc(ApicAimTestCase):
         self.assertEqual('ovs', port['binding:vif_type'])
 
         # Unbind the port, as if binding failed, leaving it bindable.
-        self.db_session.query(ml2_models.PortBinding).filter_by(
-            port_id=port['id']).update(
-                {'vif_type': portbindings.VIF_TYPE_BINDING_FAILED})
+        with db_api.CONTEXT_READER.using(self.db_session):
+            self.db_session.query(ml2_models.PortBinding).filter_by(
+                port_id=port['id']).update(
+                    {'vif_type': portbindings.VIF_TYPE_BINDING_FAILED})
 
         # Call the RPC handler.
         request = {
