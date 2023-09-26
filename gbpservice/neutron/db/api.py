@@ -39,6 +39,7 @@ is_retriable = api.is_retriable
 resource_fields = db_utils.resource_fields
 retry_db_errors = api.retry_db_errors
 retry_if_session_inactive = api.retry_if_session_inactive
+is_session_active = api.is_session_active
 CONTEXT_READER = api.CONTEXT_READER
 CONTEXT_WRITER = api.CONTEXT_WRITER
 

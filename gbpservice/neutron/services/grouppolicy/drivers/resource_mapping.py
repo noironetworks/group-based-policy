@@ -2772,7 +2772,7 @@ class ResourceMappingDriver(api.PolicyDriver, ImplicitResourceOperations,
             context._plugin_context, ptg_id)
         provided_policy_rule_sets = ptg['provided_policy_rule_sets']
         consumed_policy_rule_sets = ptg['consumed_policy_rule_sets']
-        return(self._generate_list_sg_from_policy_rule_set_list(
+        return (self._generate_list_sg_from_policy_rule_set_list(
             context, provided_policy_rule_sets, consumed_policy_rule_sets))
 
     def _generate_list_sg_from_policy_rule_set_list(self, context,

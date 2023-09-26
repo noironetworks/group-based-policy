@@ -77,7 +77,7 @@ class TestServerEp(manager.NetworkScenarioTest):
             elif success_msg in output and self.deleted_rule is True:
                 LOG.debug("Waiting for rule to be deleted in fabric")
                 retry -= 1
-                if retry is 0:
+                if retry == 0:
                     LOG.error("Error - Still Pinging even after "
                               "deleting the security group rule")
                     break
@@ -87,13 +87,13 @@ class TestServerEp(manager.NetworkScenarioTest):
                 self.deleted_rule = self._delete_security_group_rule(
                                     self.servers)
                 retry -= 1
-                if retry is 0:
+                if retry == 0:
                     LOG.error("Security rule was not deleted in time")
                     break
             else:
                 LOG.debug("Waiting for Server to get Active")
                 retry -= 1
-                if retry is 0:
+                if retry == 0:
                     LOG.error("Error - %s", (output,))
                     break
 

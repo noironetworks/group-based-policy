@@ -1,7 +1,7 @@
 - project:
     name: x/group-based-policy
     templates:
-      - openstack-python3-yoga-jobs
+      - openstack-python3-zed-jobs
       - publish-to-pypi
     # REVISIT: In the jobs below, the required-projects clause is needed on
     # the master branch to select the correct version of the requirements
@@ -12,25 +12,20 @@
     check:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-bionic
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
-        - openstack-tox-py36:
-            nodeset: ubuntu-bionic
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: stable/zed
         - openstack-tox-py38:
-            nodeset: ubuntu-bionic
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: stable/zed
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: stable/zed
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -40,22 +35,17 @@
     gate:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-bionic
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
-        - openstack-tox-py36:
-            nodeset: ubuntu-bionic
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: stable/zed
         - openstack-tox-py38:
-            nodeset: ubuntu-bionic
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: stable/zed
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: stable/zed

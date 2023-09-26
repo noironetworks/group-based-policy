@@ -100,7 +100,7 @@ class CommonLibraryTest(unittest2.TestCase):
         return MockResponse()
 
     def _uget(self, path):
-        return(200, "")
+        return (200, "")
 
     def _post(self, path, body, method_type):
         return (200, "")

@@ -597,7 +597,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def port_notif_verifier(self):
         def verify(plugin_context, port):
-            self.assertFalse(plugin_context.session.is_active)
+            self.assertFalse(db_api.is_session_active(plugin_context.session))
             return mock.DEFAULT
         return verify
 
@@ -2455,32 +2455,32 @@ class TestAimMapping(ApicAimTestCase):
         FakeProjectManager.set('test-tenant-update',
             'new-tenant', 'bad\"\'descr')
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
-        assert(self.driver.aim.update.call_args_list[0] == mock.call(
-            mock.ANY, tenant, display_name='new-tenant', descr='bad__descr'))
+        assert self.driver.aim.update.call_args_list[0] == mock.call(
+            mock.ANY, tenant, display_name='new-tenant', descr='bad__descr')
 
         # Test project.updated event. Update only the project name.
         FakeProjectManager.set('test-tenant-update', 'name123', 'new-descr')
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
-        assert(self.driver.aim.update.call_args_list[1] == mock.call(
-            mock.ANY, tenant, display_name='name123', descr='new-descr'))
+        assert self.driver.aim.update.call_args_list[1] == mock.call(
+            mock.ANY, tenant, display_name='name123', descr='new-descr')
 
         # Test project.updated event. Update only the project description.
         FakeProjectManager.set('test-tenant-update', 'name123', 'descr123')
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
-        assert(self.driver.aim.update.call_args_list[2] == mock.call(
-            mock.ANY, tenant, display_name='name123', descr='descr123'))
+        assert self.driver.aim.update.call_args_list[2] == mock.call(
+            mock.ANY, tenant, display_name='name123', descr='descr123')
 
         # Test project.updated event. Clear the project description.
         FakeProjectManager.set('test-tenant-update', 'name123', '')
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
-        assert(self.driver.aim.update.call_args_list[3] == mock.call(
-            mock.ANY, tenant, display_name='name123', descr=''))
+        assert self.driver.aim.update.call_args_list[3] == mock.call(
+            mock.ANY, tenant, display_name='name123', descr='')
 
         # Test project.updated event. Update project name and description.
         FakeProjectManager.set('test-tenant-update', 'prj1', 'prj2')
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
-        assert(self.driver.aim.update.call_args_list[4] == mock.call(
-            mock.ANY, tenant, display_name='prj1', descr='prj2'))
+        assert self.driver.aim.update.call_args_list[4] == mock.call(
+            mock.ANY, tenant, display_name='prj1', descr='prj2')
 
         # Test project.updated event. Add new tenant.
         FakeProjectManager.set('test-tenant-new', 'add-tenant', 'add-descr')
@@ -2490,13 +2490,13 @@ class TestAimMapping(ApicAimTestCase):
         tenant = aim_resource.Tenant(name=tenant_name)
         payload['resource_info'] = 'test-tenant-new'
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
-        assert(self.driver.aim.update.call_args_list[5] == mock.call(
-            mock.ANY, tenant, display_name='add-tenant', descr='add-descr'))
+        assert self.driver.aim.update.call_args_list[5] == mock.call(
+            mock.ANY, tenant, display_name='add-tenant', descr='add-descr')
 
         # Test project.updated event. No change in name or description.
         payload['resource_info'] = 'test-tenant-new'
         keystone_ep.info(None, None, 'identity.project.updated', payload, None)
-        assert(len(self.driver.aim.update.call_args_list) == 6)
+        assert len(self.driver.aim.update.call_args_list) == 6
 
         # Test with project.deleted event.
         payload['resource_info'] = 'test-tenant'
@@ -9367,7 +9367,7 @@ class TestExternalConnectivityBase(object):
         self._make_ext_network('net1',
                                dn=self.dn_t1_l1_n1,
                                cidrs=['20.10.0.0/16', '4.4.4.0/24'])
-        if self.nat_type is not 'distributed' and self.nat_type is not 'edge':
+        if self.nat_type != 'distributed' and self.nat_type != 'edge':
             vmm_domains = []
         self.mock_ns.create_l3outside.assert_called_once_with(
             mock.ANY,

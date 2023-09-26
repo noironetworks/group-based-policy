@@ -1,25 +1,27 @@
 # The order of packages is significant, because pip processes them in the order
 # of appearance. Changing the order has an impact on the overall integration
 # process, which may cause wedges in the gate later.
-hacking>=1.1.0,<1.2.0 # Apache-2.0
+hacking>=6.0.1 # Apache-2.0
 
 # Since version numbers for these are specified in
-# https://releases.openstack.org/constraints/upper/yoga, they cannot be
+# https://releases.openstack.org/constraints/upper/zed, they cannot be
 # referenced as GIT URLs.
 neutron
 python-heatclient
 python-keystoneclient
 
--e git+https://opendev.org/openstack/networking-sfc.git@stable/yoga#egg=networking-sfc
+-e git+https://opendev.org/openstack/networking-sfc.git@stable/zed#egg=networking-sfc
 
 -e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
--e git+https://github.com/noironetworks/python-opflex-agent.git@stable/yoga#egg=neutron-opflex-agent
+-e git+https://github.com/noironetworks/python-opflex-agent.git@stable/zed#egg=neutron-opflex-agent
 
--e git+https://opendev.org/x/python-group-based-policy-client.git@stable/yoga#egg=python-group-based-policy-client
+-e git+https://opendev.org/x/python-group-based-policy-client.git@stable/zed#egg=python-group-based-policy-client
 
 coverage!=4.4,>=4.0 # Apache-2.0
 flake8-import-order==0.12 # LGPLv3
+flake8>=5.0.1
+pyflakes>=2.5.0
 sphinx!=1.6.6,>=1.6.2 # BSD
 oslosphinx>=4.7.0 # Apache-2.0
 testtools>=2.2.0 # MIT

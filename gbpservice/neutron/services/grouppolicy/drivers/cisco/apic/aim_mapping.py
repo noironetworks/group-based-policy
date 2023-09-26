@@ -1755,93 +1755,102 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
             session = context._plugin_context.session
             aim_ctx = aim_context.AimContext(session)
 
-        # Infra Services' FilterEntries and attributes
-        infra_entries = alib.get_service_contract_filter_entries()
-        # ARP FilterEntry and attributes
-        arp_entries = alib.get_arp_filter_entry()
-        contracts = {alib.SERVICE_PREFIX: infra_entries,
-                     alib.IMPLICIT_PREFIX: arp_entries}
+            # Infra Services' FilterEntries and attributes
+            infra_entries = alib.get_service_contract_filter_entries()
+            # ARP FilterEntry and attributes
+            arp_entries = alib.get_arp_filter_entry()
+            contracts = {alib.SERVICE_PREFIX: infra_entries,
+                        alib.IMPLICIT_PREFIX: arp_entries}
 
-        for contract_name_prefix, entries in six.iteritems(contracts):
-            contract_name = self.name_mapper.l3_policy(
-                session, l3p['id'], prefix=contract_name_prefix)
-            # Create Contract (one per l3_policy)
-            aim_contract = aim_resource.Contract(
-                    tenant_name=self._aim_tenant_name(
-                        session, l3p['tenant_id'], aim_resource.Contract),
-                    name=contract_name, display_name=contract_name)
-
-            if get:
-                aim_resources = {}
-                aim_resources[FILTERS] = []
-                aim_resources[FILTER_ENTRIES] = []
-                aim_resources[CONTRACT_SUBJECTS] = []
-                contract_fetched = self.aim.get(aim_ctx, aim_contract)
-                aim_resources[CONTRACTS] = [contract_fetched]
-            else:
-                if create:
-                    self.aim.create(aim_ctx, aim_contract, overwrite=True)
-
-                if not delete and epg_dn:
-                    aim_epg = self.aim.get(
-                        aim_ctx, aim_resource.EndpointGroup.from_dn(epg_dn))
-                    # Add Contracts to the default EPG
-                    if contract_name_prefix == alib.IMPLICIT_PREFIX:
-                        # Default EPG provides and consumes ARP Contract
-                        self._add_contracts_for_epg(
-                            aim_ctx, aim_epg,
-                            provided_contracts=[contract_name],
-                            consumed_contracts=[contract_name])
-                    else:
-                        # Default EPG provides Infra Services' Contract
-                        self._add_contracts_for_epg(
-                            aim_ctx, aim_epg,
-                            provided_contracts=[contract_name])
-                    continue
-
-            filter_names = []
-            for k, v in six.iteritems(entries):
-                filter_name = self.name_mapper.l3_policy(
-                    session, l3p['id'],
-                    prefix=''.join([contract_name_prefix, k, '-']))
-                # Create Filter (one per l3_policy)
-                aim_filter = aim_resource.Filter(
+            for contract_name_prefix, entries in six.iteritems(contracts):
+                contract_name = self.name_mapper.l3_policy(
+                    session, l3p['id'], prefix=contract_name_prefix)
+                # Create Contract (one per l3_policy)
+                aim_contract = aim_resource.Contract(
                         tenant_name=self._aim_tenant_name(
-                            session, l3p['tenant_id'], aim_resource.Filter),
-                        name=filter_name, display_name=filter_name)
+                            session, l3p['tenant_id'], aim_resource.Contract),
+                        name=contract_name, display_name=contract_name)
+
                 if get:
-                    filter_fetched = self.aim.get(aim_ctx, aim_filter)
-                    aim_resources[FILTERS].append(filter_fetched)
-                    aim_filter_entry = self._aim_filter_entry(
-                        session, aim_filter, k,
-                        alib.map_to_aim_filter_entry(v))
-                    entry_fetched = self.aim.get(aim_ctx, aim_filter_entry)
-                    aim_resources[FILTER_ENTRIES].append(entry_fetched)
+                    aim_resources = {}
+                    aim_resources[FILTERS] = []
+                    aim_resources[FILTER_ENTRIES] = []
+                    aim_resources[CONTRACT_SUBJECTS] = []
+                    contract_fetched = self.aim.get(aim_ctx, aim_contract)
+                    aim_resources[CONTRACTS] = [contract_fetched]
                 else:
                     if create:
-                        self.aim.create(aim_ctx, aim_filter, overwrite=True)
-                        # Create FilterEntries (one per l3_policy) and
-                        # associate with Filter
-                        self._create_aim_filter_entry(
-                            session, aim_ctx, aim_filter, k, v, overwrite=True)
-                        filter_names.append(aim_filter.name)
+                        self.aim.create(aim_ctx, aim_contract, overwrite=True)
+
+                    if not delete and epg_dn:
+                        aim_epg = self.aim.get(
+                            aim_ctx, aim_resource.EndpointGroup.from_dn(
+                                epg_dn))
+                        # Add Contracts to the default EPG
+                        if contract_name_prefix == alib.IMPLICIT_PREFIX:
+                            # Default EPG provides and consumes ARP Contract
+                            self._add_contracts_for_epg(
+                                aim_ctx, aim_epg,
+                                provided_contracts=[contract_name],
+                                consumed_contracts=[contract_name])
+                        else:
+                            # Default EPG provides Infra Services' Contract
+                            self._add_contracts_for_epg(
+                                aim_ctx, aim_epg,
+                                provided_contracts=[contract_name])
+                        continue
+
+                filter_names = []
+                for k, v in six.iteritems(entries):
+                    filter_name = self.name_mapper.l3_policy(
+                        session, l3p['id'],
+                        prefix=''.join([contract_name_prefix, k, '-']))
+                    # Create Filter (one per l3_policy)
+                    aim_filter = aim_resource.Filter(
+                            tenant_name=self._aim_tenant_name(
+                                session, l3p['tenant_id'],
+                                aim_resource.Filter),
+                            name=filter_name, display_name=filter_name)
+                    if get:
+                        filter_fetched = self.aim.get(aim_ctx, aim_filter)
+                        aim_resources[FILTERS].append(filter_fetched)
+                        aim_filter_entry = self._aim_filter_entry(
+                            session, aim_filter, k,
+                            alib.map_to_aim_filter_entry(v))
+                        entry_fetched = self.aim.get(aim_ctx, aim_filter_entry)
+                        aim_resources[FILTER_ENTRIES].append(entry_fetched)
+                    else:
+                        if create:
+                            self.aim.create(aim_ctx, aim_filter,
+                                            overwrite=True)
+                            # Create FilterEntries (one per l3_policy) and
+                            # associate with Filter
+                            self._create_aim_filter_entry(
+                                session, aim_ctx, aim_filter, k, v,
+                                overwrite=True)
+                            filter_names.append(
+                                aim_filter.name)
+                        if delete:
+                            self._delete_aim_filter_entries(aim_ctx,
+                                                            aim_filter)
+                            self.aim.delete(aim_ctx, aim_filter)
+                if get:
+                    aim_contract_subject = self._aim_contract_subject(
+                        aim_contract)
+                    subject_fetched = self.aim.get(aim_ctx,
+                                                   aim_contract_subject)
+                    aim_resources[CONTRACT_SUBJECTS].append(subject_fetched)
+                    return aim_resources
+                else:
+                    if create:
+                        # Create ContractSubject (one per l3_policy) with
+                        # relevant Filters, and associate with Contract
+                        self._populate_aim_contract_subject_by_filters(
+                            context, aim_contract, bi_filters=filter_names)
                     if delete:
-                        self._delete_aim_filter_entries(aim_ctx, aim_filter)
-                        self.aim.delete(aim_ctx, aim_filter)
-            if get:
-                aim_contract_subject = self._aim_contract_subject(aim_contract)
-                subject_fetched = self.aim.get(aim_ctx, aim_contract_subject)
-                aim_resources[CONTRACT_SUBJECTS].append(subject_fetched)
-                return aim_resources
-            else:
-                if create:
-                    # Create ContractSubject (one per l3_policy) with relevant
-                    # Filters, and associate with Contract
-                    self._populate_aim_contract_subject_by_filters(
-                        context, aim_contract, bi_filters=filter_names)
-                if delete:
-                    self._delete_aim_contract_subject(aim_ctx, aim_contract)
-                    self.aim.delete(aim_ctx, aim_contract)
+                        self._delete_aim_contract_subject(aim_ctx,
+                                                          aim_contract)
+                        self.aim.delete(aim_ctx, aim_contract)
 
     def _add_implicit_svc_contracts_to_epg(self, context, l2p, aim_epg):
         session = context._plugin_context.session

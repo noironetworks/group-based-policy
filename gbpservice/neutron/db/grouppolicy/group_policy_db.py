@@ -1109,7 +1109,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
             # than size of the ip_pool's subnet.
             if netaddr.IPNetwork(pool).version == 4:
                 ip_pool_prefix_length = netaddr.IPNetwork(pool).prefixlen
-                if(ip_pool_prefix_length > new_prefix_length):
+                if (ip_pool_prefix_length > new_prefix_length):
                     raise gpolicy.SubnetPrefixLengthExceedsIpPool(
                         ip_pool=pool, subnet_size=new_prefix_length)
 

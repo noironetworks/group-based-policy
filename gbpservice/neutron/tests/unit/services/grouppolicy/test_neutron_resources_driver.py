@@ -38,7 +38,6 @@ class CommonNeutronBaseTestCase(test_plugin.GroupPolicyPluginTestBase):
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
                                      group='group_policy')
-        config.cfg.CONF.set_override('allow_overlapping_ips', True)
         super(CommonNeutronBaseTestCase, self).setUp(core_plugin=core_plugin,
                                                      l3_plugin=l3_plugin,
                                                      ml2_options=ml2_options,

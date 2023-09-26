@@ -47,25 +47,25 @@ class TestExtensionDriver(TestExtensionDriverBase):
         self.address_scope_extension = 'Test_AddressScope_Extension'
 
     def _check_create(self, session, data, result):
-        assert(isinstance(session, oslo_db.sqlalchemy.session.Session))
-        assert(isinstance(data, dict))
-        assert('id' not in data)
-        assert(isinstance(result, dict))
-        assert(result['id'] is not None)
+        assert isinstance(session, oslo_db.sqlalchemy.session.Session)
+        assert isinstance(data, dict)
+        assert 'id' not in data
+        assert isinstance(result, dict)
+        assert result['id'] is not None
 
     def _check_update(self, session, data, result):
-        assert(isinstance(session, oslo_db.sqlalchemy.session.Session))
-        assert(isinstance(data, dict))
-        assert(isinstance(result, dict))
-        assert(result['id'] is not None)
+        assert isinstance(session, oslo_db.sqlalchemy.session.Session)
+        assert isinstance(data, dict)
+        assert isinstance(result, dict)
+        assert result['id'] is not None
 
     def _check_extend(self, session, result, db_entry,
                       expected_db_entry_class):
-        assert(isinstance(session, oslo_db.sqlalchemy.session.Session))
-        assert(isinstance(result, dict))
-        assert(result['id'] is not None)
-        assert(isinstance(db_entry, expected_db_entry_class))
-        assert(db_entry.id == result['id'])
+        assert isinstance(session, oslo_db.sqlalchemy.session.Session)
+        assert isinstance(result, dict)
+        assert result['id'] is not None
+        assert isinstance(db_entry, expected_db_entry_class)
+        assert db_entry.id == result['id']
 
     def process_create_subnetpool(self, plugin_context, data, result):
         session = plugin_context.session

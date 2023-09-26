@@ -77,7 +77,6 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         config.cfg.CONF.set_override('policy_drivers',
                                      policy_drivers,
                                      group='group_policy')
-        config.cfg.CONF.set_override('allow_overlapping_ips', True)
 
         ml2_opts = ml2_options or {
                 'mechanism_drivers': ['openvswitch'],

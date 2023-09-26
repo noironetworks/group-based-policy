@@ -44,10 +44,9 @@ from neutron.db import rbac_db_models
 from neutron.db import segments_db
 from neutron.plugins.ml2 import db as n_db
 from neutron.plugins.ml2 import driver_context as ml2_context
-from neutron.plugins.ml2.drivers.openvswitch.agent.common import (
-    constants as a_const)
 from neutron.plugins.ml2 import models
 from neutron.services.trunk import exceptions as trunk_exc
+from neutron_lib.plugins.ml2 import ovs_constants as a_const
 from neutron_lib.agent import topics as n_topics
 from neutron_lib.api.definitions import external_net
 from neutron_lib.api.definitions import portbindings
@@ -7264,7 +7263,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         bd.display_name = dname
         bd.vrf_name = vrf.name
         bd.enable_arp_flood = True
-        bd.enable_routing = len(router_contract_names) is not 0
+        bd.enable_routing = len(router_contract_names) != 0
         bd.limit_ip_learn_to_subnets = True
         bd.ep_move_detect_mode = 'garp'
         bd.l3out_names = []

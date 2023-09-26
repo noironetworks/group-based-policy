@@ -1911,9 +1911,10 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self._test_multiple_l2p_post_create()
 
     def _test_epg_policy_enforcement_attr(self, ptg):
-        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-            db_api.get_writer_session(), ptg['id'],
-            context=self._neutron_context)
+        session = db_api.get_writer_session()
+        with session.begin():
+            aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+                session, ptg['id'], context=self._neutron_context)
         aim_epg = self.aim_mgr.find(
             self._aim_context, aim_resource.EndpointGroup,
             name=aim_epg_name)[0]
@@ -2610,7 +2611,7 @@ class TestPolicyTargetGroupIpv6(TestPolicyTargetGroupIpv4):
                             'subnetpools': []}}
 
     def _family_specific_subnet_validation(self, subnet):
-        if subnet['ip_version'] is 6:
+        if subnet['ip_version'] == 6:
             self.assertEqual(subnet['ipv6_ra_mode'], 'slaac')
             self.assertEqual(subnet['ipv6_address_mode'], 'slaac')
 
