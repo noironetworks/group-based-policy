@@ -1499,6 +1499,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_id = current['network_id']
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
+        subnet_scope = self._determine_subnet_scope(
+            current.get(cisco_apic.ADVERTISED_EXTERNALLY, True),
+            current.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
         if network_db.external is not None and current['gateway_ip']:
             l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
                                                                network_db)
@@ -1526,10 +1529,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         cidr=current['cidr'], l3out=l3out.dn)
             if current[cisco_apic.EPG_SUBNET]:
                 ns.create_epg_subnet(aim_ctx, l3out,
-                    self._subnet_to_gw_ip_mask(current))
+                    self._subnet_to_gw_ip_mask(current),
+                    scope=subnet_scope)
             else:
                 ns.create_subnet(aim_ctx, l3out,
-                                 self._subnet_to_gw_ip_mask(current))
+                                 self._subnet_to_gw_ip_mask(current),
+                                 scope=subnet_scope)
             # Send a port update for those existing VMs because
             # SNAT info has been added.
             if current[cisco_apic.SNAT_HOST_POOL]:
@@ -1605,6 +1610,23 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
 
+        subnet_scope = self._determine_subnet_scope(
+            current.get(cisco_apic.ADVERTISED_EXTERNALLY, True),
+            current.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
+
+        if ((original[cisco_apic.ADVERTISED_EXTERNALLY] !=
+             current[cisco_apic.ADVERTISED_EXTERNALLY]) or
+            (original[cisco_apic.SHARED_BETWEEN_VRFS] !=
+             current[cisco_apic.SHARED_BETWEEN_VRFS])):
+            bd = self._get_network_bd(network_db.aim_mapping)
+            gw_ip = current['gateway_ip']
+            if current.get(cisco_apic.EPG_SUBNET, False):
+                epg = self._get_network_epg(network_db.aim_mapping)
+                sn = self._map_epg_subnet(current, gw_ip, epg)
+            else:
+                sn = self._map_subnet(current, gw_ip, bd)
+            self.aim.update(aim_ctx, sn, scope=subnet_scope)
+
         # This should apply to both external and internal networks
         if (current['host_routes'] != original['host_routes'] or
             current['dns_nameservers'] != original['dns_nameservers']):
@@ -1636,7 +1658,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                      self._subnet_to_gw_ip_mask(original))
                 if current['gateway_ip']:
                     ns.create_subnet(aim_ctx, l3out,
-                                     self._subnet_to_gw_ip_mask(current))
+                                     self._subnet_to_gw_ip_mask(current),
+                                     scope=subnet_scope)
             return
 
         if current['name'] != original['name']:
@@ -2408,13 +2431,18 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     (subnet['name'] or subnet['cidr']))
 
                 sn_ext = self.get_subnet_extn_db(session, subnet['id'])
+                subnet_scope = self._determine_subnet_scope(
+                    sn_ext.get(cisco_apic.ADVERTISED_EXTERNALLY, True),
+                    sn_ext.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
                 if sn_ext.get(cisco_apic.EPG_SUBNET, False):
                     epg_sn = self._map_epg_subnet(subnet, gw_ip, epg)
                     epg_sn.display_name = dname
+                    epg_sn.scope = subnet_scope
                     epg_sn = self.aim.create(aim_ctx, epg_sn)
                 else:
                     sn = self._map_subnet(subnet, gw_ip, bd)
                     sn.display_name = dname
+                    sn.scope = subnet_scope
                     sn = self.aim.create(aim_ctx, sn)
 
         # Ensure network's EPG provides/consumes router's Contract.
@@ -4768,6 +4796,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return self._get_aim_external_objects_db(session, network_db)
         return None, None, None
 
+    def _determine_subnet_scope(self,
+                                advertised_externally,
+                                shared_between_vrfs):
+        if advertised_externally is True and shared_between_vrfs is False:
+            return aim_resource.Subnet.SCOPE_PUBLIC
+        elif advertised_externally is False and shared_between_vrfs is True:
+            return aim_resource.Subnet.SCOPE_SHARED
+        elif advertised_externally is True and shared_between_vrfs is True:
+            return aim_resource.Subnet.SCOPE_PUBLIC_SHARED
+        elif advertised_externally is False and shared_between_vrfs is False:
+            return aim_resource.Subnet.SCOPE_PRIVATE
+        return aim_resource.Subnet.SCOPE_PUBLIC
+
     def _subnet_to_gw_ip_mask(self, subnet):
         cidr = subnet['cidr'].split('/')
         return aim_resource.Subnet.to_gw_ip_mask(
@@ -7101,7 +7142,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         res_dict = {
             cisco_apic.SNAT_HOST_POOL: False,
             cisco_apic.ACTIVE_ACTIVE_AAP: False,
-            cisco_apic.EPG_SUBNET: False
+            cisco_apic.EPG_SUBNET: False,
+            cisco_apic.ADVERTISED_EXTERNALLY: True,
+            cisco_apic.SHARED_BETWEEN_VRFS: False
         }
         self.set_subnet_extn_db(mgr.actual_session, subnet_db.id, res_dict)
 
@@ -7260,15 +7303,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         for subnet_db in net_db.subnets:
             if not subnet_db.aim_extension_mapping:
                 self._missing_subnet_extension_mapping(mgr, subnet_db)
+            scope = self._determine_subnet_scope(
+                    subnet_db.aim_extension_mapping.advertised_externally,
+                    subnet_db.aim_extension_mapping.shared_between_vrfs)
             if subnet_db.gateway_ip:
                 if subnet_db.aim_extension_mapping.epg_subnet:
                     ns.create_epg_subnet(
                         mgr.expected_aim_ctx, l3out,
-                        self._subnet_to_gw_ip_mask(subnet_db))
+                        self._subnet_to_gw_ip_mask(subnet_db),
+                        scope=scope)
                 else:
                     ns.create_subnet(
                         mgr.expected_aim_ctx, l3out,
-                        self._subnet_to_gw_ip_mask(subnet_db))
+                        self._subnet_to_gw_ip_mask(subnet_db),
+                        scope=scope)
 
         # REVISIT: Process each AIM ExternalNetwork rather than each
         # external Neutron network?
