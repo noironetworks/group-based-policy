@@ -167,6 +167,8 @@ class SubnetExtensionDb(model_base.BASEV2):
     active_active_aap = sa.Column(sa.Boolean)
     snat_subnet_only = sa.Column(sa.Boolean)
     epg_subnet = sa.Column(sa.Boolean)
+    advertised_externally = sa.Column(sa.Boolean)
+    shared_between_vrfs = sa.Column(sa.Boolean)
     subnet = orm.relationship(models_v2.Subnet,
                               backref=orm.backref(
                                   'aim_extension_mapping', lazy='joined',
@@ -556,6 +558,10 @@ class ExtensionDbMixin(object):
                                   db_obj['snat_subnet_only'])
             self._set_if_not_none(result, cisco_apic.EPG_SUBNET,
                                   db_obj['epg_subnet'])
+            self._set_if_not_none(result, cisco_apic.ADVERTISED_EXTERNALLY,
+                                  db_obj['advertised_externally'])
+            self._set_if_not_none(result, cisco_apic.SHARED_BETWEEN_VRFS,
+                                  db_obj['shared_between_vrfs'])
         return result
 
     def set_subnet_extn_db(self, session, subnet_id, res_dict):
@@ -577,6 +583,12 @@ class ExtensionDbMixin(object):
                                             cisco_apic.SNAT_SUBNET_ONLY]
         if cisco_apic.EPG_SUBNET in res_dict:
             db_obj['epg_subnet'] = res_dict[cisco_apic.EPG_SUBNET]
+        if cisco_apic.ADVERTISED_EXTERNALLY in res_dict:
+            db_obj['advertised_externally'] = res_dict[
+                                            cisco_apic.ADVERTISED_EXTERNALLY]
+        if cisco_apic.SHARED_BETWEEN_VRFS in res_dict:
+            db_obj['shared_between_vrfs'] = res_dict[
+                                            cisco_apic.SHARED_BETWEEN_VRFS]
         session.add(db_obj)
 
     def get_router_extn_db(self, session, router_id):
