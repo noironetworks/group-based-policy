@@ -278,6 +278,10 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 res_dict.get(cisco_apic.SNAT_SUBNET_ONLY, False))
             result[cisco_apic.EPG_SUBNET] = (
                 res_dict.get(cisco_apic.EPG_SUBNET, False))
+            result[cisco_apic.ADVERTISED_EXTERNALLY] = (
+                res_dict.get(cisco_apic.ADVERTISED_EXTERNALLY, True))
+            result[cisco_apic.SHARED_BETWEEN_VRFS] = (
+                res_dict.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -299,6 +303,10 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     res_dict.get(cisco_apic.SNAT_SUBNET_ONLY, False))
                 result[cisco_apic.EPG_SUBNET] = (
                     res_dict.get(cisco_apic.EPG_SUBNET, False))
+                result[cisco_apic.ADVERTISED_EXTERNALLY] = (
+                    res_dict.get(cisco_apic.ADVERTISED_EXTERNALLY, True))
+                result[cisco_apic.SHARED_BETWEEN_VRFS] = (
+                    res_dict.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -315,14 +323,20 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     cisco_apic.SNAT_SUBNET_ONLY:
                     data.get(cisco_apic.SNAT_SUBNET_ONLY, False),
                     cisco_apic.EPG_SUBNET:
-                    data.get(cisco_apic.EPG_SUBNET, False)}
+                    data.get(cisco_apic.EPG_SUBNET, False),
+                    cisco_apic.ADVERTISED_EXTERNALLY:
+                    data.get(cisco_apic.ADVERTISED_EXTERNALLY, True),
+                    cisco_apic.SHARED_BETWEEN_VRFS:
+                    data.get(cisco_apic.SHARED_BETWEEN_VRFS, False)}
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
         result.update(res_dict)
 
     def process_update_subnet(self, plugin_context, data, result):
         if (cisco_apic.SNAT_HOST_POOL not in data and
-                cisco_apic.SNAT_SUBNET_ONLY not in data):
+                cisco_apic.SNAT_SUBNET_ONLY not in data and
+                cisco_apic.ADVERTISED_EXTERNALLY not in data and
+                cisco_apic.SHARED_BETWEEN_VRFS not in data):
             return
 
         res_dict = {}
@@ -333,6 +347,14 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         if cisco_apic.SNAT_SUBNET_ONLY in data:
             res_dict.update({cisco_apic.SNAT_SUBNET_ONLY:
                              data[cisco_apic.SNAT_SUBNET_ONLY]})
+
+        if cisco_apic.ADVERTISED_EXTERNALLY in data:
+            res_dict.update({cisco_apic.ADVERTISED_EXTERNALLY:
+                             data[cisco_apic.ADVERTISED_EXTERNALLY]})
+
+        if cisco_apic.SHARED_BETWEEN_VRFS in data:
+            res_dict.update({cisco_apic.SHARED_BETWEEN_VRFS:
+                             data[cisco_apic.SHARED_BETWEEN_VRFS]})
 
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
