@@ -132,6 +132,8 @@ ASN = 'apic:bgp_asn'
 BGP_TYPE = 'apic:bgp_type'
 SNAT_SUBNET_ONLY = 'apic:snat_subnet_only'
 EPG_SUBNET = 'apic:epg_subnet'
+ADVERTISED_EXTERNALLY = 'apic:advertised_externally'
+SHARED_BETWEEN_VRFS = 'apic:shared_between_vrfs'
 
 
 def sort_if_list(attr):
@@ -363,7 +365,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                      CIDR, PROV, CONS, SVI,
                                      BGP, BGP_TYPE, ASN,
                                      'provider:network_type',
-                                     'apic:multi_ext_nets'
+                                     'apic:multi_ext_nets',
+                                     ADVERTISED_EXTERNALLY,
+                                     SHARED_BETWEEN_VRFS
                                      )
         self.name_mapper = apic_mapper.APICNameMapper()
         self.t1_aname = self.name_mapper.project(None, 't1')
@@ -897,6 +901,7 @@ class TestAimMapping(ApicAimTestCase):
         self.call_wrapper = CallRecordWrapper()
         self.mock_ns = self.call_wrapper.setUp(
             nat_strategy.DistributedNatStrategy)
+
         self._actual_scopes = {}
         self._scope_vrf_dnames = {}
         super(TestAimMapping, self).setUp()
@@ -960,6 +965,19 @@ class TestAimMapping(ApicAimTestCase):
             aim_ctx = aim_context.AimContext(ctx.session)
             subnet = aim_resource.Subnet(tenant_name=tenant_name,
                                          bd_name=bd_name,
+                                         gw_ip_mask=gw_ip_mask)
+            subnet = self.aim_mgr.get(aim_ctx, subnet)
+            self.assertIsNotNone(subnet)
+            return subnet
+
+    def _get_epg_subnet(self, gw_ip_mask, tenant_name, app_profile_name,
+                        epg_name):
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            aim_ctx = aim_context.AimContext(ctx.session)
+            subnet = aim_resource.EPGSubnet(tenant_name=tenant_name,
+                                         app_profile_name=app_profile_name,
+                                         epg_name=epg_name,
                                          gw_ip_mask=gw_ip_mask)
             subnet = self.aim_mgr.get(aim_ctx, subnet)
             self.assertIsNotNone(subnet)
@@ -1172,7 +1190,8 @@ class TestAimMapping(ApicAimTestCase):
             self._epg_should_not_exist(aname)
 
     def _check_subnet(self, subnet, net, expected_gws, unexpected_gw_ips,
-                      scope=None, project=None):
+                      scope=None, project=None,
+                      expected_subnet_scope='public'):
         dns = copy.copy(subnet.get(DN))
         prefix_len = subnet['cidr'].split('/')[1]
 
@@ -1191,7 +1210,7 @@ class TestAimMapping(ApicAimTestCase):
                 self.assertEqual(tenant_aname, aim_subnet.tenant_name)
                 self.assertEqual(net_aname, aim_subnet.bd_name)
                 self.assertEqual(gw_ip_mask, aim_subnet.gw_ip_mask)
-                self.assertEqual('public', aim_subnet.scope)
+                self.assertEqual(expected_subnet_scope, aim_subnet.scope)
                 display_name = ("%s-%s" %
                                 (router['name'],
                                  (subnet['name'] or subnet['cidr'])))
@@ -1796,6 +1815,189 @@ class TestAimMapping(ApicAimTestCase):
         self._delete('security-groups', sg_id)
         self._sg_should_not_exist(sg_id)
         self._sg_rule_should_not_exist(sg_rule['id'])
+
+    def test_subnet_scope(self):
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+
+        ext_net = self._make_ext_network(
+            'ext-net', dn=self.dn_t1_l1_n1)
+        l3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
+        self.mock_ns.reset_mock()
+
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1',
+            external_gateway_info={'network_id': ext_net['id']})['router']
+        self._check_router(router)
+
+        # create public/shared subnet
+        subnet_ps = self._create_subnet_with_extension(
+            self.fmt, ext_net, '10.0.0.1', '10.0.0.0/24',
+            **{ADVERTISED_EXTERNALLY: 'True',
+               SHARED_BETWEEN_VRFS: 'True',
+               'gateway_ip': '10.0.0.1'})['subnet']
+
+        # check extension & scope values
+        subnet_ps = self._show('subnets', subnet_ps['id'])['subnet']
+        self.assertTrue(subnet_ps[ADVERTISED_EXTERNALLY])
+        self.assertTrue(subnet_ps[SHARED_BETWEEN_VRFS])
+        self.mock_ns.create_subnet.assert_called_once_with(
+            mock.ANY, l3out, '10.0.0.1/24', scope='public,shared')
+        aim_subnet = self._get_subnet('10.0.0.1/24', 'EXT-l1', 'prj_t1')
+        self.assertEqual('public,shared', aim_subnet.scope)
+        self.mock_ns.reset_mock()
+
+        # create shared subnet
+        subnet_shared = self._create_subnet_with_extension(
+            self.fmt, ext_net, '20.0.0.1', '20.0.0.0/24',
+            **{ADVERTISED_EXTERNALLY: 'False',
+               SHARED_BETWEEN_VRFS: 'True'})['subnet']
+
+        # check extension & scope values
+        subnet_shared = self._show('subnets', subnet_shared['id'])['subnet']
+        self.assertFalse(subnet_shared[ADVERTISED_EXTERNALLY])
+        self.assertTrue(subnet_shared[SHARED_BETWEEN_VRFS])
+        self.mock_ns.create_subnet.assert_called_once_with(
+            mock.ANY, l3out, '20.0.0.1/24', scope='shared')
+        aim_subnet = self._get_subnet('20.0.0.1/24', 'EXT-l1', 'prj_t1')
+        self.assertEqual('shared', aim_subnet.scope)
+        self.mock_ns.reset_mock()
+
+        # create private subnet
+        subnet_private = self._create_subnet_with_extension(
+            self.fmt, ext_net, '30.0.0.1', '30.0.0.0/24',
+            **{ADVERTISED_EXTERNALLY: 'False',
+               SHARED_BETWEEN_VRFS: 'False'})['subnet']
+
+        # check extension & scope values
+        subnet_private = self._show('subnets', subnet_private['id'])['subnet']
+        self.assertFalse(subnet_private[ADVERTISED_EXTERNALLY])
+        self.assertFalse(subnet_private[SHARED_BETWEEN_VRFS])
+        self.mock_ns.create_subnet.assert_called_once_with(
+            mock.ANY, l3out, '30.0.0.1/24', scope='private')
+        aim_subnet = self._get_subnet('30.0.0.1/24', 'EXT-l1', 'prj_t1')
+        self.assertEqual('private', aim_subnet.scope)
+        self.mock_ns.reset_mock()
+
+        # update it's scope to public
+        self._update('subnets', subnet_private['id'],
+                     {'subnet': {ADVERTISED_EXTERNALLY: True,
+                                 SHARED_BETWEEN_VRFS: False}})
+        subnet_private = self._show('subnets', subnet_private['id'])['subnet']
+        aim_subnet = self._get_subnet('30.0.0.1/24', 'EXT-l1', 'prj_t1')
+        self.assertTrue(subnet_private[ADVERTISED_EXTERNALLY])
+        self.assertFalse(subnet_private[SHARED_BETWEEN_VRFS])
+        self.assertEqual('public', aim_subnet.scope)
+
+        # update private subnet scope to public,shared
+        self._update('subnets', subnet_private['id'],
+                     {'subnet': {SHARED_BETWEEN_VRFS: True}})
+        subnet_private = self._show('subnets', subnet_private['id'])['subnet']
+        aim_subnet = self._get_subnet('30.0.0.1/24', 'EXT-l1', 'prj_t1')
+        self.assertTrue(subnet_private[ADVERTISED_EXTERNALLY])
+        self.assertTrue(subnet_private[SHARED_BETWEEN_VRFS])
+        self.assertEqual('public,shared', aim_subnet.scope)
+        self.mock_ns.reset_mock()
+
+        # create internal subnet
+        subnet_int = self._create_subnet_with_extension(
+            self.fmt, net, '80.0.0.1', '80.0.0.0/24',
+            **{ADVERTISED_EXTERNALLY: 'False',
+               SHARED_BETWEEN_VRFS: 'True'})['subnet']
+
+        self._router_interface_action('add', router['id'],
+                                    subnet_int['id'], None)
+
+        # check extension & scope values
+        subnet_int = self._show('subnets', subnet_int['id'])['subnet']
+        self.assertFalse(subnet_int[ADVERTISED_EXTERNALLY])
+        self.assertTrue(subnet_int[SHARED_BETWEEN_VRFS])
+        aim_subnet = self._get_subnet('80.0.0.1/24',
+                        'net_%s' % net['id'],
+                        'prj_%s' % net['project_id'])
+        self.assertEqual('shared', aim_subnet.scope)
+        self.mock_ns.reset_mock()
+
+        # update shared to public,shared
+        self._update('subnets', subnet_int['id'],
+                     {'subnet': {ADVERTISED_EXTERNALLY: True}})
+        subnet_int = self._show('subnets', subnet_int['id'])['subnet']
+        aim_subnet = self._get_subnet('80.0.0.1/24',
+                        'net_%s' % net['id'],
+                        'prj_%s' % net['project_id'])
+        self.assertTrue(subnet_private[ADVERTISED_EXTERNALLY])
+        self.assertTrue(subnet_private[SHARED_BETWEEN_VRFS])
+        self.assertEqual('public,shared', aim_subnet.scope)
+        self.mock_ns.reset_mock()
+
+        # create EPG_SUBNET
+        subnet_epg = self._create_subnet_with_extension(
+            self.fmt, ext_net, '60.0.0.1', '60.0.0.0/24',
+            **{ADVERTISED_EXTERNALLY: 'True',
+               SHARED_BETWEEN_VRFS: 'True',
+               EPG_SUBNET: 'True',
+               'gateway_ip': '60.0.0.1'})['subnet']
+
+        # check extension & scope values
+        subnet_epg = self._show('subnets', subnet_epg['id'])['subnet']
+        self.assertTrue(subnet_epg[ADVERTISED_EXTERNALLY])
+        self.assertTrue(subnet_epg[SHARED_BETWEEN_VRFS])
+        self.mock_ns.create_epg_subnet.assert_called_once_with(
+            mock.ANY, l3out, '60.0.0.1/24', scope='public,shared')
+        aim_subnet = self._get_epg_subnet('60.0.0.1/24', 'prj_t1',
+                                          'OpenStack', 'EXT-l1')
+        self.assertEqual('public,shared', aim_subnet.scope)
+        self.mock_ns.reset_mock()
+
+        # update scope to shared.
+        self._update('subnets', subnet_epg['id'],
+                     {'subnet': {ADVERTISED_EXTERNALLY: False}})
+        subnet_epg = self._show('subnets', subnet_epg['id'])['subnet']
+        aim_subnet = self._get_epg_subnet('60.0.0.1/24', 'prj_t1',
+                                          'OpenStack', 'EXT-l1')
+        self.assertFalse(subnet_epg[ADVERTISED_EXTERNALLY])
+        self.assertTrue(subnet_epg[SHARED_BETWEEN_VRFS])
+        self.assertEqual('shared', aim_subnet.scope)
+
+        self._delete('subnets', subnet_epg['id'])
+
+        # create internal EPG_SUBNET
+        subnet_epg = self._create_subnet_with_extension(
+            self.fmt, net, '60.0.0.1', '60.0.0.0/24',
+            **{ADVERTISED_EXTERNALLY: 'True',
+               SHARED_BETWEEN_VRFS: 'True',
+               EPG_SUBNET: 'True',
+               'gateway_ip': '60.0.0.1'})['subnet']
+
+        self._router_interface_action('add', router['id'],
+                                    subnet_epg['id'], None)
+
+        # check extension & scope values
+        subnet_epg = self._show('subnets', subnet_epg['id'])['subnet']
+        self.assertTrue(subnet_epg[ADVERTISED_EXTERNALLY])
+        self.assertTrue(subnet_epg[SHARED_BETWEEN_VRFS])
+        aim_subnet = self._get_epg_subnet('60.0.0.1/24',
+                                          'prj_%s' % net['project_id'],
+                                          'OpenStack',
+                                          'net_%s' % net['id'])
+        self.assertEqual('public,shared', aim_subnet.scope)
+        self.mock_ns.reset_mock()
+
+        aim_subnet = self._get_subnet('80.0.0.1/24',
+                        'net_%s' % net['id'],
+                        'prj_%s' % net['project_id'])
+
+        # update scope to shared.
+        self._update('subnets', subnet_epg['id'],
+                     {'subnet': {ADVERTISED_EXTERNALLY: False}})
+        subnet_epg = self._show('subnets', subnet_epg['id'])['subnet']
+        aim_subnet = self._get_epg_subnet('60.0.0.1/24',
+                                          'prj_%s' % net['project_id'],
+                                          'OpenStack',
+                                          'net_%s' % net['id'])
+        self.assertFalse(subnet_epg[ADVERTISED_EXTERNALLY])
+        self.assertTrue(subnet_epg[SHARED_BETWEEN_VRFS])
+        self.assertEqual('shared', aim_subnet.scope)
 
     def test_subnet_lifecycle(self):
         self._test_subnet_lifecycle()
@@ -7604,6 +7806,40 @@ class TestExtensionAttributes(ApicAimTestCase):
             self.assertFalse(extn.get_subnet_extn_db(ctx.session,
                                                      epg_subnet['id']))
 
+        # create ADVERTISED_EXTERNALLY subnet
+        ae_subnet = self._create_subnet_with_extension(
+            self.fmt, net1, '10.1.0.1', '10.1.0.0/24',
+            **{ADVERTISED_EXTERNALLY: 'True'})['subnet']
+        ae_subnet = self._show('subnets', ae_subnet['id'])['subnet']
+        self.assertTrue(ae_subnet[ADVERTISED_EXTERNALLY])
+
+        ae_subnet = self._list(
+            'subnets', query_params=('id=%s' % ae_subnet['id']))['subnets'][0]
+        self.assertTrue(ae_subnet[ADVERTISED_EXTERNALLY])
+
+        # delete ADVERTISED_EXTERNALLY subnet
+        self._delete('subnets', ae_subnet['id'])
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_subnet_extn_db(ctx.session,
+                                                     ae_subnet['id']))
+
+        # create SHARED_BETWEEN_VRFS subnet
+        sbv_subnet = self._create_subnet_with_extension(
+            self.fmt, net1, '10.1.0.1', '10.1.0.0/24',
+            **{SHARED_BETWEEN_VRFS: 'True'})['subnet']
+        sbv_subnet = self._show('subnets', sbv_subnet['id'])['subnet']
+        self.assertTrue(sbv_subnet[SHARED_BETWEEN_VRFS])
+
+        sbv_subnet = self._list(
+            'subnets', query_params=('id=%s' % sbv_subnet['id']))['subnets'][0]
+        self.assertTrue(sbv_subnet[SHARED_BETWEEN_VRFS])
+
+        # delete SHARED_BETWEEN_VRFS subnet
+        self._delete('subnets', sbv_subnet['id'])
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertFalse(extn.get_subnet_extn_db(ctx.session,
+                                                     sbv_subnet['id']))
+
     def test_router_lifecycle(self):
         ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
@@ -8314,7 +8550,7 @@ class TestExternalConnectivityBase(object):
 
         l3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
         self.mock_ns.create_subnet.assert_called_once_with(
-            mock.ANY, l3out, '10.0.0.1/24')
+            mock.ANY, l3out, '10.0.0.1/24', scope='public')
         ext_sub = aim_resource.Subnet(
             tenant_name=self.t1_aname, bd_name='EXT-l1',
             gw_ip_mask='10.0.0.1/24')
@@ -8330,7 +8566,7 @@ class TestExternalConnectivityBase(object):
         self.mock_ns.delete_subnet.assert_called_once_with(
             mock.ANY, l3out, '10.0.0.1/24')
         self.mock_ns.create_subnet.assert_called_once_with(
-            mock.ANY, l3out, '10.0.0.251/24')
+            mock.ANY, l3out, '10.0.0.251/24', scope='public')
         self._check_dn(subnet, ext_sub, 'Subnet')
         self._validate()
 
@@ -8353,7 +8589,7 @@ class TestExternalConnectivityBase(object):
         subnet = self._show('subnets', subnet['id'])['subnet']
         self.mock_ns.delete_subnet.assert_not_called()
         self.mock_ns.create_subnet.assert_called_once_with(
-            mock.ANY, l3out, '10.0.0.251/24')
+            mock.ANY, l3out, '10.0.0.251/24', scope='public')
         self._check_dn(subnet, ext_sub, 'Subnet')
         self._validate()
 
@@ -8371,7 +8607,7 @@ class TestExternalConnectivityBase(object):
 
         l3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
         self.mock_ns.create_epg_subnet.assert_called_once_with(
-            mock.ANY, l3out, '20.0.0.1/24')
+            mock.ANY, l3out, '20.0.0.1/24', scope='public')
         ext_epg_sub = aim_resource.EPGSubnet(
             tenant_name=self.t1_aname, app_profile_name='OpenStack',
             epg_name='EXT-l1', gw_ip_mask='20.0.0.1/24')
@@ -8382,6 +8618,28 @@ class TestExternalConnectivityBase(object):
         self.mock_ns.reset_mock()
         self._delete('subnets', epg_subnet['id'])
         self.mock_ns.delete_epg_subnet.assert_called_once_with(
+            mock.ANY, l3out, '20.0.0.1/24')
+
+        # create ADVERTISED_EXTERNALLY & SHARED_BETWEEN_VRFs subnet
+        ae_subnet = self._create_subnet_with_extension(
+            self.fmt, net1, '20.0.0.1', '20.0.0.0/24',
+            **{ADVERTISED_EXTERNALLY: 'True',
+               SHARED_BETWEEN_VRFS: 'True'})['subnet']
+        ae_subnet = self._show('subnets', ae_subnet['id'])['subnet']
+
+        l3out = aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
+        self.mock_ns.create_subnet.assert_called_once_with(
+            mock.ANY, l3out, '20.0.0.1/24', scope='public,shared')
+        ext_sub = aim_resource.Subnet(
+            tenant_name=self.t1_aname, bd_name='EXT-l1',
+            gw_ip_mask='20.0.0.1/24')
+        self._check_dn(ae_subnet, ext_sub, 'Subnet')
+        self._validate()
+
+        # delete subnet
+        self.mock_ns.reset_mock()
+        self._delete('subnets', ae_subnet['id'])
+        self.mock_ns.delete_subnet.assert_called_once_with(
             mock.ANY, l3out, '20.0.0.1/24')
 
     def test_unmanaged_external_subnet_lifecycle(self):
