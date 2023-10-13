@@ -160,8 +160,8 @@ def do_apic_aim_persist_migration(session):
                 _add_address_scope_mapping(
                     session, scope_db.id, vrf, vrf_owned)
             else:
-                alembic_util.warning(
-                        "No AIM VRF found for address scope: %s" % scope_db)
+                alembic_util.warn(
+                    "No AIM VRF found for address scope: %s" % scope_db)
 
         # Migrate networks.
         net_dbs = (session.query(models_v2.Network)
@@ -225,9 +225,8 @@ def do_apic_aim_persist_migration(session):
             if bd and epg and vrf:
                 _add_network_mapping(session, net_db.id, bd, epg, vrf)
             elif not net_db.external:
-                alembic_util.warning(
-                        "AIM BD, EPG or VRF not found for"
-                        "network: %s" % net_db)
+                alembic_util.warn(
+                    "AIM BD, EPG or VRF not found for network: %s" % net_db)
 
     alembic_util.msg(
         "Finished data migration for apic_aim mechanism driver persistence.")
