@@ -45,12 +45,11 @@ def upgrade():
                 data_migrations.do_ha_ip_duplicate_entries_removal(session)
                 data_migrations.do_ha_ip_network_id_insertion(session)
         except ImportError:
-            util.warning("AIM schema present, but failed to import"
-                        "AIM libraries - HA IP duplicate entries"
-                        "removal not completed.")
+            util.warn("AIM schema present, but failed to import AIM libraries"
+                      " - HA IP duplicate entries removal not completed.")
         except Exception as e:
-            util.warning("Caught exception while migrating data in %s: %s"
-                        % ('apic_ml2_ha_ipaddress_to_port_owner', e))
+            util.warn("Caught exception while migrating data in %s: %s"
+                      % ('apic_ml2_ha_ipaddress_to_port_owner', e))
 
         inspector = reflection.Inspector.from_engine(op.get_bind())
         pk_constraint = inspector.get_pk_constraint(
