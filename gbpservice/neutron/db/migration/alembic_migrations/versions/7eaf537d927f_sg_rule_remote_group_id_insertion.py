@@ -43,11 +43,11 @@ def upgrade():
             session = sa.orm.Session(bind=bind, autocommit=True)
             data_migrations.do_sg_rule_remote_group_id_insertion(session)
         except ImportError:
-            util.warning("AIM schema present, but failed to import AIM"
-                        "libraries - SG rules remote_group_id not inserted.")
+            util.warn("AIM schema present, but failed to import AIM libraries"
+                      " - SG rules remote_group_id not inserted.")
         except Exception as e:
-            util.warning("Caught exception inserting SG rules remote_group_id:"
-                        "%s" % e)
+            util.warn("Caught exception inserting SG rules remote_group_id: %s"
+                      % e)
 
 
 def downgrade():
