@@ -55,6 +55,8 @@ SNAT_SUBNET_ONLY = 'apic:snat_subnet_only'
 EPG_SUBNET = 'apic:epg_subnet'
 NO_NAT_CIDRS = 'apic:no_nat_cidrs'
 MULTI_EXT_NETS = 'apic:multi_ext_nets'
+ADVERTISED_EXTERNALLY = 'apic:advertised_externally'
+SHARED_BETWEEN_VRFS = 'apic:shared_between_vrfs'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -408,6 +410,18 @@ EXT_SUBNET_ATTRIBUTES = {
     EPG_SUBNET: {
         # Whether this subnet is EPG subnet or regular subnet
         'allow_post': True, 'allow_put': False,
+        'is_visible': True, 'default': False,
+        'convert_to': conv.convert_to_boolean,
+    },
+    ADVERTISED_EXTERNALLY: {
+        # Whether this subnet is visible outside of ACI or not
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': True,
+        'convert_to': conv.convert_to_boolean,
+    },
+    SHARED_BETWEEN_VRFS: {
+        # Whether this subnet is seen across VRFs or only its own
+        'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': False,
         'convert_to': conv.convert_to_boolean,
     }
