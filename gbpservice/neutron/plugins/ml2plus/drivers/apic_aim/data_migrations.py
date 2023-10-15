@@ -70,6 +70,11 @@ AddressScopeMapping = sa.Table(
         sa.Column('vrf_owned', sa.Boolean, nullable=False))
 
 
+HPPDB = sa.Table(
+        'apic_aim_hpp', sa.MetaData(),
+        sa.Column('hpp_normalized', sa.Boolean, nullable=False))
+
+
 # The following definition has been taken from commit:
 # f8b41855acbbb7e59a0bab439445c198fc6aa146
 # and is frozen for the data migration script that was included
@@ -485,8 +490,7 @@ def do_ha_ip_network_id_insertion(session):
     haip_port_id = HAIPAddressToPortAssociation.c.port_id
 
     with db_api.CONTEXT_WRITER.using(session):
-        haip_ip = HAIPAddressToPortAssociation.c.ha_ip_address
-        haip_port_id = HAIPAddressToPortAssociation.c.port_id
+
         port_and_haip_dbs = (session.query(models_v2.Port,
                              HAIPAddressToPortAssociation).join(
                              HAIPAddressToPortAssociation,
@@ -501,3 +505,93 @@ def do_ha_ip_network_id_insertion(session):
 
     alembic_util.msg(
         "Finished network id insertion for HA IP table.")
+
+
+def do_hpp_insertion(session):
+    alembic_util.msg(
+        "Starting hpp normalized value insertion for HPP table.")
+
+    with session.begin(subtransactions=True):
+        session.execute(HPPDB.insert().values(hpp_normalized=False))
+
+    alembic_util.msg(
+        "Finished hpp normalized value insertion for HPP table.")
+
+
+def normalize_hpp_ips(session):
+    aim = aim_manager.AimManager()
+    aim_ctx = aim_context.AimContext(session)
+    mapper = apic_mapper.APICNameMapper()
+
+    sg_dbs = (session.query(sg_models.SecurityGroup).
+              options(lazyload('*')).all())
+    for sg_db in sg_dbs:
+        tenant_aname = mapper.project(session,
+            sg_db['tenant_id'])
+
+        # Create remote group container for each security group
+        try:
+            sg_remote_group = aim_resource.SecurityGroupRemoteIpContainer(
+                tenant_name=tenant_aname,
+                security_group_name=sg_db['id'],
+                name=sg_db['id'])
+            aim.create(aim_ctx, sg_remote_group)
+        except Exception as e:
+            alembic_util.warning("%s" % e)
+
+        sg_ports = (session.query(models_v2.Port).
+                    join(sg_models.SecurityGroupPortBinding,
+                         sg_models.SecurityGroupPortBinding.port_id ==
+                         models_v2.Port.id).
+                    filter(sg_models.SecurityGroupPortBinding.
+                           security_group_id ==
+                           sg_db['id']).
+                    options(lazyload('*')).all())
+
+        for sg_port in sg_ports:
+            for fixed_ip in sg_port['fixed_ips']:
+                # Create SG remote ip resource for each fixed ip
+                sg_remote_group_ip = aim_resource.SecurityGroupRemoteIp(
+                    tenant_name=tenant_aname,
+                    security_group_name=sg_db['id'],
+                    addr=fixed_ip['ip_address'])
+                aim.create(aim_ctx, sg_remote_group_ip)
+
+
+def normalize_hpps(session):
+    aim = aim_manager.AimManager()
+    aim_ctx = aim_context.AimContext(session)
+    mapper = apic_mapper.APICNameMapper()
+
+    sg_rule_dbs = (session.query(sg_models.SecurityGroupRule).
+                   options(lazyload('*')).all())
+    for sg_rule_db in sg_rule_dbs:
+        sg = (session.query(sg_models.SecurityGroup).
+            filter(sg_models.SecurityGroup.id ==
+                   sg_rule_db['security_group_id']).
+            options(lazyload('*')).first())
+        tenant_id = sg['tenant_id']
+        tenant_aname = mapper.project(session, tenant_id)
+        if sg_rule_db.get('remote_group_id'):
+            sg_rule_aim = aim_resource.SecurityGroupRule(
+                tenant_name=tenant_aname,
+                security_group_name=sg_rule_db['security_group_id'],
+                security_group_subject_name='default',
+                name=sg_rule_db['id'])
+            sg_rule_aim = aim.get(aim_ctx, sg_rule_aim)
+
+            if sg_rule_aim.remote_ips:
+                # Get the remote group container's dn
+                rg = (session.query(sg_models.SecurityGroup).
+                    filter(sg_models.SecurityGroup.id ==
+                           sg_rule_db['remote_group_id']).
+                    options(lazyload('*')).first())
+                rg_tenant_id = rg['tenant_id']
+                rg_tenant_aname = mapper.project(session, rg_tenant_id)
+                rg_cont = aim_resource.SecurityGroupRemoteIpContainer(
+                    tenant_name=rg_tenant_aname,
+                    security_group_name=sg_rule_db['remote_group_id'],
+                    name=sg_rule_db['remote_group_id'])
+                # Update SG rule tDn with remote group container dn
+                aim.update(aim_ctx, sg_rule_aim,
+                    remote_ips=[], tDn=rg_cont.dn)
