@@ -182,6 +182,13 @@ class RouterExtensionContractDb(model_base.BASEV2):
     provides = sa.Column(sa.Boolean, primary_key=True)
 
 
+class HPPDb(model_base.BASEV2):
+    __tablename__ = 'apic_aim_hpp'
+
+    hpp_normalized = sa.Column(sa.Boolean, default=False,
+                               primary_key=True)
+
+
 class ExtensionDbMixin(object):
 
     def _set_if_not_none(self, res_dict, res_attr, db_attr):
@@ -667,3 +674,16 @@ class ExtensionDbMixin(object):
                     'contract_name',
                     res_dict[cisco_apic_l3.EXTERNAL_CONSUMED_CONTRACTS],
                     router_id=router_id, provides=False)
+
+    def get_hpp_normalized(self, session):
+        with session.begin(subtransactions=True):
+            query = BAKERY(lambda s: s.query(HPPDb))
+            db_obj = query(session).first()
+            return db_obj['hpp_normalized']
+
+    def set_hpp_normalized(self, session, hpp_normalized):
+        with session.begin(subtransactions=True):
+            query = BAKERY(lambda s: s.query(HPPDb))
+            db_obj = query(session).first()
+            db_obj['hpp_normalized'] = hpp_normalized
+            session.add(db_obj)

@@ -240,6 +240,7 @@ class ApicAimTestMixin(object):
         self.aim_cfg_manager = aim_cfg.ConfigManager(
             aim_context.AimContext(db_session=session), '')
         self.aim_cfg_manager.replace_all(aim_cfg.CONF)
+        data_migrations.do_hpp_insertion(session)
 
     def set_override(self, item, value, group=None, host=''):
         # Override DB config as well
@@ -527,6 +528,27 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         sg_rule = self.aim_mgr.get(aim_ctx, sg_rule)
         self.assertIsNotNone(sg_rule)
         return sg_rule
+
+    def _check_sg_remote_group_container(self, remote_group_name,
+                                       sg_name, tenant_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg_remote_group = aim_resource.SecurityGroupRemoteIpContainer(
+            tenant_name=tenant_name, security_group_name=sg_name,
+            name=remote_group_name)
+        sg_remote_group = self.aim_mgr.get(aim_ctx, sg_remote_group)
+        self.assertIsNotNone(sg_remote_group)
+        return sg_remote_group
+
+    def _get_sg_remote_group_ip(self, remote_ip,
+                                sg_name, tenant_name):
+        session = db_api.get_reader_session()
+        aim_ctx = aim_context.AimContext(session)
+        sg_remote_group_ip = aim_resource.SecurityGroupRemoteIp(
+            tenant_name=tenant_name, security_group_name=sg_name,
+            addr=remote_ip)
+        sg_remote_group_ip = self.aim_mgr.get(aim_ctx, sg_remote_group_ip)
+        return sg_remote_group_ip
 
     def _get_contract(self, contract_name, tenant_name):
         session = db_api.get_reader_session()
@@ -11688,7 +11710,253 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
 
-    def test_update_sg_rule_with_remote_group_set(self):
+    def _test_sg_update_remote_groups(self):
+        session = db_api.get_reader_session()
+        extn = extn_db.ExtensionDbMixin()
+        # Create network.
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+
+        # Create subnet
+        subnet = self._make_subnet(self.fmt, net_resp, '10.0.1.1',
+                                   '10.0.1.0/24')['subnet']
+        subnet_id = subnet['id']
+
+        # Create port on subnet
+        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.100'}]
+        port = self._make_port(self.fmt, net['id'],
+                               fixed_ips=fixed_ips)['port']
+        default_sg_id = port['security_groups'][0]
+        default_sg = self._show('security-groups',
+                                default_sg_id)['security_group']
+        tenant_aname = self.name_mapper.project(None, default_sg['tenant_id'])
+
+        for sg_rule in default_sg['security_group_rules']:
+            if sg_rule['remote_group_id'] and sg_rule['ethertype'] == 'IPv4':
+                break
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(
+            aim_sg_rule.remote_group_id, sg_rule['remote_group_id'])
+
+        if extn.get_hpp_normalized(session):
+            rg_cont = self._check_sg_remote_group_container(default_sg_id,
+                default_sg_id, tenant_aname)
+            remote_ips = ['10.0.1.100']
+            for remote_ip in remote_ips:
+                aim_sg_remote_group_ip = self._get_sg_remote_group_ip(
+                    remote_ip, default_sg_id, tenant_aname)
+                self.assertEqual(aim_sg_remote_group_ip.addr, remote_ip)
+            self.assertEqual(aim_sg_rule.tDn, rg_cont.dn)
+            self.assertEqual(aim_sg_rule.remote_ips, [])
+        else:
+            self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+
+        # add another rule with remote_group_id set
+        rule1 = self._build_security_group_rule(
+            default_sg_id, 'ingress', n_constants.PROTO_NAME_TCP, '22', '23',
+            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule1['security_group_rule']]}
+        sg_rule1 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(
+            aim_sg_rule.remote_group_id, sg_rule1['remote_group_id'])
+        if extn.get_hpp_normalized(session):
+            dn = 'uni/tn-' + tenant_aname + '/pol-' + sg_rule1[
+                'remote_group_id'] + '/remoteipcont'
+            self.assertEqual(aim_sg_rule.tDn, dn)
+            self.assertEqual(aim_sg_rule.remote_ips, [])
+        else:
+            self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+
+        rule2 = self._build_security_group_rule(
+            default_sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, '33', '2',
+            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule2['security_group_rule']]}
+        sg_rule2 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule2['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(
+            aim_sg_rule.remote_group_id, sg_rule2['remote_group_id'])
+        self.assertEqual(aim_sg_rule.icmp_code, '2')
+        self.assertEqual(aim_sg_rule.icmp_type, '33')
+        if extn.get_hpp_normalized(session):
+            dn = 'uni/tn-' + tenant_aname + '/pol-' + sg_rule2[
+                'remote_group_id'] + '/remoteipcont'
+            self.assertEqual(aim_sg_rule.tDn, dn)
+            self.assertEqual(aim_sg_rule.remote_ips, [])
+        else:
+            self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+
+        rule3 = self._build_security_group_rule(
+            default_sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, None, None,
+            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule3['security_group_rule']]}
+        sg_rule3 = self._make_security_group_rule(
+            self.fmt, rules)['security_group_rules'][0]
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule3['id'], 'default', default_sg_id, tenant_aname)
+        self.assertEqual(
+            aim_sg_rule.remote_group_id, sg_rule3['remote_group_id'])
+        self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
+        self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
+        if extn.get_hpp_normalized(session):
+            dn = 'uni/tn-' + tenant_aname + '/pol-' + sg_rule3[
+                'remote_group_id'] + '/remoteipcont'
+            self.assertEqual(aim_sg_rule.tDn, dn)
+            self.assertEqual(aim_sg_rule.remote_ips, [])
+        else:
+            self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+
+        # delete SG from port
+        data = {'port': {'security_groups': []}}
+        port = self._update('ports', port['id'], data)['port']
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', default_sg_id, tenant_aname)
+        aim_sg_rule1 = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
+        if extn.get_hpp_normalized(session):
+            self._check_sg_remote_group_container(
+                default_sg_id, default_sg_id, tenant_aname)
+            remote_ip = ''
+            aim_sg_remote_group_ip = self._get_sg_remote_group_ip(
+                sg_rule['id'], default_sg_id, tenant_aname)
+            self.assertIsNone(aim_sg_remote_group_ip)
+            self.assertEqual(aim_sg_rule.tDn, '')
+            self.assertEqual(aim_sg_rule1.tDn, '')
+        self.assertEqual(aim_sg_rule.remote_ips, [])
+        self.assertEqual(aim_sg_rule1.remote_ips, [])
+
+        # add SG to port
+        data = {'port': {'security_groups': [default_sg_id]}}
+        port = self._update('ports', port['id'], data)['port']
+        aim_sg_rule = self._get_sg_rule(
+             sg_rule['id'], 'default', default_sg_id, tenant_aname)
+        aim_sg_rule1 = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
+        if extn.get_hpp_normalized(session):
+            rg_cont = self._check_sg_remote_group_container(
+                default_sg_id, default_sg_id, tenant_aname)
+            remote_ips = ['10.0.1.100']
+            for remote_ip in remote_ips:
+                aim_sg_remote_group_ip = self._get_sg_remote_group_ip(
+                    remote_ip, default_sg_id, tenant_aname)
+                self.assertEqual(aim_sg_remote_group_ip.addr, remote_ip)
+            self.assertEqual(aim_sg_rule.tDn, rg_cont.dn)
+            self.assertEqual(aim_sg_rule1.tDn, rg_cont.dn)
+            self.assertEqual(aim_sg_rule1.remote_ips, [])
+        else:
+            self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+            self.assertEqual(aim_sg_rule1.remote_ips, ['10.0.1.100'])
+
+    def _test_create_sg_rule_with_remote_group_set_different_tenant(self):
+        session = db_api.get_reader_session()
+        extn = extn_db.ExtensionDbMixin()
+        # Create network.
+        net_resp = self._make_network(
+            self.fmt, 'net1', True, tenant_id='tenant_1')
+        net = net_resp['network']
+
+        # Create subnet
+        subnet = self._make_subnet(self.fmt, net_resp, '10.0.1.1',
+                               '10.0.1.0/24', tenant_id='tenant_1')['subnet']
+        subnet_id = subnet['id']
+
+        # Create port on subnet
+        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.100'}]
+        port = self._make_port(self.fmt, net['id'], fixed_ips=fixed_ips,
+                               tenant_id='tenant_1')['port']
+        default_sg_id = port['security_groups'][0]
+        default_sg = self._show('security-groups',
+                                default_sg_id)['security_group']
+        for sg_rule in default_sg['security_group_rules']:
+            if sg_rule['remote_group_id'] and sg_rule['ethertype'] == 'IPv4':
+                break
+        tenant_aname = self.name_mapper.project(None, default_sg['tenant_id'])
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', default_sg_id, tenant_aname)
+        if extn.get_hpp_normalized(session):
+            rg_cont = self._check_sg_remote_group_container(
+                sg_rule['remote_group_id'],
+                sg_rule['remote_group_id'], tenant_aname)
+            remote_ips = ['10.0.1.100']
+            for remote_ip in remote_ips:
+                aim_sg_remote_group_ip = self._get_sg_remote_group_ip(
+                    remote_ip, sg_rule['remote_group_id'], tenant_aname)
+                self.assertEqual(aim_sg_remote_group_ip.addr, remote_ip)
+            self.assertEqual(aim_sg_rule.tDn, rg_cont.dn)
+            self.assertEqual(aim_sg_rule.remote_ips, [])
+        else:
+            self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
+        self.assertEqual(
+            aim_sg_rule.remote_group_id, sg_rule['remote_group_id'])
+
+        # add another rule with remote_group_id set
+        rule1 = self._build_security_group_rule(
+            default_sg_id, 'ingress', n_constants.PROTO_NAME_TCP, '22', '23',
+            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
+        rules = {'security_group_rules': [rule1['security_group_rule']]}
+        sg_rule1 = self._make_security_group_rule(
+            self.fmt, rules, tenant_id='tenant_2')['security_group_rules'][0]
+        aim_sg_rule1 = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
+        if extn.get_hpp_normalized(session):
+            rg_cont = self._check_sg_remote_group_container(
+                sg_rule1['remote_group_id'],
+                sg_rule1['remote_group_id'], tenant_aname)
+            remote_ips = ['10.0.1.100']
+            for remote_ip in remote_ips:
+                aim_sg_remote_group_ip = self._get_sg_remote_group_ip(
+                    remote_ip, sg_rule1['remote_group_id'], tenant_aname)
+                self.assertEqual(aim_sg_remote_group_ip.addr, remote_ip)
+            self.assertEqual(aim_sg_rule1.tDn, rg_cont.dn)
+            self.assertEqual(aim_sg_rule1.remote_ips, [])
+        else:
+            self.assertEqual(aim_sg_rule1.remote_ips, ['10.0.1.100'])
+        self.assertEqual(
+            aim_sg_rule1.remote_group_id, sg_rule1['remote_group_id'])
+
+        # Add another port on subnet
+        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.200'}]
+        port = self._make_port(self.fmt, net['id'], fixed_ips=fixed_ips,
+                               tenant_id='tenant_1')['port']
+        aim_sg_rule1 = self._get_sg_rule(
+            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
+        if extn.get_hpp_normalized(session):
+            rg_cont = self._check_sg_remote_group_container(
+                sg_rule['remote_group_id'],
+                sg_rule['remote_group_id'], tenant_aname)
+            remote_ips = ['10.0.1.100', '10.0.1.200']
+            for remote_ip in remote_ips:
+                aim_sg_remote_group_ip = self._get_sg_remote_group_ip(
+                    remote_ip, sg_rule['remote_group_id'], tenant_aname)
+                self.assertEqual(aim_sg_remote_group_ip.addr, remote_ip)
+            self.assertEqual(aim_sg_rule1.tDn, rg_cont.dn)
+            self.assertEqual(aim_sg_rule1.remote_ips, [])
+        else:
+            self.assertEqual(aim_sg_rule1.remote_ips,
+                ['10.0.1.100', '10.0.1.200'])
+        self.assertEqual(
+            aim_sg_rule1.remote_group_id, sg_rule1['remote_group_id'])
+
+    def test_sg_update_remote_groups_normalized(self):
+        session = db_api.get_reader_session()
+        extn = extn_db.ExtensionDbMixin()
+        extn.set_hpp_normalized(session, True)
+        self._test_sg_update_remote_groups()
+        self._test_create_sg_rule_with_remote_group_set_different_tenant()
+
+    def test_sg_update_remote_groups_not_normalized(self):
+        self._test_sg_update_remote_groups()
+        self._test_create_sg_rule_with_remote_group_set_different_tenant()
+
+    def test_normalize_hpp(self):
+        session = db_api.get_reader_session()
+        extn = extn_db.ExtensionDbMixin()
+        aim_ctx = aim_context.AimContext(session)
         # Create network.
         net_resp = self._make_network(self.fmt, 'net1', True)
         net = net_resp['network']
@@ -11715,7 +11983,8 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         self.assertEqual(
             aim_sg_rule.remote_group_id, sg_rule['remote_group_id'])
 
-        # add another rule with remote_group_id set
+        # add rule with remote_group_id set
+        self.assertFalse(extn.get_hpp_normalized(session))
         rule1 = self._build_security_group_rule(
             default_sg_id, 'ingress', n_constants.PROTO_NAME_TCP, '22', '23',
             remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
@@ -11728,108 +11997,30 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         self.assertEqual(
             aim_sg_rule.remote_group_id, sg_rule1['remote_group_id'])
 
-        rule2 = self._build_security_group_rule(
-            default_sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, '33', '2',
-            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
-        rules = {'security_group_rules': [rule2['security_group_rule']]}
-        sg_rule2 = self._make_security_group_rule(
-            self.fmt, rules)['security_group_rules'][0]
-        aim_sg_rule = self._get_sg_rule(
-            sg_rule2['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
-        self.assertEqual(aim_sg_rule.icmp_code, '2')
-        self.assertEqual(aim_sg_rule.icmp_type, '33')
+        # normalize the remote groups
+        self.remoteip_normalization = aim_infra.ACISupportedMo(
+            name="remoteipcont", supports=False)
+        self.aim_mgr.create(aim_ctx, self.remoteip_normalization)
+        self.mech = md.ApicMechanismDriver()
+        self.result = self.mech.normalize_hpp()
+        self.assertFalse(self.result)
 
-        rule3 = self._build_security_group_rule(
-            default_sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, None, None,
-            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
-        rules = {'security_group_rules': [rule3['security_group_rule']]}
-        sg_rule3 = self._make_security_group_rule(
-            self.fmt, rules)['security_group_rules'][0]
-        aim_sg_rule = self._get_sg_rule(
-            sg_rule3['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
-        self.assertEqual(aim_sg_rule.icmp_code, 'unspecified')
-        self.assertEqual(aim_sg_rule.icmp_type, 'unspecified')
-
-        # delete SG from port
-        data = {'port': {'security_groups': []}}
-        port = self._update('ports', port['id'], data)['port']
-        aim_sg_rule = self._get_sg_rule(
-            sg_rule['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule.remote_ips, [])
+        self.aim_mgr.update(aim_ctx, self.remoteip_normalization,
+                        supports=True)
+        self.result = self.mech.normalize_hpp()
+        self.assertTrue(self.result)
+        self.assertTrue(extn.get_hpp_normalized(session))
+        rg_cont = self._check_sg_remote_group_container(
+            default_sg_id, default_sg_id, tenant_aname)
+        remote_ips = ['10.0.1.100']
+        for remote_ip in remote_ips:
+            aim_sg_remote_ip = self._get_sg_remote_group_ip(
+                remote_ip, default_sg_id, tenant_aname)
+            self.assertEqual(aim_sg_remote_ip.addr, remote_ip)
         aim_sg_rule = self._get_sg_rule(
             sg_rule1['id'], 'default', default_sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips, [])
-
-        # add SG to port
-        data = {'port': {'security_groups': [default_sg_id]}}
-        port = self._update('ports', port['id'], data)['port']
-        aim_sg_rule = self._get_sg_rule(
-             sg_rule['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
-        aim_sg_rule = self._get_sg_rule(
-            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
-
-        self._delete('ports', port['id'])
-        aim_sg_rule = self._get_sg_rule(
-            sg_rule['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule.remote_ips, [])
-        aim_sg_rule = self._get_sg_rule(
-            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule.remote_ips, [])
-
-    def test_create_sg_rule_with_remote_group_set_different_tenant(self):
-        # Create network.
-        net_resp = self._make_network(
-            self.fmt, 'net1', True, tenant_id='tenant_1')
-        net = net_resp['network']
-
-        # Create subnet
-        subnet = self._make_subnet(self.fmt, net_resp, '10.0.1.1',
-                               '10.0.1.0/24', tenant_id='tenant_1')['subnet']
-        subnet_id = subnet['id']
-
-        # Create port on subnet
-        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.100'}]
-        port = self._make_port(self.fmt, net['id'], fixed_ips=fixed_ips,
-                               tenant_id='tenant_1')['port']
-        default_sg_id = port['security_groups'][0]
-        default_sg = self._show('security-groups',
-                                default_sg_id)['security_group']
-        for sg_rule in default_sg['security_group_rules']:
-            if sg_rule['remote_group_id'] and sg_rule['ethertype'] == 'IPv4':
-                break
-        tenant_aname = self.name_mapper.project(None, default_sg['tenant_id'])
-        aim_sg_rule = self._get_sg_rule(
-            sg_rule['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.100'])
-        self.assertEqual(
-            aim_sg_rule.remote_group_id, sg_rule['remote_group_id'])
-
-        # add another rule with remote_group_id set
-        rule1 = self._build_security_group_rule(
-            default_sg_id, 'ingress', n_constants.PROTO_NAME_TCP, '22', '23',
-            remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
-        rules = {'security_group_rules': [rule1['security_group_rule']]}
-        sg_rule1 = self._make_security_group_rule(
-            self.fmt, rules, tenant_id='tenant_2')['security_group_rules'][0]
-        aim_sg_rule1 = self._get_sg_rule(
-            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule1.remote_ips, ['10.0.1.100'])
-        self.assertEqual(
-            aim_sg_rule1.remote_group_id, sg_rule1['remote_group_id'])
-
-        # Add another port on subnet
-        fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.200'}]
-        port = self._make_port(self.fmt, net['id'], fixed_ips=fixed_ips,
-                               tenant_id='tenant_1')['port']
-        aim_sg_rule1 = self._get_sg_rule(
-            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
-        self.assertEqual(aim_sg_rule1.remote_ips, ['10.0.1.100', '10.0.1.200'])
-        self.assertEqual(
-            aim_sg_rule1.remote_group_id, sg_rule['remote_group_id'])
+        self.assertEqual(aim_sg_rule.tDn, rg_cont.dn)
 
     def test_mixed_ports_on_network_with_specific_domains(self):
         aim_ctx = aim_context.AimContext(self.db_session)
