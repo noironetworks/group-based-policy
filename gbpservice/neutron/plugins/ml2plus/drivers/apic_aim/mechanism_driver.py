@@ -87,6 +87,7 @@ from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import apic_mapper
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import cache
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import config  # noqa
+from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import data_migrations
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import db
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import exceptions
 from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import extension_db
@@ -2837,18 +2838,77 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # and try binding hierarchically if the network-type is OpFlex.
         self._bind_physical_node(context)
 
-    def _update_sg_rule_with_remote_group_set(self, context, port):
-        security_groups = port['security_groups']
-        original_port = context.original
-        if original_port:
-            removed_sgs = (set(original_port['security_groups']) -
-                           set(security_groups))
-            added_sgs = (set(security_groups) -
-                         set(original_port['security_groups']))
-            self._really_update_sg_rule_with_remote_group_set(
-                                context, port, removed_sgs, is_delete=True)
-            self._really_update_sg_rule_with_remote_group_set(
-                                context, port, added_sgs, is_delete=False)
+    def _really_update_sg_remote_groups(
+                    self, context, port, security_groups, is_delete):
+        if not security_groups:
+            return
+        session = context._plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+
+        fixed_ips = [x['ip_address'] for x in port['fixed_ips']]
+        for sg in security_groups:
+            tenant_id = self._get_sg_tenant_id(session, sg)
+            tenant_aname = self.name_mapper.project(session, tenant_id)
+            for fixed_ip in fixed_ips:
+                # Create or delete SG remote ip resource for fixed ip
+                sg_rg_ip_aim = aim_resource.SecurityGroupRemoteIp(
+                    tenant_name=tenant_aname,
+                    security_group_name=sg,
+                    addr=fixed_ip)
+                if is_delete:
+                    if self.aim.get(aim_ctx, sg_rg_ip_aim):
+                        self.aim.delete(aim_ctx, sg_rg_ip_aim)
+                else:
+                    if not self.aim.get(aim_ctx, sg_rg_ip_aim):
+                        self.aim.create(aim_ctx, sg_rg_ip_aim)
+
+            query = BAKERY(lambda s: s.query(
+                models_v2.Port))
+            query += lambda q: q.join(
+                sg_models.SecurityGroupPortBinding,
+                sg_models.SecurityGroupPortBinding.port_id ==
+                models_v2.Port.id)
+            query += lambda q: q.filter(
+                sg_models.SecurityGroupPortBinding.security_group_id ==
+                sa.bindparam('sg_id'))
+            sg_ports = query(session).params(
+                sg_id=sg).all()
+
+            all_fixed_ips = []
+            for sg_port in sg_ports:
+                ip_addr = [x['ip_address'] for x in sg_port['fixed_ips']]
+                all_fixed_ips.extend(ip_addr)
+            old_fixed_ips = list(set(all_fixed_ips) - set(fixed_ips))
+
+            if (fixed_ips and not old_fixed_ips):
+                query = BAKERY(lambda s: s.query(
+                    sg_models.SecurityGroupRule))
+                query += lambda q: q.filter(
+                    sg_models.SecurityGroupRule.remote_group_id ==
+                    sa.bindparam('security_group'))
+                sg_rules = query(session).params(
+                    security_group=sg).all()
+
+                sg_rule_to_tenant = {}
+                for sg_rule in sg_rules:
+                    sg_id = sg_rule['security_group_id']
+                    sg_rule_tenant_id = sg_rule_to_tenant.setdefault(sg_id,
+                        self._get_sg_rule_tenant_id(session, sg_rule))
+                    sg_rule_tenant_aname = self.name_mapper.project(
+                        session, sg_rule_tenant_id)
+                    sg_rule_aim = aim_resource.SecurityGroupRule(
+                        tenant_name=sg_rule_tenant_aname,
+                        security_group_name=sg_id,
+                        security_group_subject_name='default',
+                        name=sg_rule['id'])
+                    if is_delete:
+                        self.aim.update(aim_ctx, sg_rule_aim, tDn='')
+                    else:
+                        rg_cont = aim_resource.SecurityGroupRemoteIpContainer(
+                            tenant_name=tenant_aname,
+                            security_group_name=sg_rule['remote_group_id'],
+                            name=sg_rule['remote_group_id'])
+                        self.aim.update(aim_ctx, sg_rule_aim, tDn=rg_cont.dn)
 
     def _really_update_sg_rule_with_remote_group_set(
                     self, context, port, security_groups, is_delete):
@@ -2869,11 +2929,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         sg_to_tenant = {}
         for sg_rule in sg_rules:
             sg_id = sg_rule['security_group_id']
-            if sg_id in sg_to_tenant:
-                tenant_id = sg_to_tenant[sg_id]
-            else:
-                tenant_id = self._get_sg_rule_tenant_id(session, sg_rule)
-                sg_to_tenant[sg_id] = tenant_id
+            tenant_id = sg_to_tenant.setdefault(sg_id,
+                self._get_sg_rule_tenant_id(session, sg_rule))
             tenant_aname = self.name_mapper.project(session, tenant_id)
             sg_rule_aim = aim_resource.SecurityGroupRule(
                 tenant_name=tenant_aname,
@@ -3140,11 +3197,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def create_port_precommit(self, context):
         port = context.current
+        session = context._plugin_context.session
         self._check_active_active_aap(context, port)
         if port.get(cisco_apic.ERSPAN_CONFIG):
             self._check_valid_erspan_config(port)
-        self._really_update_sg_rule_with_remote_group_set(
-            context, port, port['security_groups'], is_delete=False)
+        if self.get_hpp_normalized(session):
+            self._really_update_sg_remote_groups(
+                context, port, port['security_groups'], is_delete=False)
+        else:
+            self._really_update_sg_rule_with_remote_group_set(
+                context, port, port['security_groups'], is_delete=False)
         self._insert_provisioning_block(context)
 
         # Handle router gateway port creation.
@@ -3366,7 +3428,41 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                                erspan_deletions)
                 self._create_erspan_aim_config(context, cep_dn, port)
 
-        self._update_sg_rule_with_remote_group_set(context, port)
+        security_groups = port['security_groups']
+        # Check if any security groups are changed for the port
+        removed_sgs = (set(orig['security_groups']) -
+                       set(security_groups))
+        added_sgs = (set(security_groups) -
+                     set(orig['security_groups']))
+
+        # Check if any fixed ips are changed for the port
+        orig_ips = [x['ip_address'] for x in orig['fixed_ips']]
+
+        ips = [x['ip_address'] for x in port['fixed_ips']]
+        removed_ips = (set(orig_ips) - set(ips))
+        added_ips = (set(ips) - set(orig_ips))
+
+        if self.get_hpp_normalized(session):
+            self._really_update_sg_remote_groups(
+                                context, port, removed_sgs, is_delete=True)
+            self._really_update_sg_remote_groups(
+                                context, port, added_sgs, is_delete=False)
+            if removed_ips or added_ips:
+                self._really_update_sg_remote_groups(
+                    context, orig, security_groups, is_delete=True)
+                self._really_update_sg_remote_groups(
+                    context, port, security_groups, is_delete=False)
+        else:
+            self._really_update_sg_rule_with_remote_group_set(
+                                context, port, removed_sgs, is_delete=True)
+            self._really_update_sg_rule_with_remote_group_set(
+                                context, port, added_sgs, is_delete=False)
+            if removed_ips or added_ips:
+                self._really_update_sg_rule_with_remote_group_set(
+                    context, orig, security_groups, is_delete=True)
+                self._really_update_sg_rule_with_remote_group_set(
+                    context, port, security_groups, is_delete=False)
+
         self._check_allowed_address_pairs(context, port)
         self._insert_provisioning_block(context)
         registry.publish(aim_cst.GBP_PORT, events.PRECOMMIT_UPDATE,
@@ -3423,6 +3519,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def delete_port_precommit(self, context):
         port = context.current
+        session = context._plugin_context.session
         if self._is_port_bound(port):
             if self._use_static_path(context.bottom_bound_segment):
                 self._update_static_path(context, remove=True)
@@ -3433,8 +3530,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                       context.bottom_bound_segment[api.NETWORK_TYPE])):
                 self.disassociate_domain(context)
             self._delete_erspan_aim_config(context, port)
-        self._really_update_sg_rule_with_remote_group_set(
-            context, port, port['security_groups'], is_delete=True)
+        if self.get_hpp_normalized(session):
+            self._really_update_sg_remote_groups(
+                context, port, port['security_groups'], is_delete=True)
+        else:
+            self._really_update_sg_rule_with_remote_group_set(
+                context, port, port['security_groups'], is_delete=True)
 
         # Set status of floating ip DOWN.
         self._update_floatingip_status(
@@ -3546,6 +3647,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             security_group_name=sg['id'], name='default')
         self.aim.create(aim_ctx, sg_subject)
 
+        if self.get_hpp_normalized(session):
+            # Create default remote group container
+            sg_remote_group = aim_resource.SecurityGroupRemoteIpContainer(
+                tenant_name=tenant_aname,
+                security_group_name=sg['id'],
+                remote_group_id=sg['id'])
+            self.aim.create(aim_ctx, sg_remote_group)
+
         # Create those implicit rules
         for sg_rule in sg.get('security_group_rules', []):
             sg_rule_aim = aim_resource.SecurityGroupRule(
@@ -3604,6 +3713,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         return tenant_id
 
+    def _get_sg_tenant_id(self, session, sg_id):
+        query = BAKERY(lambda s: s.query(
+            sg_models.SecurityGroup.tenant_id))
+        query += lambda q: q.filter(
+            sg_models.SecurityGroup.id == sa.bindparam('sg_id'))
+        tenant_id = query(session).params(
+            sg_id=sg_id).first()[0]
+
+        return tenant_id
+
     def create_security_group_rule_precommit(self, context):
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
@@ -3612,6 +3731,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         tenant_aname = self.name_mapper.project(session, tenant_id)
         if sg_rule.get('remote_group_id'):
             remote_ips = []
+            remote_group_id = sg_rule['remote_group_id']
+            dn = ''
 
             query = BAKERY(lambda s: s.query(
                 models_v2.Port))
@@ -3625,20 +3746,35 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             sg_ports = query(session).params(
                 sg_id=sg_rule['remote_group_id']).all()
 
-            ip_version = 0
-            if sg_rule['ethertype'] == 'IPv4':
-                ip_version = 4
-            elif sg_rule['ethertype'] == 'IPv6':
-                ip_version = 6
+            if self.get_hpp_normalized(session):
+                has_fixed_ips = False
+                for sg_port in sg_ports:
+                    if sg_port['fixed_ips']:
+                        has_fixed_ips = True
+                        break
+                if has_fixed_ips:
+                    # Get the remote group container's dn
+                    rg_tenant_id = self._get_sg_tenant_id(session,
+                        sg_rule['remote_group_id'])
+                    rg_tenant_aname = self.name_mapper.project(session,
+                        rg_tenant_id)
+                    rg_cont = aim_resource.SecurityGroupRemoteIpContainer(
+                        tenant_name=rg_tenant_aname,
+                        security_group_name=sg_rule['remote_group_id'],
+                        name=sg_rule['remote_group_id'])
+                    dn = rg_cont.dn
+            else:
+                ip_version = 0
+                if sg_rule['ethertype'] == 'IPv4':
+                    ip_version = 4
+                elif sg_rule['ethertype'] == 'IPv6':
+                    ip_version = 6
 
-            for sg_port in sg_ports:
-                for fixed_ip in sg_port['fixed_ips']:
-                    if ip_version == netaddr.IPAddress(
-                        fixed_ip['ip_address']).version:
-                        remote_ips.append(fixed_ip['ip_address'])
-
-            remote_group_id = sg_rule['remote_group_id']
-
+                for sg_port in sg_ports:
+                    for fixed_ip in sg_port['fixed_ips']:
+                        if ip_version == netaddr.IPAddress(
+                            fixed_ip['ip_address']).version:
+                            remote_ips.append(fixed_ip['ip_address'])
         elif sg_rule.get('remote_address_group_id'):
             remote_ips = []
 
@@ -3663,11 +3799,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     remote_ips.append(addr['address'])
 
             remote_group_id = ''
+            dn = ''
 
         else:
             remote_ips = ([sg_rule['remote_ip_prefix']]
                           if sg_rule['remote_ip_prefix'] else '')
             remote_group_id = ''
+            dn = ''
 
         sg_rule_aim = aim_resource.SecurityGroupRule(
             tenant_name=tenant_aname,
@@ -3692,6 +3830,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                        if sg_rule['port_range_min'] else 'unspecified'),
             to_port=(sg_rule['port_range_max']
                      if sg_rule['port_range_max'] else 'unspecified'),
+            tDn=dn,
             remote_group_id=remote_group_id)
         self.aim.create(aim_ctx, sg_rule_aim)
 
@@ -6729,6 +6868,25 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                  metadata={
                                      'network_id': mapping.network_id}))
 
+    def normalize_hpp(self):
+        session = db_api.get_writer_session()
+        aim_ctx = aim_context.AimContext(db_session=session)
+        aim = aim_manager.AimManager()
+
+        remoteip_normalization = aim.get(aim_ctx,
+            aim_infra.ACISupportedMo(name="remoteipcont"))
+        if remoteip_normalization.supports:
+            if not self.get_hpp_normalized(session):
+                ctx = n_context.get_admin_context()
+                with db_api.CONTEXT_WRITER.using(ctx):
+                    aim_ctx = aim_context.AimContext(session)
+                    data_migrations.normalize_hpp_ips(session)
+                    data_migrations.normalize_hpps(session)
+                    self.set_hpp_normalized(session, True)
+            return True
+        else:
+            return False
+
     def validate_aim_mapping(self, mgr):
         mgr.register_aim_resource_class(aim_infra.HostDomainMappingV2)
         mgr.register_aim_resource_class(aim_resource.ApplicationProfile)
@@ -6747,6 +6905,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         mgr.register_aim_resource_class(aim_resource.L3Outside)
         mgr.register_aim_resource_class(aim_resource.PhysicalDomain)
         mgr.register_aim_resource_class(aim_resource.SecurityGroup)
+        mgr.register_aim_resource_class(
+            aim_resource.SecurityGroupRemoteIpContainer)
+        mgr.register_aim_resource_class(aim_resource.SecurityGroupRemoteIp)
         mgr.register_aim_resource_class(aim_resource.SecurityGroupRule)
         mgr.register_aim_resource_class(aim_resource.SecurityGroupSubject)
         mgr.register_aim_resource_class(aim_resource.Subnet)
@@ -7506,6 +7667,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _validate_security_groups(self, mgr):
         if not mgr._should_validate_neutron_resource("security_group"):
             return
+        session = db_api.get_writer_session()
         sg_ips = defaultdict(set)
 
         query = BAKERY(lambda s: s.query(
@@ -7549,17 +7711,45 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     tenant_name=tenant_name, security_group_name=sg_db.id,
                     name='default')
                 mgr.expect_aim_resource(sg_subject)
+
+                if self.get_hpp_normalized(mgr.actual_session):
+                    sg_rg = aim_resource.SecurityGroupRemoteIpContainer(
+                        tenant_name=tenant_name,
+                        security_group_name=sg_db.id,
+                        name=sg_db.id)
+                    mgr.expect_aim_resource(sg_rg)
+                    remote_ips = [
+                        ip for ip in sg_ips[sg_db.id]]
+                    for remote_ip in remote_ips:
+                        sg_rg_ip = aim_resource.SecurityGroupRemoteIp(
+                            tenant_name=tenant_name,
+                            security_group_name=sg_db.id,
+                            addr=remote_ip)
+                        mgr.expect_aim_resource(sg_rg_ip)
+
                 for rule_db in sg_db.rules:
                     remote_ips = []
                     remote_group_id = ''
+                    dn = ''
                     if rule_db.remote_group_id:
                         remote_group_id = rule_db.remote_group_id
-                        ip_version = (4 if rule_db.ethertype == 'IPv4' else
-                                      6 if rule_db.ethertype == 'IPv6' else
-                                      0)
-                        remote_ips = [
-                            ip for ip in sg_ips[rule_db.remote_group_id]
-                            if netaddr.IPAddress(ip).version == ip_version]
+                        if self.get_hpp_normalized(mgr.actual_session):
+                            rg_tenant_id = self._get_sg_tenant_id(
+                                session, rule_db.remote_group_id)
+                            rg_tenant_aname = self.name_mapper.project(
+                                session, rg_tenant_id)
+                            rg = aim_resource.SecurityGroupRemoteIpContainer(
+                                tenant_name=rg_tenant_aname,
+                                security_group_name=rule_db.remote_group_id,
+                                name=rule_db.remote_group_id)
+                            dn = rg.dn
+                        else:
+                            ip_version = (4 if rule_db.ethertype == 'IPv4' else
+                                          6 if rule_db.ethertype == 'IPv6' else
+                                          0)
+                            remote_ips = [
+                                ip for ip in sg_ips[rule_db.remote_group_id]
+                                if netaddr.IPAddress(ip).version == ip_version]
                     elif rule_db.remote_ip_prefix:
                         remote_ips = [rule_db.remote_ip_prefix]
                     sg_rule = aim_resource.SecurityGroupRule(
@@ -7577,6 +7767,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         to_port=(rule_db.port_range_max
                                  if rule_db.port_range_max
                                  else 'unspecified'),
+                        tDn=dn,
                         remote_group_id=remote_group_id)
                     mgr.expect_aim_resource(sg_rule)
 
