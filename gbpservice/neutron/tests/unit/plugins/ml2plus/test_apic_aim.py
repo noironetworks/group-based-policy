@@ -12068,39 +12068,68 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             self.assertEqual(aim_sg_rule1.remote_ips, ['10.0.1.100'])
 
     def test_sg_rule_with_remote_address_group(self):
+        # Create network.
         net_resp = self._make_network(self.fmt, 'net1', True)
+
+        # Create subnet
         self._make_subnet(self.fmt, net_resp, '10.0.1.1',
                           '10.0.1.0/24')['subnet']
+
+        # create security group rule
         sg = self._make_security_group(self.fmt, 'test',
                                        'test remote address group')
         sg_id = sg['security_group']['id']
 
-        # Create Address group
+        # create address group
         ag = self._test_create_address_group(name='foo',
-                                             addresses=['10.0.1.0/24',
-                                                        '192.168.0.1/32'])
+                                             addresses=['10.0.1.0/24'])
         ag_id = ag['address_group']['id']
+
+        # create security group rule
         rule = self._build_security_group_rule(
             sg_id, 'ingress', n_constants.PROTO_NAME_ICMP, '33', '2',
             remote_address_group_id=ag_id, ethertype=n_constants.IPv4)
-
-        # Create security group rule with address group rule
         rules = {'security_group_rules': [rule['security_group_rule']]}
         sg_rule = self._make_security_group_rule(
             self.fmt, rules)['security_group_rules'][0]
-
         tenant_aname = self.name_mapper.project(None,
                 sg['security_group']['tenant_id'])
         aim_sg_rule = self._get_sg_rule(
             sg_rule['id'], 'default', sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.0/24'])
 
+        # add addresses to address group
+        data = {'addresses': ['192.168.0.1/32']}
+        self._test_address_group_actions(ag['address_group']['id'],
+                                         data, 'add_addresses')
+        req = self.new_show_request('address-groups',
+                                    ag['address_group']['id'])
+        ag = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', sg_id, tenant_aname)
         self.assertEqual(aim_sg_rule.remote_ips,
-                ['10.0.1.0/24', '192.168.0.1/32'])
+                         ['10.0.1.0/24', '192.168.0.1/32'])
 
-        # Delete security group rule referenced with address group
+        # remove addresses to address group
+        data = {'addresses': ['192.168.0.1/32']}
+        self._test_address_group_actions(ag['address_group']['id'],
+                                         data, 'remove_addresses')
+        req = self.new_show_request('address-groups',
+                                    ag['address_group']['id'])
+        ag = self.deserialize(self.fmt, req.get_response(self.ext_api))
+        aim_sg_rule = self._get_sg_rule(
+            sg_rule['id'], 'default', sg_id, tenant_aname)
+        self.assertEqual(aim_sg_rule.remote_ips, ['10.0.1.0/24'])
+
+        # delete address group when sg rule reference present
+        self._delete('address-groups', ag['address_group']['id'],
+                    expected_code=webob.exc.HTTPConflict.code)
+
+        # delete address group with removing sg rule
         self._delete('security-group-rules', sg_rule['id'])
-        # Delete Address group
         self._delete('address-groups', ag['address_group']['id'])
+        self._show('address-groups', ag['address_group']['id'],
+                   expected_code=webob.exc.HTTPNotFound.code)
 
     def _test_create_sg_rule_with_remote_group_set_different_tenant(self):
         session = db_api.get_reader_session()
