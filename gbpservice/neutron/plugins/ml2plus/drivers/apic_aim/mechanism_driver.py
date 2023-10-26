@@ -3709,6 +3709,50 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         return tenant_id
 
+    @registry.receives(resources.ADDRESS_GROUP, [events.AFTER_UPDATE])
+    def update_addresses_in_address_group(self, resource, event,
+                                          trigger, payload):
+        context = payload.context
+        session = context.session
+        aim_ctx = aim_context.AimContext(session)
+
+        previous_state = payload.states[0]
+        updated_state = payload.states[1]['address_group']
+
+        if (previous_state['addresses'] != updated_state['addresses']):
+            ag_id = previous_state['id']
+
+            query = BAKERY(lambda s: s.query(
+                sg_models.SecurityGroupRule))
+            query += lambda q: q.join(ag_db.AddressGroup).filter(
+                sg_models.SecurityGroupRule.remote_address_group_id ==
+                ag_db.AddressGroup.id)
+            sg_rules = query(session).params(
+                sg_rule=ag_id).all()
+
+            if sg_rules:
+                sg_rule = sg_rules[0]
+            else:
+                return
+
+            sg_rule_aim = aim_resource.SecurityGroupRule(
+                tenant_name="prj_" + previous_state['tenant_id'],
+                security_group_name=sg_rule['security_group_id'],
+                security_group_subject_name='default',
+                name=sg_rule['id'])
+            aim_sg_rule = self.aim.get(aim_ctx, sg_rule_aim)
+
+            for address in previous_state['addresses']:
+                if address not in updated_state['addresses']:
+                    aim_sg_rule.remote_ips.remove(address)
+
+            for address in updated_state['addresses']:
+                if address not in previous_state['addresses']:
+                    aim_sg_rule.remote_ips.append(address)
+
+            self.aim.update(aim_ctx, sg_rule_aim,
+                            remote_ips=aim_sg_rule.remote_ips)
+
     def _get_sg_tenant_id(self, session, sg_id):
         query = BAKERY(lambda s: s.query(
             sg_models.SecurityGroup.tenant_id))
@@ -3775,12 +3819,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             remote_ips = []
 
             query = BAKERY(lambda s: s.query(
-                ag_db.AddressAssociation))
+                    ag_db.AddressAssociation))
+            query += lambda q: q.join(
+                sg_models.SecurityGroupRule,
+                ag_db.AddressAssociation.address_group_id ==
+                sg_models.SecurityGroupRule.remote_address_group_id)
             query += lambda q: q.filter(
                 sg_models.SecurityGroupRule.remote_address_group_id ==
-                ag_db.AddressGroup.id)
-
-            addresses = query(session).params(
+                sa.bindparam('ag_id'))
+            address_group_list = query(session).params(
                 ag_id=sg_rule['remote_address_group_id']).all()
 
             ip_version = 0
@@ -3789,10 +3836,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             elif sg_rule['ethertype'] == 'IPv6':
                 ip_version = 6
 
-            for addr in addresses:
+            for address_group in address_group_list:
                 if ip_version == netaddr.IPAddress(
-                    addr['address'].split('/')[0]).version:
-                    remote_ips.append(addr['address'])
+                    address_group['address'].split('/')[0]).version:
+                    remote_ips.append(address_group['address'])
 
             remote_group_id = ''
             dn = ''
