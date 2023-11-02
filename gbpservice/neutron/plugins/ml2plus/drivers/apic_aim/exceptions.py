@@ -57,6 +57,10 @@ class SnatPoolCannotBeUsedForFloatingIp(exceptions.InvalidInput):
     message = _("Floating IP cannot be allocated in SNAT host pool subnet.")
 
 
+class RouterGWIPPoolCannotBeUsedForFloatingIp(exceptions.InvalidInput):
+    message = _("Floating IP cannot be allocated in router gw ip pool subnet.")
+
+
 class PreExistingSVICannotBeConnectedToRouter(exceptions.BadRequest):
     message = _("A SVI network with pre-existing l3out is not allowed to "
                 "be connected to a router.")

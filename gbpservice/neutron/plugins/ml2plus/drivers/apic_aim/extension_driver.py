@@ -282,6 +282,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 res_dict.get(cisco_apic.ADVERTISED_EXTERNALLY, True))
             result[cisco_apic.SHARED_BETWEEN_VRFS] = (
                 res_dict.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
+            result[cisco_apic.ROUTER_GW_IP_POOL] = (
+                res_dict.get(cisco_apic.ROUTER_GW_IP_POOL, False))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -307,6 +309,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     res_dict.get(cisco_apic.ADVERTISED_EXTERNALLY, True))
                 result[cisco_apic.SHARED_BETWEEN_VRFS] = (
                     res_dict.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
+                result[cisco_apic.ROUTER_GW_IP_POOL] = (
+                    res_dict.get(cisco_apic.ROUTER_GW_IP_POOL, False))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -327,7 +331,9 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     cisco_apic.ADVERTISED_EXTERNALLY:
                     data.get(cisco_apic.ADVERTISED_EXTERNALLY, True),
                     cisco_apic.SHARED_BETWEEN_VRFS:
-                    data.get(cisco_apic.SHARED_BETWEEN_VRFS, False)}
+                    data.get(cisco_apic.SHARED_BETWEEN_VRFS, False),
+                    cisco_apic.ROUTER_GW_IP_POOL:
+                    data.get(cisco_apic.ROUTER_GW_IP_POOL, False)}
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
         result.update(res_dict)
@@ -336,7 +342,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         if (cisco_apic.SNAT_HOST_POOL not in data and
                 cisco_apic.SNAT_SUBNET_ONLY not in data and
                 cisco_apic.ADVERTISED_EXTERNALLY not in data and
-                cisco_apic.SHARED_BETWEEN_VRFS not in data):
+                cisco_apic.SHARED_BETWEEN_VRFS not in data and
+                cisco_apic.ROUTER_GW_IP_POOL not in data):
             return
 
         res_dict = {}
@@ -355,6 +362,10 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         if cisco_apic.SHARED_BETWEEN_VRFS in data:
             res_dict.update({cisco_apic.SHARED_BETWEEN_VRFS:
                              data[cisco_apic.SHARED_BETWEEN_VRFS]})
+
+        if cisco_apic.ROUTER_GW_IP_POOL in data:
+            res_dict.update({cisco_apic.ROUTER_GW_IP_POOL:
+                             data[cisco_apic.ROUTER_GW_IP_POOL]})
 
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
