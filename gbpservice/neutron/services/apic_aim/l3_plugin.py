@@ -201,12 +201,20 @@ class ApicL3Plugin(extraroute_db.ExtraRoute_db_mixin,
             # No subnet set, so look for at most one subnet in
             # each address family to include in the request,
             # skipping any subnets with the SNAT only extension
-            # set to True.
+            # set to True while prioritizing those with the
+            # router gw ip pool extension set to True.
             subnets_in_nw = self._core_plugin.get_subnets_by_network(context,
                 gw_info['network_id'])
             subs = {}
             for ext_sn in subnets_in_nw:
                 if (ext_sn['apic:snat_subnet_only'] is False and
+                    ext_sn['apic:snat_host_pool'] is False and
+                    ext_sn['apic:router_gw_ip_pool'] is True and
+                        not subs.get(ext_sn['ip_version'])):
+                    subs[ext_sn['ip_version']] = {'subnet_id': ext_sn['id']}
+            for ext_sn in subnets_in_nw:
+                if (ext_sn['apic:snat_subnet_only'] is False and
+                    ext_sn['apic:snat_host_pool'] is False and
                         not subs.get(ext_sn['ip_version'])):
                     subs[ext_sn['ip_version']] = {'subnet_id': ext_sn['id']}
             gw_info.update({'external_fixed_ips': list(subs.values())})
