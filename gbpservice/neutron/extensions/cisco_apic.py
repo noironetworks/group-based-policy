@@ -57,6 +57,7 @@ NO_NAT_CIDRS = 'apic:no_nat_cidrs'
 MULTI_EXT_NETS = 'apic:multi_ext_nets'
 ADVERTISED_EXTERNALLY = 'apic:advertised_externally'
 SHARED_BETWEEN_VRFS = 'apic:shared_between_vrfs'
+ROUTER_GW_IP_POOL = 'apic:router_gw_ip_pool'
 
 BD = 'BridgeDomain'
 EPG = 'EndpointGroup'
@@ -421,6 +422,12 @@ EXT_SUBNET_ATTRIBUTES = {
     },
     SHARED_BETWEEN_VRFS: {
         # Whether this subnet is seen across VRFs or only its own
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': False,
+        'convert_to': conv.convert_to_boolean,
+    },
+    ROUTER_GW_IP_POOL: {
+        # Whether this subnet is used for snat ip allocation
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': False,
         'convert_to': conv.convert_to_boolean,
