@@ -169,6 +169,7 @@ class SubnetExtensionDb(model_base.BASEV2):
     epg_subnet = sa.Column(sa.Boolean)
     advertised_externally = sa.Column(sa.Boolean)
     shared_between_vrfs = sa.Column(sa.Boolean)
+    router_gw_ip_pool = sa.Column(sa.Boolean)
     subnet = orm.relationship(models_v2.Subnet,
                               backref=orm.backref(
                                   'aim_extension_mapping', lazy='joined',
@@ -580,6 +581,8 @@ class ExtensionDbMixin(object):
                                   db_obj['advertised_externally'])
             self._set_if_not_none(result, cisco_apic.SHARED_BETWEEN_VRFS,
                                   db_obj['shared_between_vrfs'])
+            self._set_if_not_none(result, cisco_apic.ROUTER_GW_IP_POOL,
+                                  db_obj['router_gw_ip_pool'])
         return result
 
     def set_subnet_extn_db(self, session, subnet_id, res_dict):
@@ -607,6 +610,9 @@ class ExtensionDbMixin(object):
         if cisco_apic.SHARED_BETWEEN_VRFS in res_dict:
             db_obj['shared_between_vrfs'] = res_dict[
                                             cisco_apic.SHARED_BETWEEN_VRFS]
+        if cisco_apic.ROUTER_GW_IP_POOL in res_dict:
+            db_obj['router_gw_ip_pool'] = res_dict[
+                                            cisco_apic.ROUTER_GW_IP_POOL]
         session.add(db_obj)
 
     def get_router_extn_db(self, session, router_id):
