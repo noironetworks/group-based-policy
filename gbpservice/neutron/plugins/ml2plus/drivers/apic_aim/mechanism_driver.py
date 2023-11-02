@@ -5538,6 +5538,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             sn_ext = self.get_subnet_extn_db(session, floatingip['subnet_id'])
             if sn_ext.get(cisco_apic.SNAT_HOST_POOL, False):
                 raise exceptions.SnatPoolCannotBeUsedForFloatingIp()
+            if sn_ext.get(cisco_apic.ROUTER_GW_IP_POOL, False):
+                raise exceptions.RouterGWIPPoolCannotBeUsedForFloatingIp()
         elif floatingip.get('floating_ip_address'):
             extn_db_sn = extension_db.SubnetExtensionDb
 
@@ -5548,7 +5550,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 extn_db_sn.subnet_id == models_v2.Subnet.id)
             query += lambda q: q.filter(
                 models_v2.Subnet.network_id == sa.bindparam('network_id'))
-            query += lambda q: q.filter(extn_db_sn.snat_host_pool.is_(True))
+            query += lambda q: q.filter(sa.or_(
+                extn_db_sn.snat_host_pool.is_(True),
+                extn_db_sn.router_gw_ip_pool.is_(True)))
+
             cidrs = query(session).params(
                 network_id=floatingip['floating_network_id']).all()
 
