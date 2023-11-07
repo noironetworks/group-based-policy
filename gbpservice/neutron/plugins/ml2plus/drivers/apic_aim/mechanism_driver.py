@@ -1224,10 +1224,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 cidrs_to_delete = self.get_external_cidrs_by_net_id(
                     session, current['id'])
                 ns.delete_external_network(aim_ctx, ext_net,
-                        epg_name=current['id'],
-                        cidrs=cidrs_to_delete)
-                ns.delete_l3outside(aim_ctx, l3out, epg_name=current['id'],
-                                    cidrs=cidrs_to_delete)
+                    epg_name=current['id'],
+                    cidrs=cidrs_to_delete)
+                other_nets = set(
+                    self.get_network_ids_by_l3out_dn(
+                        session, l3out.dn))
+                other_nets.discard(current['id'])
+                if not other_nets:
+                    ns.delete_l3outside(aim_ctx, l3out, epg_name=current['id'],
+                                cidrs=cidrs_to_delete)
             else:
                 # REVISIT: lock_update=True is needed to handle races. Find
                 # alternative solutions since Neutron discourages using such
@@ -1235,15 +1240,15 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 cidrs_to_delete = self.get_external_cidrs_by_net_id(
                     session, current['id'])
                 other_nets = set(
-                    self.get_network_ids_by_ext_net_dn(
-                        session, ext_net.dn, lock_update=True))
+                    self.get_network_ids_by_ext_net_dn_filter_multi(
+                        session, ext_net.dn, wanted_multi_val=False))
                 other_nets.discard(current['id'])
                 if not other_nets:
                     ns.delete_external_network(aim_ctx, ext_net,
                                                cidrs=cidrs_to_delete)
                 other_nets = set(
-                    self.get_network_ids_by_l3out_dn_filter_multi(
-                        session, l3out.dn, False))
+                    self.get_network_ids_by_l3out_dn(
+                        session, l3out.dn))
                 other_nets.discard(current['id'])
                 if not other_nets:
                     ns.delete_l3outside(aim_ctx, l3out,
@@ -1513,6 +1518,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_id = current['network_id']
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
+
+        wanted_epg_name = self._determine_epg_name(
+            network_db.aim_extension_mapping.multi_ext_nets,
+            network_id)
+
         subnet_scope = self._determine_subnet_scope(
             current.get(cisco_apic.ADVERTISED_EXTERNALLY, True),
             current.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
@@ -1544,11 +1554,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if current[cisco_apic.EPG_SUBNET]:
                 ns.create_epg_subnet(aim_ctx, l3out,
                     self._subnet_to_gw_ip_mask(current),
-                    scope=subnet_scope)
+                    scope=subnet_scope,
+                    epg_name=wanted_epg_name)
             else:
                 ns.create_subnet(aim_ctx, l3out,
                                  self._subnet_to_gw_ip_mask(current),
-                                 scope=subnet_scope)
+                                 scope=subnet_scope,
+                                 epg_name=wanted_epg_name)
             # Send a port update for those existing VMs because
             # SNAT info has been added.
             if current[cisco_apic.SNAT_HOST_POOL]:
@@ -1624,6 +1636,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
 
+        wanted_epg_name = self._determine_epg_name(
+            network_db.aim_extension_mapping.multi_ext_nets,
+            network_id)
+
         subnet_scope = self._determine_subnet_scope(
             current.get(cisco_apic.ADVERTISED_EXTERNALLY, True),
             current.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
@@ -1669,11 +1685,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     return  # Unmanaged external network
                 if original['gateway_ip']:
                     ns.delete_subnet(aim_ctx, l3out,
-                                     self._subnet_to_gw_ip_mask(original))
+                                     self._subnet_to_gw_ip_mask(original),
+                                     epg_name=wanted_epg_name)
                 if current['gateway_ip']:
                     ns.create_subnet(aim_ctx, l3out,
                                      self._subnet_to_gw_ip_mask(current),
-                                     scope=subnet_scope)
+                                     scope=subnet_scope,
+                                     epg_name=wanted_epg_name)
             return
 
         if current['name'] != original['name']:
@@ -1704,6 +1722,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_id = current['network_id']
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
+
+        wanted_epg_name = self._determine_epg_name(
+            network_db.aim_extension_mapping.multi_ext_nets,
+            network_id)
+
         if network_db.external is not None and current['gateway_ip']:
             l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
                                                                network_db)
@@ -1711,10 +1734,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 return  # Unmanaged external network
             if current[cisco_apic.EPG_SUBNET]:
                 ns.delete_epg_subnet(aim_ctx, l3out,
-                    self._subnet_to_gw_ip_mask(current))
+                    self._subnet_to_gw_ip_mask(current),
+                    epg_name=wanted_epg_name)
             else:
                 ns.delete_subnet(aim_ctx, l3out,
-                                 self._subnet_to_gw_ip_mask(current))
+                                 self._subnet_to_gw_ip_mask(current),
+                                 epg_name=wanted_epg_name)
             # Send a port update for those existing VMs because
             # SNAT info has been deleted.
             if current[cisco_apic.SNAT_HOST_POOL]:
@@ -1801,9 +1826,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if network_db.external is not None:
                 l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
                                                                network_db)
+                wanted_epg_name = self._determine_epg_name(
+                    network_db.aim_extension_mapping.multi_ext_nets,
+                    network_db.id)
                 if ext_net:
                     sub = ns.get_subnet(aim_ctx, l3out,
-                                        self._subnet_to_gw_ip_mask(subnet_db))
+                                        self._subnet_to_gw_ip_mask(subnet_db),
+                                        epg_name=wanted_epg_name)
                     if sub:
                         dist_names[cisco_apic.SUBNET] = sub.dn
                         res_dict_by_aim_res_dn[sub.dn] = (
@@ -1811,7 +1840,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         aim_resources.append(sub)
 
                     epg_sub = ns.get_epg_subnet(aim_ctx, l3out,
-                                        self._subnet_to_gw_ip_mask(subnet_db))
+                                        self._subnet_to_gw_ip_mask(subnet_db),
+                                        epg_name=wanted_epg_name)
                     if epg_sub:
                         dist_names[cisco_apic.SUBNET] = epg_sub.dn
                         res_dict_by_aim_res_dn[epg_sub.dn] = (
@@ -4876,6 +4906,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return self._get_aim_external_objects_db(session, network_db)
         return None, None, None
 
+    def _determine_epg_name(self, multi_ext_nets, net_id):
+        epg_name = None
+        if multi_ext_nets:
+            epg_name = net_id
+        return epg_name
+
     def _determine_subnet_scope(self,
                                 advertised_externally,
                                 shared_between_vrfs):
@@ -5033,6 +5069,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 for r in rtr_old:
                     update_contracts(r, ext_net)
 
+                wanted_epg_name = self._determine_epg_name(
+                    old_network.get(cisco_apic.MULTI_EXT_NETS, False),
+                    old_network['id'])
                 if rtr_old:
                     prov_list = list(prov_dict.values())
                     cons_list = list(cons_dict.values())
@@ -5040,9 +5079,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     consumed = sorted(cons_list, key=lambda x: x.name)
                     ns.connect_vrf(aim_ctx, ext_net, vrf,
                         provided_contracts=provided,
-                        consumed_contracts=consumed)
+                        consumed_contracts=consumed,
+                        epg_name=wanted_epg_name)
                 else:
-                    ns.disconnect_vrf(aim_ctx, ext_net, vrf)
+                    ns.disconnect_vrf(aim_ctx, ext_net, vrf,
+                                      epg_name=wanted_epg_name)
         if new_network:
             _, ext_net, ns = self._get_aim_nat_strategy(new_network)
             if ext_net:
@@ -5057,13 +5098,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 for r in rtr_new:
                     update_contracts(r, ext_net)
                 update_contracts(router, ext_net)
+                wanted_epg_name = self._determine_epg_name(
+                    new_network.get(cisco_apic.MULTI_EXT_NETS, False),
+                    new_network['id'])
                 prov_list = list(prov_dict.values())
                 cons_list = list(cons_dict.values())
                 provided = sorted(prov_list, key=lambda x: x.name)
                 consumed = sorted(cons_list, key=lambda x: x.name)
                 ns.connect_vrf(aim_ctx, ext_net, vrf,
                     provided_contracts=provided,
-                    consumed_contracts=consumed)
+                    consumed_contracts=consumed,
+                    epg_name=wanted_epg_name)
 
     def _is_port_bound(self, port):
         return port.get(portbindings.VIF_TYPE) not in [
@@ -7386,6 +7431,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             mgr.validation_failed(
                 "missing external VRF for external network %s" % net_db.id)
 
+        wanted_epg_name = self._determine_epg_name(
+            net_db.aim_extension_mapping.multi_ext_nets,
+            net_db.id)
+
         for subnet_db in net_db.subnets:
             if not subnet_db.aim_extension_mapping:
                 self._missing_subnet_extension_mapping(mgr, subnet_db)
@@ -7397,12 +7446,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     ns.create_epg_subnet(
                         mgr.expected_aim_ctx, l3out,
                         self._subnet_to_gw_ip_mask(subnet_db),
-                        scope=scope)
+                        scope=scope, epg_name=wanted_epg_name)
                 else:
                     ns.create_subnet(
                         mgr.expected_aim_ctx, l3out,
                         self._subnet_to_gw_ip_mask(subnet_db),
-                        scope=scope)
+                        scope=scope, epg_name=wanted_epg_name)
 
         # REVISIT: Process each AIM ExternalNetwork rather than each
         # external Neutron network?
@@ -7459,7 +7508,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             int_vrf = aim_resource.VRF(
                 tenant_name=int_vrf.tenant_name, name=int_vrf.name)
             ns.connect_vrf(mgr.expected_aim_ctx, ext_net, int_vrf,
-                provided_contracts=provided, consumed_contracts=consumed)
+                provided_contracts=provided, consumed_contracts=consumed,
+                epg_name=wanted_epg_name)
 
         return bd, epg, vrf
 
