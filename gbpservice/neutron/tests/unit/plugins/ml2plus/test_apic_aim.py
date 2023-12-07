@@ -1204,7 +1204,7 @@ class TestAimMapping(ApicAimTestCase):
                 self.assertFalse(aim_bd.enable_routing)
             self.assertTrue(aim_bd.limit_ip_learn_to_subnets)
             self.assertEqual('proxy', aim_bd.l2_unknown_unicast_mode)
-            self.assertEqual('garp', aim_bd.ep_move_detect_mode)
+            self.assertEqual('', aim_bd.ep_move_detect_mode)
             self._check_dn_is_resource(dns, 'BridgeDomain', aim_bd)
 
             aim_epg = self._get_epg(aname, tenant_aname,
