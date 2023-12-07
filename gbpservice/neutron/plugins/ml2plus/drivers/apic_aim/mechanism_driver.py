@@ -952,16 +952,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             bd.enable_arp_flood = True
             bd.enable_routing = False
             bd.limit_ip_learn_to_subnets = True
-            # REVISIT(rkukura): When AIM changes default
-            # ep_move_detect_mode value to 'garp', remove it here.
-            bd.ep_move_detect_mode = 'garp'
             if preexisting_bd:
                 bd = self.aim.update(aim_ctx, preexisting_bd,
                     display_name=bd.display_name, vrf_name=bd.vrf_name,
                     enable_arp_flood=bd.enable_arp_flood,
                     enable_routing=bd.enable_routing,
                     limit_ip_learn_to_subnets=bd.limit_ip_learn_to_subnets,
-                    ep_move_detect_mode=bd.ep_move_detect_mode,
                     monitored=False)
                 epg.bd_name = preexisting_bd.name
             else:
@@ -7535,7 +7531,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         bd.enable_arp_flood = True
         bd.enable_routing = len(router_contract_names) is not 0
         bd.limit_ip_learn_to_subnets = True
-        bd.ep_move_detect_mode = 'garp'
+        bd.ep_move_detect_mode = ''
         bd.l3out_names = []
         bd.monitored = False
         mgr.expect_aim_resource(bd)
