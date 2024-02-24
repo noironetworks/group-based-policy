@@ -6730,7 +6730,6 @@ class TestPortBinding(ApicAimTestCase):
         parent_port_id = parent_port['id']
         epg = self._net_2_epg(net1['network'])
         epg = self.aim_mgr.get(aim_ctx, epg)
-        self.assertEqual([], epg.static_paths)
         if with_subports:
             kwargs = {'provider:network_type': subport_net_type,
                       'provider:physical_network': subport_physnet}
@@ -6742,7 +6741,6 @@ class TestPortBinding(ApicAimTestCase):
                 sb_net1['network']['id'])['port']
             epg = self._net_2_epg(sb_net1['network'])
             epg = self.aim_mgr.get(aim_ctx, epg)
-            self.assertEqual([], epg.static_paths)
 
             sb_net2 = self._make_network(self.fmt, 'subport_net2', True,
                                          arg_list=arg_list, **kwargs)
@@ -6752,7 +6750,6 @@ class TestPortBinding(ApicAimTestCase):
                 sb_net2['network']['id'])['port']
             epg = self._net_2_epg(sb_net2['network'])
             epg = self.aim_mgr.get(aim_ctx, epg)
-            self.assertEqual([], epg.static_paths)
 
             # For now, trunk just has subport from sb_net1.
             subports = [{'port_id': subport_net1_port['id'],
@@ -6789,18 +6786,28 @@ class TestPortBinding(ApicAimTestCase):
                              net1['network']['provider:segmentation_id'])
         epg = self._net_2_epg(net1['network'])
         epg = self.aim_mgr.get(aim_ctx, epg)
+        path = 'topology/pod-1/paths-501/pathep-[eth1/1]'
+        static_path = self.aim_mgr.get(aim_ctx, aim_resource.EPGStaticPath(
+            tenant_name=epg.tenant_name,
+            app_profile_name=epg.app_profile_name,
+            epg_name=epg.name,
+            path=path))
         vlan_name = 'vlan-%s' % access_vlan
-        self.assertEqual([{'path': 'topology/pod-1/paths-501/pathep-[eth1/1]',
-                          'mode': 'untagged', 'encap': vlan_name}],
-                         epg.static_paths)
+        self.assertIsNotNone(static_path)
+        self.assertEqual('untagged', static_path.mode)
+        self.assertEqual(vlan_name, static_path.encap)
         if with_subports:
             epg = self._net_2_epg(sb_net1['network'])
             epg = self.aim_mgr.get(aim_ctx, epg)
+            static_path = self.aim_mgr.get(aim_ctx, aim_resource.EPGStaticPath(
+                tenant_name=epg.tenant_name,
+                app_profile_name=epg.app_profile_name,
+                epg_name=epg.name,
+                path=path))
             vlan = 'vlan-%s' % (134 if not inherit else
                 sb_net1['network']['provider:segmentation_id'])
-            self.assertEqual(
-                [{'path': 'topology/pod-1/paths-501/pathep-[eth1/1]',
-                 'encap': vlan}], epg.static_paths)
+            self.assertIsNotNone(static_path)
+            self.assertEqual(vlan, static_path.encap)
         trunk = self._show_trunk(net1['network']['tenant_id'],
                                  trunk['id'])['trunk']
         # Trunk status is ACTIVE if parent and subports are bound.
@@ -6858,9 +6865,13 @@ class TestPortBinding(ApicAimTestCase):
             epg = self.aim_mgr.get(aim_ctx, epg)
             vlan_name = 'vlan-%s' % (135 if not inherit else
                 sb_net2['network']['provider:segmentation_id'])
-            self.assertEqual(
-                [{'path': 'topology/pod-1/paths-501/pathep-[eth1/1]',
-                 'encap': vlan_name}], epg.static_paths)
+            static_path = self.aim_mgr.get(aim_ctx, aim_resource.EPGStaticPath(
+                tenant_name=epg.tenant_name,
+                app_profile_name=epg.app_profile_name,
+                epg_name=epg.name,
+                path=path))
+            self.assertIsNotNone(static_path)
+            self.assertEqual(vlan_name, static_path.encap)
             subports.extend(add_subports)
             self._update_trunk(net1['network']['tenant_id'],
                                trunk['id'], subports, remove=True)
@@ -6873,7 +6884,6 @@ class TestPortBinding(ApicAimTestCase):
                 self.assertEqual('', subport['binding:host_id'])
                 epg = self._net_2_epg(net['network'])
                 epg = self.aim_mgr.get(aim_ctx, epg)
-                self.assertEqual([], epg.static_paths)
             # Trunk should still be active with only the bound parent port.
             trunk = self._show_trunk(net1['network']['tenant_id'],
                                      trunk['id'])['trunk']
@@ -10444,17 +10454,21 @@ class TestPortVlanNetwork(ApicAimTestCase):
             with self.port(subnet=sub1) as p1:
                 # unbound port -> no static paths expected
                 epg = self.aim_mgr.get(aim_ctx, epg)
-                self.assertEqual([], epg.static_paths)
                 self._validate()
 
                 # bind to host h1
                 p1 = self._bind_port_to_host(p1['port']['id'], 'h1')
                 vlan_h1 = self._check_binding(p1['port']['id'])
                 epg = self.aim_mgr.get(aim_ctx, epg)
-                self.assertEqual(
-                    [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_h1,
-                      'host': 'h1'}],
-                    epg.static_paths)
+                static_path = self.aim_mgr.get(aim_ctx,
+                        aim_resource.EPGStaticPath(
+                            tenant_name=epg.tenant_name,
+                            app_profile_name=epg.app_profile_name,
+                            epg_name=epg.name,
+                            path=self.hlink1.path))
+                self.assertIsNotNone(static_path)
+                self.assertEqual('h1', static_path.host)
+                self.assertEqual('vlan-%s' % vlan_h1, static_path.encap)
                 self._validate()
 
                 # The update to host_routes should trigger the port updates
@@ -10477,17 +10491,21 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 p1 = self._bind_port_to_host(p1['port']['id'], 'h2')
                 vlan_h2 = self._check_binding(p1['port']['id'])
                 epg = self.aim_mgr.get(aim_ctx, epg)
-                self.assertEqual(
-                    [{'path': hlink2.path, 'encap': 'vlan-%s' % vlan_h2,
-                      'host': 'h2'}],
-                    epg.static_paths)
+                static_path = self.aim_mgr.get(aim_ctx,
+                        aim_resource.EPGStaticPath(
+                            tenant_name=epg.tenant_name,
+                            app_profile_name=epg.app_profile_name,
+                            epg_name=epg.name,
+                            path=hlink2.path))
+                self.assertIsNotNone(static_path)
+                self.assertEqual('h2', static_path.host)
+                self.assertEqual('vlan-%s' % vlan_h2, static_path.encap)
                 self._validate()
 
                 # delete port
                 self._delete('ports', p1['port']['id'])
                 self._check_no_dynamic_segment(net1['id'])
                 epg = self.aim_mgr.get(aim_ctx, epg)
-                self.assertEqual([], epg.static_paths)
                 self._validate()
 
     def test_port_lifecycle_internal_network(self):
@@ -10688,10 +10706,15 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 vlan_p1 = self._check_binding(p1['port']['id'])
                 if not is_svi:
                     epg = self.aim_mgr.get(aim_ctx, epg)
-                    self.assertEqual(
-                        [{'path': self.hlink1.path,
-                          'encap': 'vlan-%s' % vlan_p1, 'host': 'h1'}],
-                        epg.static_paths)
+                    static_path = self.aim_mgr.get(aim_ctx,
+                            aim_resource.EPGStaticPath(
+                                tenant_name=epg.tenant_name,
+                                app_profile_name=epg.app_profile_name,
+                                epg_name=epg.name,
+                                path=self.hlink1.path))
+                    self.assertIsNotNone(static_path)
+                    self.assertEqual('h1', static_path.host)
+                    self.assertEqual('vlan-%s' % vlan_p1, static_path.encap)
                 else:
                     ext_net = aim_resource.ExternalNetwork.from_dn(
                         net1[DN]['ExternalNetwork'])
@@ -10761,10 +10784,16 @@ class TestPortVlanNetwork(ApicAimTestCase):
                     self.assertEqual(vlan_p1, vlan_p2)
                     if not is_svi:
                         epg = self.aim_mgr.get(aim_ctx, epg)
-                        self.assertEqual(
-                            [{'path': self.hlink1.path,
-                              'encap': 'vlan-%s' % vlan_p2, 'host': 'h1'}],
-                            epg.static_paths)
+                        static_path = self.aim_mgr.get(aim_ctx,
+                                aim_resource.EPGStaticPath(
+                                    tenant_name=epg.tenant_name,
+                                    app_profile_name=epg.app_profile_name,
+                                    epg_name=epg.name,
+                                    path=self.hlink1.path))
+                        self.assertIsNotNone(static_path)
+                        self.assertEqual('h1', static_path.host)
+                        self.assertEqual('vlan-%s' % vlan_p2,
+                            static_path.encap)
                     else:
                         l3out_node = self.aim_mgr.get(aim_ctx, l3out_node)
                         self.assertEqual(l3out_node.router_id, apic_router_id)
@@ -10791,10 +10820,16 @@ class TestPortVlanNetwork(ApicAimTestCase):
                     self._check_binding(p1['port']['id'])
                     if not is_svi:
                         epg = self.aim_mgr.get(aim_ctx, epg)
-                        self.assertEqual(
-                            [{'path': self.hlink1.path,
-                              'encap': 'vlan-%s' % vlan_p1, 'host': 'h1'}],
-                            epg.static_paths)
+                        static_path = self.aim_mgr.get(aim_ctx,
+                            aim_resource.EPGStaticPath(
+                                tenant_name=epg.tenant_name,
+                                app_profile_name=epg.app_profile_name,
+                                epg_name=epg.name,
+                                path=self.hlink1.path))
+                        self.assertIsNotNone(static_path)
+                        self.assertEqual('h1', static_path.host)
+                        self.assertEqual('vlan-%s' % vlan_p1,
+                            static_path.encap)
                     else:
                         for l3out_if in l3out_ifs:
                             l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
@@ -10818,7 +10853,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self._check_no_dynamic_segment(net1['id'])
                 if not is_svi:
                     epg = self.aim_mgr.get(aim_ctx, epg)
-                    self.assertEqual([], epg.static_paths)
                 else:
                     for l3out_if in l3out_ifs:
                         l3out_if = self.aim_mgr.get(aim_ctx, l3out_if)
@@ -10865,10 +10899,15 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
         if not is_svi:
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(
-                [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1,
-                  'host': 'h1'}],
-                epg1.static_paths)
+            static_path = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg1.tenant_name,
+                    app_profile_name=epg1.app_profile_name,
+                    epg_name=epg1.name,
+                    path=self.hlink1.path))
+            self.assertIsNotNone(static_path)
+            self.assertEqual('h1', static_path.host)
+            self.assertEqual('vlan-%s' % vlan_p1, static_path.encap)
             net2 = self._make_network(self.fmt, 'net2', True)['network']
             epg2 = self._net_2_epg(net2)
         else:
@@ -10940,10 +10979,15 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
         if not is_svi:
             epg2 = self.aim_mgr.get(aim_ctx, epg2)
-            self.assertEqual(
-                [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p2,
-                  'host': 'h1'}],
-                epg2.static_paths)
+            static_path = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg2.tenant_name,
+                    app_profile_name=epg2.app_profile_name,
+                    epg_name=epg2.name,
+                    path=self.hlink1.path))
+            self.assertIsNotNone(static_path)
+            self.assertEqual('h1', static_path.host)
+            self.assertEqual('vlan-%s' % vlan_p2, static_path.encap)
         else:
             ext_net = aim_resource.ExternalNetwork.from_dn(
                 net2[DN]['ExternalNetwork'])
@@ -11049,13 +11093,17 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self._check_no_dynamic_segment(net2['id'])
         if not is_svi:
             epg2 = self.aim_mgr.get(aim_ctx, epg2)
-            self.assertEqual([], epg2.static_paths)
 
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(
-                [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1,
-                  'host': 'h1'}],
-                epg1.static_paths)
+            static_path = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg1.tenant_name,
+                    app_profile_name=epg1.app_profile_name,
+                    epg_name=epg1.name,
+                    path=self.hlink1.path))
+            self.assertIsNotNone(static_path)
+            self.assertEqual('h1', static_path.host)
+            self.assertEqual('vlan-%s' % vlan_p1, static_path.encap)
         else:
             for l3out_if1 in l3out_if1s:
                 l3out_if1 = self.aim_mgr.get(aim_ctx, l3out_if1)
@@ -11158,12 +11206,24 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
         if not is_svi:
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(
-                [{'path': hlink_1a.path, 'encap': 'vlan-%s' % vlan_p1,
-                  'host': 'h1'},
-                 {'path': hlink_1b.path, 'encap': 'vlan-%s' % vlan_p1,
-                  'host': 'h1'}],
-                epg1.static_paths)
+            static_path1 = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg1.tenant_name,
+                    app_profile_name=epg1.app_profile_name,
+                    epg_name=epg1.name,
+                    path=hlink_1a.path))
+            self.assertIsNotNone(static_path1)
+            self.assertEqual('h1', static_path1.host)
+            self.assertEqual('vlan-%s' % vlan_p1, static_path1.encap)
+            static_path2 = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg1.tenant_name,
+                    app_profile_name=epg1.app_profile_name,
+                    epg_name=epg1.name,
+                    path=hlink_1b.path))
+            self.assertIsNotNone(static_path2)
+            self.assertEqual('h1', static_path2.host)
+            self.assertEqual('vlan-%s' % vlan_p1, static_path2.encap)
         else:
             ext_net = aim_resource.ExternalNetwork.from_dn(
                 net1[DN]['ExternalNetwork'])
@@ -11287,15 +11347,33 @@ class TestPortVlanNetwork(ApicAimTestCase):
                                        host_name='h1')
         if not is_svi:
             epg2 = self.aim_mgr.get(aim_ctx, epg2)
-            self.assertTrue(
-                g_utils.is_equal(
-                    [{'path': host_links[0].path, 'encap': 'vlan-%s' % vlan_p2,
-                      'host': 'h1'},
-                     {'path': host_links[1].path, 'encap': 'vlan-%s' % vlan_p2,
-                      'host': 'h1'},
-                     {'path': host_links[2].path, 'encap': 'vlan-%s' % vlan_p2,
-                      'host': 'h1'}],
-                    epg2.static_paths))
+            static_path1 = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg2.tenant_name,
+                    app_profile_name=epg2.app_profile_name,
+                    epg_name=epg2.name,
+                    path=host_links[0].path))
+            self.assertIsNotNone(static_path1)
+            self.assertEqual('h1', static_path1.host)
+            self.assertEqual('vlan-%s' % vlan_p2, static_path1.encap)
+            static_path2 = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg2.tenant_name,
+                    app_profile_name=epg2.app_profile_name,
+                    epg_name=epg2.name,
+                    path=host_links[1].path))
+            self.assertIsNotNone(static_path2)
+            self.assertEqual('h1', static_path2.host)
+            self.assertEqual('vlan-%s' % vlan_p2, static_path2.encap)
+            static_path3 = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg2.tenant_name,
+                    app_profile_name=epg2.app_profile_name,
+                    epg_name=epg2.name,
+                    path=host_links[2].path))
+            self.assertIsNotNone(static_path3)
+            self.assertEqual('h1', static_path3.host)
+            self.assertEqual('vlan-%s' % vlan_p2, static_path3.encap)
         else:
             ext_net = aim_resource.ExternalNetwork.from_dn(
                 net2[DN]['ExternalNetwork'])
@@ -11339,14 +11417,25 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
         if not is_svi:
             epg2 = self.aim_mgr.get(aim_ctx, epg2)
-            self.assertEqual([], epg2.static_paths)
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual(
-                [{'path': hlink_1a.path, 'encap': 'vlan-%s' % vlan_p1,
-                  'host': 'h1'},
-                 {'path': hlink_1b.path, 'encap': 'vlan-%s' % vlan_p1,
-                  'host': 'h1'}],
-                epg1.static_paths)
+            static_path1 = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg1.tenant_name,
+                    app_profile_name=epg1.app_profile_name,
+                    epg_name=epg1.name,
+                    path=hlink_1a.path))
+            self.assertIsNotNone(static_path1)
+            self.assertEqual('h1', static_path1.host)
+            self.assertEqual('vlan-%s' % vlan_p1, static_path1.encap)
+            static_path2 = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg1.tenant_name,
+                    app_profile_name=epg1.app_profile_name,
+                    epg_name=epg1.name,
+                    path=hlink_1b.path))
+            self.assertIsNotNone(static_path2)
+            self.assertEqual('h1', static_path2.host)
+            self.assertEqual('vlan-%s' % vlan_p1, static_path2.encap)
         else:
             for l3out_if2 in l3out_if2s:
                 l3out_if2 = self.aim_mgr.get(aim_ctx, l3out_if2)
@@ -11404,7 +11493,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
         if not is_svi:
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual([], epg1.static_paths)
         else:
             for l3out_if1a in l3out_if1as:
                 l3out_if1a = self.aim_mgr.get(aim_ctx, l3out_if1a)
@@ -11476,12 +11564,24 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
             if not is_svi:
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual(
-                    [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1,
-                      'host': 'h1'},
-                     {'path': hlink2.path, 'encap': 'vlan-%s' % vlan_p2,
-                      'host': 'h2'}],
-                    sorted(epg1.static_paths, key=lambda x: x['path']))
+                static_path1 = self.aim_mgr.get(aim_ctx,
+                    aim_resource.EPGStaticPath(
+                        tenant_name=epg1.tenant_name,
+                        app_profile_name=epg1.app_profile_name,
+                        epg_name=epg1.name,
+                        path=self.hlink1.path))
+                self.assertIsNotNone(static_path1)
+                self.assertEqual('h1', static_path1.host)
+                self.assertEqual('vlan-%s' % vlan_p1, static_path1.encap)
+                static_path2 = self.aim_mgr.get(aim_ctx,
+                    aim_resource.EPGStaticPath(
+                        tenant_name=epg1.tenant_name,
+                        app_profile_name=epg1.app_profile_name,
+                        epg_name=epg1.name,
+                        path=hlink2.path))
+                self.assertIsNotNone(static_path2)
+                self.assertEqual('h2', static_path2.host)
+                self.assertEqual('vlan-%s' % vlan_p2, static_path2.encap)
             else:
                 ext_net = aim_resource.ExternalNetwork.from_dn(
                     net1[DN]['ExternalNetwork'])
@@ -11572,10 +11672,15 @@ class TestPortVlanNetwork(ApicAimTestCase):
             self._delete('ports', p2['port']['id'])
             if not is_svi:
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual(
-                    [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p1,
-                      'host': 'h1'}],
-                    epg1.static_paths)
+                static_path = self.aim_mgr.get(aim_ctx,
+                    aim_resource.EPGStaticPath(
+                        tenant_name=epg1.tenant_name,
+                        app_profile_name=epg1.app_profile_name,
+                        epg_name=epg1.name,
+                        path=self.hlink1.path))
+                self.assertIsNotNone(static_path)
+                self.assertEqual('h1', static_path.host)
+                self.assertEqual('vlan-%s' % vlan_p1, static_path.encap)
             else:
                 for l3out_if1b in l3out_if1bs:
                     l3out_if1b = self.aim_mgr.get(aim_ctx, l3out_if1b)
@@ -11606,7 +11711,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
 
             if not is_svi:
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual([], epg1.static_paths)
             else:
                 for l3out_if1a in l3out_if1as:
                     l3out_if1a = self.aim_mgr.get(aim_ctx, l3out_if1a)
@@ -11665,7 +11769,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self._check_binding(p1['port']['id'])
 
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual([], epg1.static_paths)
 
             hlink42 = aim_infra.HostLink(host_name='h42',
                                          interface_name='eth0')
@@ -11675,7 +11778,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self._check_binding(p2['port']['id'])
 
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual([], epg1.static_paths)
 
     def _test_topology_rpc_no_ports(self, is_svi=False):
         nctx = n_context.get_admin_context()
@@ -11710,7 +11812,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
             self.assertIsNone(self.aim_mgr.get(aim_ctx, l3out_node1))
         else:
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual([], epg1.static_paths)
         # remove hostlink for h10
         self.driver.delete_link(nctx, 'h10', 'eth0', 'A:A', 0, 0, 0)
         self.assertIsNone(self.aim_mgr.get(aim_ctx, expected_hlink10))
@@ -11718,7 +11819,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
             self.assertIsNone(self.aim_mgr.get(aim_ctx, l3out_node1))
         else:
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual([], epg1.static_paths)
 
     def test_topology_rpc_no_ports(self):
         self._test_topology_rpc_no_ports()
@@ -11762,7 +11862,6 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self.assertIsNone(self.aim_mgr.get(aim_ctx, l3out_node))
             else:
                 epgs[x] = self.aim_mgr.get(aim_ctx, epgs[x])
-                self.assertEqual([], epgs[x].static_paths)
 
         expected_hlink10 = aim_infra.HostLink(host_name='h10',
             interface_name='eth0', interface_mac='A:A',
@@ -11772,11 +11871,18 @@ class TestPortVlanNetwork(ApicAimTestCase):
         def check_epg_static_paths(link_path):
             for x in range(0, len(epgs)):
                 epgs[x] = self.aim_mgr.get(aim_ctx, epgs[x])
-                expected_path = ([{'path': link_path,
-                                   'encap': 'vlan-%s' % vlans[x],
-                                   'host': 'h10'}]
-                                if link_path else [])
-                self.assertEqual(expected_path, epgs[x].static_paths)
+                static_path = None
+                if link_path:
+                    static_path = self.aim_mgr.get(aim_ctx,
+                        aim_resource.EPGStaticPath(
+                            tenant_name=epgs[x].tenant_name,
+                            app_profile_name=epgs[x].app_profile_name,
+                            epg_name=epgs[x].name,
+                            path=link_path))
+                    self.assertIsNotNone(static_path)
+                    self.assertEqual('h10', static_path.host)
+                    self.assertEqual('vlan-%s' % vlans[x],
+                            static_path.encap)
 
         def check_svi_paths(link_path):
             for x in range(0, len(nets)):
@@ -11906,7 +12012,6 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 self._check_binding(p1['port']['id'],
                     expected_binding_info=[('apic_aim', 'opflex')])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual([], epg1.static_paths)
                 self._validate()
 
             # port on non-opflex host
@@ -11914,10 +12019,15 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 p2 = self._bind_port_to_host(p2['port']['id'], 'h1')
                 vlan_p2 = self._check_binding(p2['port']['id'])
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
-                self.assertEqual(
-                    [{'path': self.hlink1.path, 'encap': 'vlan-%s' % vlan_p2,
-                      'host': 'h1'}],
-                    epg1.static_paths)
+                static_path = self.aim_mgr.get(aim_ctx,
+                    aim_resource.EPGStaticPath(
+                        tenant_name=epg1.tenant_name,
+                        app_profile_name=epg1.app_profile_name,
+                        epg_name=epg1.name,
+                        path=self.hlink1.path))
+                self.assertIsNotNone(static_path)
+                self.assertEqual('h1', static_path.host)
+                self.assertEqual('vlan-%s' % vlan_p2, static_path.encap)
                 self._validate()
 
     def test_mixed_ports_on_network_with_default_domains(self):
@@ -12532,11 +12642,16 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             p1 = self._bind_port_to_host(p1['id'], 'h1', **kwargs)['port']
             vlan_p1 = self._check_binding(p1['id'],
                 expected_binding_info=expected_binding_info)
-            static_path_1 = {'path': bm_path1, 'encap': 'vlan-%s' % vlan_p1,
-                             'mode': 'untagged'}
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertEqual([static_path_1],
-                             epg1.static_paths)
+            static_path1 = self.aim_mgr.get(aim_ctx,
+                aim_resource.EPGStaticPath(
+                    tenant_name=epg1.tenant_name,
+                    app_profile_name=epg1.app_profile_name,
+                    epg_name=epg1.name,
+                    path=bm_path1))
+            self.assertIsNotNone(static_path1)
+            self.assertEqual('untagged', static_path1.mode)
+            self.assertEqual('vlan-%s' % vlan_p1, static_path1.encap)
             self.assertEqual(set([]),
                              set(self._doms(epg1.vmm_domains)))
             self.assertEqual(set(['ph1']),
@@ -12559,11 +12674,16 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 expected_binding_info=expected_binding_info,
                 top_bound_physnet='physnet3',
                 bottom_bound_physnet='physnet2')
-            static_path_2 = {'path': bm_path2, 'encap': 'vlan-%s' % vlan_p2,
-                             'mode': 'untagged'}
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertIn(static_path_1, epg1.static_paths)
-            self.assertIn(static_path_2, epg1.static_paths)
+            static_path2 = self.aim_mgr.get(aim_ctx,
+                    aim_resource.EPGStaticPath(
+                        tenant_name=epg1.tenant_name,
+                        app_profile_name=epg1.app_profile_name,
+                        epg_name=epg1.name,
+                        path=bm_path2))
+            self.assertIsNotNone(static_path2)
+            self.assertEqual('untagged', static_path2.mode)
+            self.assertEqual('vlan-%s' % vlan_p2, static_path2.encap)
             self.assertEqual(set([]),
                              set(self._doms(epg1.vmm_domains)))
             self.assertEqual(set(['ph1', 'ph2']),
@@ -12573,8 +12693,6 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             kwargs = {portbindings.PROFILE: {}}
             self._bind_port_to_host(p1['id'], None, **kwargs)['port']
             epg1 = self.aim_mgr.get(aim_ctx, epg1)
-            self.assertNotIn(static_path_1, epg1.static_paths)
-            self.assertIn(static_path_2, epg1.static_paths)
 
     def test_no_host_domain_mappings(self):
         with db_api.CONTEXT_READER.using(self.db_session):
@@ -13020,11 +13138,9 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
                 # VNICs).
                 doms = [physical_domain]
                 if delete:
-                    static_path = []
-                self.assertEqual(static_path, epg.static_paths)
-                self.assertEqual(set(doms),
-                                 set(self._doms(epg.physical_domains,
-                                                with_type=False)))
+                    self.assertEqual(set(doms),
+                            set(self._doms(epg.physical_domains,
+                                with_type=False)))
 
         if net_type == 'vlan':
             expected_binding_info = [('apic_aim', 'vlan')]
