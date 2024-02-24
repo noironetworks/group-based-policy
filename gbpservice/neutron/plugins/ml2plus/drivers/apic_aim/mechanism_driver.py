@@ -5676,14 +5676,27 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     return
                 epg = self.aim.get(aim_ctx, epg)
                 # Update old host values.
-                paths = set([(x['path'], x['encap'], x['host'])
-                             for x in epg.static_paths if x['host'] != host])
-                # Add new static ports.
-                paths |= set([(x.link.path, x.encap, x.link.host_name)
-                              for x in static_ports])
-                self.aim.update(aim_ctx, epg, static_paths=[
-                    {'path': x[0], 'encap': x[1], 'host': x[2]}
-                    for x in paths])
+                for static_port in static_ports:
+                    static_path = self.aim.get(aim_ctx,
+                            aim_resource.EPGStaticPath(
+                                tenant_name=epg.tenant_name,
+                                app_profile_name=epg.app_profile_name,
+                                epg_name=epg.name,
+                                path=static_port.link.path))
+                    if static_path:
+                        # Update old host values.
+                        self.aim.update(aim_ctx, static_path,
+                                        host=static_port.link.host_name)
+                    else:
+                        # Add new static ports.
+                        static_path = aim_resource.EPGStaticPath(
+                                tenant_name=epg.tenant_name,
+                                app_profile_name=epg.app_profile_name,
+                                epg_name=epg.name,
+                                path=static_port.link.path,
+                                encap=static_port.encap,
+                                host=static_port.link.host_name)
+                        self.aim.create(aim_ctx, static_path)
 
     def _get_topology_from_path(self, path):
         """Convert path string to toplogy elements.
@@ -5973,20 +5986,32 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         epg = self.aim.get(aim_ctx, epg)
         # Static paths configured on an EPG can be uniquely
         # identified by their path attribute.
-        to_remove = [static_port.link.path]
+        to_remove = static_port.link.path
         if to_remove:
-            epg.static_paths = [p for p in epg.static_paths
-                                if p.get('path') not in to_remove]
+            static_path = self.aim.get(aim_ctx, aim_resource.EPGStaticPath(
+                tenant_name=epg.tenant_name,
+                app_profile_name=epg.app_profile_name,
+                epg_name=epg.name,
+                path=to_remove))
+            if static_path:
+                self.aim.delete(aim_ctx, static_path)
+                LOG.debug('Removing static path %s for EPG %s',
+                          static_path, epg)
         if not remove and static_port:
-            static_info = {'path': static_port.link.path,
-                           'encap': static_port.encap,
-                           'mode': static_port.mode}
+            host = ""
             if static_port.link.host_name:
-                static_info['host'] = static_port.link.host_name
-            epg.static_paths.append(static_info)
-        LOG.debug('Setting static paths for EPG %s to %s',
-                  epg, epg.static_paths)
-        self.aim.update(aim_ctx, epg, static_paths=epg.static_paths)
+                host = static_port.link.host_name
+            static_path = aim_resource.EPGStaticPath(
+                    tenant_name=epg.tenant_name,
+                    app_profile_name=epg.app_profile_name,
+                    epg_name=epg.name,
+                    path=static_port.link.path,
+                    encap=static_port.encap,
+                    mode=static_port.mode,
+                    host=host)
+            LOG.debug('Adding static path %s for EPG %s',
+                      static_path, epg)
+            self.aim.create(aim_ctx, static_path)
 
     def _get_static_ports(self, plugin_context, host, segment,
                           port_context=None):
@@ -7211,7 +7236,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     expected_epg = mgr.expected_aim_resource(epg)
                     expected_epg.vmm_domains = actual_epg.vmm_domains
                     expected_epg.physical_domains = actual_epg.physical_domains
-                    expected_epg.static_paths = actual_epg.static_paths
                     # REVISIT: Move to ValidationManager, just before
                     # comparing actual and expected resources?
                     expected_epg.openstack_vmm_domain_names = [
@@ -7551,7 +7575,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         epg.physical_domain_names = []
         epg.vmm_domains = []
         epg.physical_domains = []
-        epg.static_paths = []
         epg.epg_contract_masters = epg_contract_masters
         epg.monitored = False
         qos_policy_binding = net_db.get('qos_policy_binding')
