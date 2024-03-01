@@ -35,11 +35,14 @@ from neutron_lib.callbacks import events
 from neutron_lib.callbacks import registry
 from neutron_lib.callbacks import resources
 from neutron_lib import constants as n_const
+from neutron_lib.db import model_query
 from neutron_lib.db import resource_extend
 from neutron_lib.db import utils as db_utils
+from neutron_lib import exceptions
 from neutron_lib.plugins import directory
 from oslo_log import log
 from oslo_utils import excutils
+from sqlalchemy.orm import exc
 
 from gbpservice.neutron.db import api as db_api
 from gbpservice.neutron.db import implicitsubnetpool_db
@@ -631,6 +634,17 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             result.append(db_utils.resource_fields(res, []))
 
         return result
+
+    # REVISIT: workaround due to the change in
+    # https://review.opendev.org/c/openstack/neutron/+/742829.
+    def _get_subnet(self, context, id):
+        # TODO(slaweq): remove this method when all will be switched to use OVO
+        # objects only
+        try:
+            subnet = model_query.get_by_id(context, models_v2.Subnet, id)
+        except exc.NoResultFound:
+            raise exceptions.SubnetNotFound(subnet_id=id)
+        return subnet
 
     @db_api.retry_if_session_inactive()
     def get_subnets(self, context, filters=None, fields=None,
