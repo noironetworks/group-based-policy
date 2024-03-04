@@ -1361,7 +1361,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 aim_resources.extend(resources)
             binding = (port_db.port_bindings[0]
                        if port_db.port_bindings else None)
-            acc_name = self._get_acc_bundle_for_host(aim_ctx, binding.host)
+            acc_name = (self._get_acc_bundle_for_host(aim_ctx, binding.host) if
+                    binding else None)
             if resources and acc_name:
                 acc_bundle = aim_resource.InfraAccBundleGroup(name=acc_name)
                 aim_resources.append(acc_bundle)
