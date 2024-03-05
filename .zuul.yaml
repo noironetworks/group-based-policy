@@ -15,17 +15,22 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: unmaintained/yoga
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: unmaintained/yoga
         - openstack-tox-py38:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: unmaintained/yoga
+        - openstack-tox-py39:
+            nodeset: ubuntu-focal
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: unmaintained/yoga
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -38,14 +43,19 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: unmaintained/yoga
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: unmaintained/yoga
         - openstack-tox-py38:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/yoga
+                override-checkout: unmaintained/yoga
+        - openstack-tox-py39:
+            nodeset: ubuntu-focal
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: unmaintained/yoga
