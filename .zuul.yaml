@@ -15,27 +15,27 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
         - openstack-tox-py27:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
         - openstack-tox-py35:
             nodeset: ubuntu-xenial
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -48,24 +48,24 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
         - openstack-tox-py27:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
         - openstack-tox-py35:
             nodeset: ubuntu-xenial
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/train
+                override-checkout: train-eol
