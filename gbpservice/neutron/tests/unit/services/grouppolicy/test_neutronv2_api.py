@@ -13,7 +13,7 @@
 
 from unittest import mock
 
-import unittest2
+import unittest
 
 from neutronclient.v2_0 import client as clientv20
 
@@ -29,7 +29,7 @@ INTERFACE = 'fake_interface'
 VALUE = 'fake_value'
 
 
-class NeutronV2ApiTestCase(unittest2.TestCase):
+class NeutronV2ApiTestCase(unittest.TestCase):
     """ Test case for Neutron V2 API testing.
 
     Provide a set of mocked methods for the neutron v2 API testing.
