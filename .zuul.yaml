@@ -15,22 +15,22 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/xena
+                override-checkout: unmaintained/xena
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/xena
+                override-checkout: unmaintained/xena
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/xena
+                override-checkout: unmaintained/xena
         - openstack-tox-py38:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/xena
+                override-checkout: unmaintained/xena
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -43,19 +43,19 @@
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/xena
+                override-checkout: unmaintained/xena
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/xena
+                override-checkout: unmaintained/xena
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/xena
+                override-checkout: unmaintained/xena
         - openstack-tox-py38:
             nodeset: ubuntu-bionic
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/xena
+                override-checkout: unmaintained/xena
