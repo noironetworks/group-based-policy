@@ -306,8 +306,8 @@ class ValidationManager(object):
         expected_instances[key] = instance
 
     def query_db_instances(self, entities, args, filters):
-        assert 1 == len(entities)
-        assert 0 == len(args)
+        assert 1 == len(entities)  # nosec
+        assert 0 == len(args)  # nosec
         instance_class = entities[0]
         expected_instances = self._expected_db_instances[instance_class]
         primary_keys = self._db_instance_primary_keys[instance_class]
@@ -571,9 +571,9 @@ class ValidationAimStore(aim_store.AimStore):
 
     def query(self, db_obj_type, resource_class, in_=None, notin_=None,
               order_by=None, lock_update=False, **filters):
-        assert in_ is None
-        assert notin_ is None
-        assert order_by is None
+        assert in_ is None  # nosec
+        assert notin_ is None  # nosec
+        assert order_by is None  # nosec
         if filters:
             if (set(filters.keys()) ==
                 set(resource_class.identity_attributes.keys())):
@@ -590,18 +590,21 @@ class ValidationAimStore(aim_store.AimStore):
 
     def count(self, db_obj_type, resource_class, in_=None, notin_=None,
               **filters):
-        assert False
+        # REVISIT: Determine if we can remove this call.
+        assert False  # nosec
 
     def delete_all(self, db_obj_type, resource_class, in_=None, notin_=None,
                    **filters):
-        assert False
+        # REVISIT: Determine if we can remove this call.
+        assert False  # nosec
 
     def from_attr(self, db_obj, resource_class, attribute_dict):
         for k, v in list(attribute_dict.items()):
             setattr(db_obj, k, v)
 
     def to_attr(self, resource_class, db_obj):
-        assert False
+        # REVISIT: Determine if we can remove this call.
+        assert False  # nosec
 
     def make_resource(self, cls, db_obj, include_aim_id=False):
         return copy.deepcopy(db_obj)
