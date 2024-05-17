@@ -2196,7 +2196,7 @@ class AIMMappingDriver(nrd.CommonNeutronBase, aim_rpc.AIMMappingRPCMixin):
 
     def _get_auto_ptg_id(self, l2p_id):
         if l2p_id:
-            return AUTO_PTG_ID_PREFIX % hashlib.md5(
+            return AUTO_PTG_ID_PREFIX % hashlib.md5(  # nosec
                 l2p_id.encode('utf-8')).hexdigest()
 
     def _is_auto_ptg(self, ptg):
