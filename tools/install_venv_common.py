@@ -26,7 +26,7 @@ from __future__ import print_function
 
 import optparse
 import os
-import subprocess
+import subprocess  # nosec
 import sys
 
 
@@ -61,7 +61,7 @@ class InstallVenv(object):
         else:
             stdout = None
 
-        proc = subprocess.Popen(cmd, cwd=self.root, stdout=stdout)
+        proc = subprocess.Popen(cmd, cwd=self.root, stdout=stdout)  # nosec
         output = proc.communicate()[0]
         if check_exit_code and proc.returncode != 0:
             self.die('Command "%s" failed.\n%s', ' '.join(cmd), output)
