@@ -15,17 +15,17 @@
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/zed
+                override-checkout: unmaintained/zed
         - openstack-tox-py38:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/zed
+                override-checkout: unmaintained/zed
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/zed
+                override-checkout: unmaintained/zed
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -38,14 +38,14 @@
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/zed
+                override-checkout: unmaintained/zed
         - openstack-tox-py38:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/zed
+                override-checkout: unmaintained/zed
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/zed
+                override-checkout: unmaintained/zed

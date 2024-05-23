@@ -10,7 +10,7 @@ neutron
 python-heatclient
 python-keystoneclient
 
--e git+https://opendev.org/openstack/networking-sfc.git@stable/zed#egg=networking-sfc
+-e git+https://opendev.org/openstack/networking-sfc.git@unmaintained/zed#egg=networking-sfc
 
 -e git+https://github.com/noironetworks/apicapi.git@master#egg=apicapi
 
