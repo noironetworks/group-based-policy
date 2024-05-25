@@ -133,6 +133,7 @@ SNAT_SUBNET_ONLY = 'apic:snat_subnet_only'
 EPG_SUBNET = 'apic:epg_subnet'
 ADVERTISED_EXTERNALLY = 'apic:advertised_externally'
 SHARED_BETWEEN_VRFS = 'apic:shared_between_vrfs'
+ROUTER_GW_IP_POOL = 'apic:router_gw_ip_pool'
 
 
 def sort_if_list(attr):
@@ -366,7 +367,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                      'provider:network_type',
                                      'apic:multi_ext_nets',
                                      ADVERTISED_EXTERNALLY,
-                                     SHARED_BETWEEN_VRFS
+                                     SHARED_BETWEEN_VRFS,
+                                     ROUTER_GW_IP_POOL
                                      )
         self.name_mapper = apic_mapper.APICNameMapper()
         self.t1_aname = self.name_mapper.project(None, 't1')
@@ -2440,6 +2442,70 @@ class TestAimMapping(ApicAimTestCase):
 
     def test_subnetpool_lifecycle_with_scopes(self):
         self._test_subnetpool_lifecycle(use_scopes=True)
+
+    def test_router_gw_port(self):
+        ext_net = self._make_ext_network(
+            'ext-net', dn=self.dn_t1_l1_n1)
+        aim_resource.L3Outside(tenant_name=self.t1_aname, name='l1')
+
+        subnet = self._create_subnet_with_extension(
+            self.fmt, ext_net, '10.0.0.1', '10.0.0.0/24',
+            **{'gateway_ip': '10.0.0.1',
+               ROUTER_GW_IP_POOL: False})['subnet']
+
+        subnet2 = self._create_subnet_with_extension(
+            self.fmt, ext_net, '20.0.0.1', '20.0.0.0/24',
+            **{'gateway_ip': '20.0.0.1',
+               ROUTER_GW_IP_POOL: False})['subnet']
+
+        subnet3 = self._create_subnet_with_extension(
+            self.fmt, ext_net, '30.0.0.1', '30.0.0.0/24',
+            **{'gateway_ip': '30.0.0.1',
+               ROUTER_GW_IP_POOL: True})['subnet']
+
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router1',
+            external_gateway_info={'network_id': ext_net['id']})['router']
+        routerb = self._make_router(
+            self.fmt, self._tenant_id, 'router2',
+            external_gateway_info={'network_id': ext_net['id']})['router']
+        self._check_router(router)
+        self._check_router(routerb)
+        self.assertEqual(subnet3['id'],
+                         router['external_gateway_info']
+                         ['external_fixed_ips'][0]['subnet_id'])
+        self.assertEqual(subnet3['id'],
+                         routerb['external_gateway_info']
+                         ['external_fixed_ips'][0]['subnet_id'])
+
+        # Test updating extension
+        self._update('subnets', subnet2['id'],
+                     {'subnet': {ROUTER_GW_IP_POOL: True}})
+
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router3',
+            external_gateway_info={'network_id': ext_net['id']})['router']
+        self.assertEqual(subnet2['id'],
+                         router['external_gateway_info']
+                         ['external_fixed_ips'][0]['subnet_id'])
+
+        self._update('subnets', subnet2['id'],
+                     {'subnet': {ROUTER_GW_IP_POOL: False}})
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router4',
+            external_gateway_info={'network_id': ext_net['id']})['router']
+        self.assertEqual(subnet3['id'],
+                         router['external_gateway_info']
+                         ['external_fixed_ips'][0]['subnet_id'])
+
+        self._update('subnets', subnet['id'],
+                     {'subnet': {ROUTER_GW_IP_POOL: True}})
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router4',
+            external_gateway_info={'network_id': ext_net['id']})['router']
+        self.assertEqual(subnet['id'],
+                         router['external_gateway_info']
+                         ['external_fixed_ips'][0]['subnet_id'])
 
     def test_router_lifecycle(self):
         # Test create.
