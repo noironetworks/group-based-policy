@@ -2607,7 +2607,7 @@ class TestPolicyTargetGroupIpv6(TestPolicyTargetGroupIpv4):
                             'subnetpools': []}}
 
     def _family_specific_subnet_validation(self, subnet):
-        if subnet['ip_version'] is 6:
+        if subnet['ip_version'] == 6:
             self.assertEqual(subnet['ipv6_ra_mode'], 'slaac')
             self.assertEqual(subnet['ipv6_address_mode'], 'slaac')
 
