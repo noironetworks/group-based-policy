@@ -7535,7 +7535,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         bd.display_name = dname
         bd.vrf_name = vrf.name
         bd.enable_arp_flood = True
-        bd.enable_routing = len(router_contract_names) is not 0
+        bd.enable_routing = len(router_contract_names) != 0
         bd.limit_ip_learn_to_subnets = True
         bd.ep_move_detect_mode = ''
         bd.l3out_names = []

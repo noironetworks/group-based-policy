@@ -557,9 +557,9 @@ class VPNTestData(object):
         '''
         Prepares a simple resource_data dictionary of respective service
         '''
-        if operation is 'delete':
+        if operation == 'delete':
             return self._delete_ipsec_site_conn_obj()
-        if operation is 'update':
+        if operation == 'update':
             return self._update_ipsec_site_conn_obj()
 
         if operation == 'create' and service_type == 'ipsec':
