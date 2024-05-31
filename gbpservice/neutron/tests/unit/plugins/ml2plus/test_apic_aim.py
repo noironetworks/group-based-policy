@@ -10010,7 +10010,7 @@ class TestExternalConnectivityBase(object):
         self._make_ext_network('net1',
                                dn=self.dn_t1_l1_n1,
                                cidrs=['20.10.0.0/16', '4.4.4.0/24'])
-        if self.nat_type is not 'distributed' and self.nat_type is not 'edge':
+        if self.nat_type != 'distributed' and self.nat_type != 'edge':
             vmm_domains = []
         self.mock_ns.create_l3outside.assert_called_once_with(
             mock.ANY,
