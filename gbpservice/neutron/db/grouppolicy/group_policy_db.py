@@ -766,7 +766,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
                 ep_db.external_segments.append(assoc)
 
     def _process_segment_ers(self, context, es_db, es):
-        if es['external_routes'] is not constants.ATTR_NOT_SPECIFIED:
+        if es['external_routes'] != constants.ATTR_NOT_SPECIFIED:
             es_db.external_routes = []
             for rt in es['external_routes']:
                 target = ExternalRoute(
@@ -777,7 +777,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
                 es_db.external_routes.append(target)
 
     def _set_ess_for_l3p(self, context, l3p_db, es_dict):
-        if es_dict is constants.ATTR_NOT_SPECIFIED:
+        if es_dict == constants.ATTR_NOT_SPECIFIED:
             return
         if not es_dict:
             l3p_db.external_segments = []
@@ -1057,7 +1057,7 @@ class GroupPolicyDbPlugin(gpolicy.GroupPolicyPluginBase):
 
     def _get_attribute(self, attrs, key):
         value = attrs.get(key)
-        if value is constants.ATTR_NOT_SPECIFIED:
+        if value == constants.ATTR_NOT_SPECIFIED:
             value = None
         return value
 
