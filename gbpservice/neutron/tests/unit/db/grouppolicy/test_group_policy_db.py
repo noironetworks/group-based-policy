@@ -95,10 +95,9 @@ class ApiManagerMixin(object):
             defaults = kwargs
         data = {type: {'tenant_id': self._tenant_id}}
         data[type].update(defaults)
-        req = self.new_create_request(plural, data, self.fmt)
-        req.environ['neutron.context'] = context.Context(
-            '', kwargs.get('tenant_id', self._tenant_id) if not
-            is_admin_context else self._tenant_id, is_admin_context)
+        req = self.new_create_request(plural, data, self.fmt,
+                tenant_id=kwargs.get('tenant_id', self._tenant_id),
+                as_admin=is_admin_context)
         res = req.get_response(self.ext_api)
         if expected_res_status:
             self.assertEqual(expected_res_status, res.status_int)
@@ -115,12 +114,9 @@ class ApiManagerMixin(object):
         data = {type: kwargs}
         tenant_id = kwargs.pop('tenant_id', self._tenant_id)
         # Create PT with bound port
-        req = self.new_update_request(plural, data, id, self.fmt)
-        req.environ['neutron.context'] = context.Context(
-            '', tenant_id if not is_admin_context else self._tenant_id,
-            is_admin_context)
+        req = self.new_update_request(plural, data, id, self.fmt,
+                tenant_id=tenant_id, as_admin=is_admin_context)
         res = req.get_response(api or self.ext_api)
-
         if expected_res_status:
             self.assertEqual(expected_res_status, res.status_int)
         elif deserialize and res.status_int >= webob.exc.HTTPClientError.code:
@@ -130,9 +126,9 @@ class ApiManagerMixin(object):
     def _show_resource(self, id, plural, expected_res_status=None,
                        is_admin_context=False, tenant_id=None,
                        deserialize=True):
-        req = self.new_show_request(plural, id, fmt=self.fmt)
-        req.environ['neutron.context'] = context.Context(
-            '', tenant_id or self._tenant_id, is_admin_context)
+
+        req = self.new_show_request(plural, id, fmt=self.fmt,
+                tenant_id='' or self._tenant_id, as_admin=is_admin_context)
         res = req.get_response(self.ext_api)
 
         if expected_res_status:
@@ -144,7 +140,8 @@ class ApiManagerMixin(object):
     def _delete_resource(self, id, plural, is_admin_context=False,
                          expected_res_status=None, tenant_id=None,
                          deserialize=True):
-        req = self.new_delete_request(plural, id)
+        req = self.new_delete_request(plural, id,
+                as_admin=is_admin_context)
         req.environ['neutron.context'] = context.Context(
             '', tenant_id or self._tenant_id, is_admin_context)
         res = req.get_response(self.ext_api)
@@ -192,7 +189,7 @@ class ApiManagerMixin(object):
                                  'device_id': 'b'}}
         # Create EP with bound port
         req = self.new_update_request('ports', data, port_id,
-                                      self.fmt)
+                                      self.fmt, as_admin=True)
         return self.deserialize(self.fmt, req.get_response(self.api))
 
     def _bind_subport(self, ctx, trunk, port):
@@ -206,7 +203,7 @@ class ApiManagerMixin(object):
     def _unbind_port(self, port_id):
         data = {'port': {'binding:host_id': ''}}
         req = self.new_update_request('ports', data, port_id,
-                                      self.fmt)
+                                      self.fmt, as_admin=True)
         return self.deserialize(self.fmt, req.get_response(self.api))
 
 
@@ -298,7 +295,6 @@ class GroupPolicyDBTestBase(ApiManagerMixin):
         resource_plural = self._get_resource_plural(resource)
 
         res = self._list(resource_plural,
-                         neutron_context=neutron_context,
                          query_params=query_params)
         params = None
         if query_params:

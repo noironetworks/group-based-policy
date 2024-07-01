@@ -225,7 +225,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         extn_attr = ('router:external', DN,
                      'apic:nat_type', 'apic:snat_host_pool')
 
-        net = self._make_network(self.fmt, name, True,
+        net = self._make_network(self.fmt, name, True, as_admin=True,
                                  arg_list=extn_attr,
                                  **kwargs)['network']
         subnet = self._make_subnet(
@@ -259,11 +259,9 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         attrs.update(kwargs)
 
         req = self.new_create_request('address-scopes',
-                                      {'address_scope': attrs}, self.fmt)
-        if not admin:
-            neutron_context = nctx.Context('', kwargs.get('tenant_id',
-                                                          self._tenant_id))
-            req.environ['neutron.context'] = neutron_context
+                                      {'address_scope': attrs}, self.fmt,
+                                      tenant_id=kwargs.get('tenant_id',
+                                      self._tenant_id), as_admin=admin)
 
         res = req.get_response(self.ext_api)
         if expected_status:
@@ -323,7 +321,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                 req.get_response(self.api))['subnet']
 
     def _show_port(self, id):
-        req = self.new_show_request('ports', id, fmt=self.fmt)
+        req = self.new_show_request('ports', id, fmt=self.fmt, as_admin=True)
         return self.deserialize(self.fmt, req.get_response(self.api))['port']
 
     def _show_network(self, id):
@@ -332,7 +330,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                 req.get_response(self.api))['network']
 
     def _show_subnetpool(self, id):
-        req = self.new_show_request('subnetpools', id, fmt=self.fmt)
+        req = self.new_show_request('subnetpools', id, as_admin=True)
         return self.deserialize(self.fmt,
                                 req.get_response(self.api))['subnetpool']
 
@@ -593,7 +591,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         for version in subnetpools_versions:
             sp_id = l3p[version][0]
             subpool = self._show_subnetpool(sp_id)
-            req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
+            req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt,
+                                        as_admin=True)
             res = self.deserialize(self.fmt, req.get_response(self.api))
             subpool = res['subnetpool']
             self.assertIn(subpool['prefixes'][0], l3p['ip_pool'])
@@ -629,7 +628,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         for version in subnetpools_versions:
             sp_id = l3p[version][0]
-            req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
+            req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt,
+                                        as_admin=True)
             res = req.get_response(self.api)
             if explicit_subnetpool or (
                    version == 'subnetpools_v4' and v4_default) or (
@@ -681,7 +681,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         if tenant_id:
             kwargs['tenant_id'] = tenant_id
 
-        net = self._make_network(self.fmt, network_name, True,
+        net = self._make_network(self.fmt, network_name, True, as_admin=True,
                                  arg_list=self.extension_attributes,
                                  **kwargs)['network']
         gw = str(netaddr.IPAddress(netaddr.IPNetwork(cidr).first + 1))
@@ -3353,7 +3353,7 @@ class TestPolicyTarget(AIMBaseTestCase,
             kwargs[DN] = {EXTERNAL_NETWORK: dn}
         extn_attr = ('router:external', DN)
 
-        net = self._make_network(self.fmt, name, True,
+        net = self._make_network(self.fmt, name, True, as_admin=True,
                                  arg_list=extn_attr,
                                  **kwargs)['network']
         subnet = self._make_subnet(
@@ -5688,29 +5688,34 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                         device_owner='compute:',
                         fixed_ips=[{'subnet_id': t2sub1['id']},
                                    {'subnet_id': t2sub2['id']}],
-                        allowed_address_pairs=allow_addr_active_aap)
+                        allowed_address_pairs=allow_addr_active_aap,
+                        as_admin=True)
 
         # create 2 ports configured with the same allowed-addresses
         p1 = self._make_port(self.fmt, net['network']['id'],
                              arg_list=('allowed_address_pairs',),
                              device_owner='compute:',
                              fixed_ips=[{'subnet_id': sub1['id']}],
-                             allowed_address_pairs=allow_addr)['port']
+                             allowed_address_pairs=allow_addr,
+                             as_admin=True)['port']
         t2p1 = self._make_port(self.fmt, t2net['network']['id'],
                                arg_list=('allowed_address_pairs',),
                                device_owner='compute:',
                                fixed_ips=[{'subnet_id': t2sub1['id']}],
-                               allowed_address_pairs=allow_addr)['port']
+                               allowed_address_pairs=allow_addr,
+                               as_admin=True)['port']
         p2 = self._make_port(self.fmt, net['network']['id'],
                              arg_list=('allowed_address_pairs',),
                              device_owner='compute:',
                              fixed_ips=[{'subnet_id': sub1['id']}],
-                             allowed_address_pairs=allow_addr)['port']
+                             allowed_address_pairs=allow_addr,
+                             as_admin=True)['port']
         t2p2 = self._make_port(self.fmt, t2net['network']['id'],
                                arg_list=('allowed_address_pairs',),
                                device_owner='compute:',
                                fixed_ips=[{'subnet_id': t2sub1['id']}],
-                               allowed_address_pairs=allow_addr)['port']
+                               allowed_address_pairs=allow_addr,
+                               as_admin=True)['port']
         self._bind_port_to_host(p1['id'], 'h1')
         self._bind_port_to_host(t2p1['id'], 'h1')
         self._bind_port_to_host(p_active_aap['id'], 'h1')
@@ -5721,8 +5726,8 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         # belong to a different active_acitve_aap mode.
         self._update('ports', p_active_aap['id'],
                      {'port': {'allowed_address_pairs': allow_addr}},
-                     neutron_context=self._neutron_admin_context,
-                     expected_code=webob.exc.HTTPBadRequest.code)
+                     expected_code=webob.exc.HTTPBadRequest.code,
+                     as_admin=True)
 
         # Call agent => plugin RPC to get the details for each port. The
         # results should only have the configured AAPs, with none of them
@@ -5824,19 +5829,23 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         p3 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:',
                              fixed_ips=[{'subnet_id': sub2['id'],
-                                         'ip_address': '1.2.3.250'}])['port']
+                             'ip_address': '1.2.3.250'}],
+                             as_admin=True)['port']
         t2p3 = self._make_port(self.fmt, t2net['network']['id'],
                                device_owner='compute:',
                                fixed_ips=[{'subnet_id': t2sub2['id'],
-                                           'ip_address': '1.2.3.250'}])['port']
+                               'ip_address': '1.2.3.250'}],
+                               as_admin=True)['port']
         p4 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:',
                              fixed_ips=[{'subnet_id': sub2['id'],
-                                         'ip_address': '1.2.3.251'}])['port']
+                             'ip_address': '1.2.3.251'}],
+                             as_admin=True)['port']
         t2p4 = self._make_port(self.fmt, t2net['network']['id'],
                                device_owner='compute:',
                                fixed_ips=[{'subnet_id': t2sub2['id'],
-                                           'ip_address': '1.2.3.251'}])['port']
+                               'ip_address': '1.2.3.251'}],
+                               as_admin=True)['port']
         self.l3_plugin.add_router_interface(
             self._neutron_admin_context, rtr['id'], {'subnet_id': sub1['id']})
         self.l3_plugin.add_router_interface(
@@ -5848,9 +5857,11 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             self._neutron_admin_context, t2rtr['id'],
             {'subnet_id': t2sub2['id']})
         fip1 = self._make_floatingip(self.fmt, t2net_ext['id'],
-                                     port_id=t2p3['id'])['floatingip']
+                                     port_id=t2p3['id'],
+                                     as_admin=True)['floatingip']
         fip2 = self._make_floatingip(self.fmt, t2net_ext['id'],
-                                     port_id=t2p4['id'])['floatingip']
+                                     port_id=t2p4['id'],
+                                     as_admin=True)['floatingip']
         details = self.mech_driver.get_gbp_details(
             self._neutron_admin_context, device='tap%s' % t2p1['id'],
             host='h1')
@@ -5904,7 +5915,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         # from the old pair are removed from the mapping table
         p1 = self._update('ports', p1['id'],
             {'port': {'allowed_address_pairs': update_addr}},
-            neutron_context=self._neutron_admin_context)['port']
+            as_admin=True)['port']
         ips = self.mech_driver.get_ha_ipaddresses_for_port(p1['id'])
         self.assertEqual(ips, [])
         # Request ownership of the new AAP
@@ -5922,7 +5933,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
 
         p2 = self._update('ports', p2['id'],
             {'port': {'allowed_address_pairs': update_addr}},
-            neutron_context=self._neutron_admin_context)['port']
+            as_admin=True)['port']
         ips = self.mech_driver.get_ha_ipaddresses_for_port(p2['id'])
         self.assertEqual(ips, [])
         # Request ownership of the new AAP

@@ -746,12 +746,12 @@ class TestPortPairOpflexAgent(TestAIMServiceFunctionChainingBase):
     def test_port_pair_with_opflex_agent_vlan_nets(self):
         # Correct work flow with both nets of type vlan.
         kwargs = {'provider:network_type': 'vlan'}
-        net1 = self._make_network(self.fmt, 'net1', True,
+        net1 = self._make_network(self.fmt, 'net1', True, as_admin=True,
             arg_list=tuple(list(kwargs.keys())), **kwargs)
         self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
         p1 = self._make_port(self.fmt, net1['network']['id'])['port']
 
-        net2 = self._make_network(self.fmt, 'net2', True,
+        net2 = self._make_network(self.fmt, 'net2', True, as_admin=True,
             arg_list=tuple(list(kwargs.keys())), **kwargs)
         self._make_subnet(self.fmt, net2, '192.168.1.1', '192.168.1.0/24')
         p2 = self._make_port(self.fmt, net2['network']['id'])['port']
@@ -766,7 +766,7 @@ class TestPortPairOpflexAgent(TestAIMServiceFunctionChainingBase):
     def test_port_pair_invalid_with_opflex_agent_opflex_nets(self):
         # Validate that opflex type nets are invalid.
         kwargs = {'provider:network_type': 'vlan'}
-        net1 = self._make_network(self.fmt, 'net1', True,
+        net1 = self._make_network(self.fmt, 'net1', True, as_admin=True,
             arg_list=tuple(list(kwargs.keys())), **kwargs)
         self._make_subnet(self.fmt, net1, '192.168.0.1', '192.168.0.0/24')
         p1 = self._make_port(self.fmt, net1['network']['id'])['port']

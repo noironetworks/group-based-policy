@@ -172,7 +172,7 @@ class TestNeutronMapping(AimValidationTestCase):
 
     def _test_routed_subnet(self, subnet_id, gw_ip):
         # Get the AIM Subnet.
-        subnet = self._show('subnets', subnet_id)['subnet']
+        subnet = self._show('subnets', subnet_id, as_admin=True)['subnet']
         sn_dn = subnet['apic:distinguished_names'][gw_ip]
         sn = aim_resource.Subnet.from_dn(sn_dn)
 
@@ -181,7 +181,7 @@ class TestNeutronMapping(AimValidationTestCase):
 
     def _test_unscoped_vrf(self, net_id):
         # Get the network's AIM VRF.
-        net = self._show('networks', net_id)['network']
+        net = self._show('networks', net_id, as_admin=True)['network']
         vrf_dn = net['apic:distinguished_names']['VRF']
         vrf = aim_resource.VRF.from_dn(vrf_dn)
 
@@ -283,7 +283,7 @@ class TestNeutronMapping(AimValidationTestCase):
         # Test subnet.
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24',
-            tenant_id='subnet_proj')['subnet']
+            as_admin=True, tenant_id='subnet_proj')['subnet']
         self._test_project_resources(subnet['project_id'])
 
         # Test port. Since Neutron creates the default SG for the
@@ -292,12 +292,12 @@ class TestNeutronMapping(AimValidationTestCase):
         # resource owned by port_prog.
         port = self._make_port(
             self.fmt, net['id'], security_groups=[],
-            tenant_id='port_proj')['port']
+            as_admin=True, tenant_id='port_proj')['port']
         sgs = self._list(
             'security-groups',
-            query_params='project_id=port_proj')['security_groups']
+            query_params='project_id=port_proj',
+            as_admin=True)['security_groups']
         self.assertEqual(1, len(sgs))
-        self._delete('security-groups', sgs[0]['id'])
         self._test_project_resources(port['project_id'])
 
         # Test security group.
@@ -319,8 +319,8 @@ class TestNeutronMapping(AimValidationTestCase):
         # Test floatingip.
         kwargs = {'router:external': True}
         ext_net_resp = self._make_network(
-            self.fmt, 'ext_net', True, arg_list=self.extension_attributes,
-            **kwargs)
+            self.fmt, 'ext_net', True, as_admin=True,
+            arg_list=self.extension_attributes, **kwargs)
         ext_net = ext_net_resp['network']
         self._make_subnet(
             self.fmt, ext_net_resp, '100.100.100.1', '100.100.100.0/24')
@@ -542,8 +542,8 @@ class TestNeutronMapping(AimValidationTestCase):
                   'apic:distinguished_names':
                   {'ExternalNetwork': 'uni/tn-common/out-l1/instP-n1'}}
         net_resp = self._make_network(
-            self.fmt, 'ext_net', True, arg_list=self.extension_attributes,
-            **kwargs)
+            self.fmt, 'ext_net', True, as_admin=True,
+            arg_list=self.extension_attributes, **kwargs)
         net = net_resp['network']
         self._validate()
 
@@ -774,7 +774,8 @@ class TestNeutronMapping(AimValidationTestCase):
                   'apic:distinguished_names':
                   {'ExternalNetwork': 'uni/tn-common/out-l1/instP-n1'}}
         ext_net = self._make_network(
-            self.fmt, 'ext_net', True, arg_list=self.extension_attributes,
+            self.fmt, 'ext_net', True, as_admin=True,
+            arg_list=self.extension_attributes,
             **kwargs)['network']
 
         # Create extra external network to test CloneL3Out record below.
@@ -782,7 +783,7 @@ class TestNeutronMapping(AimValidationTestCase):
                   'apic:distinguished_names':
                   {'ExternalNetwork': 'uni/tn-common/out-l2/instP-n2'}}
         self._make_network(
-            self.fmt, 'extra_ext_net', True,
+            self.fmt, 'extra_ext_net', True, as_admin=True,
             arg_list=self.extension_attributes, **kwargs)
 
         # Create router as tenant_2.
@@ -860,7 +861,8 @@ class TestNeutronMapping(AimValidationTestCase):
     def test_unscoped_routing(self):
         # Create shared network and unscoped subnet as tenant_1.
         net_resp = self._make_network(
-            self.fmt, 'net1', True, tenant_id='tenant_1', shared=True)
+            self.fmt, 'net1', True, tenant_id='tenant_1',
+            as_admin=True, shared=True)
         net1_id = net_resp['network']['id']
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24',
@@ -886,8 +888,8 @@ class TestNeutronMapping(AimValidationTestCase):
                   'apic:distinguished_names':
                   {'ExternalNetwork': 'uni/tn-common/out-l1/instP-n1'}}
         ext_net = self._make_network(
-            self.fmt, 'ext_net', True, arg_list=self.extension_attributes,
-            **kwargs)['network']
+            self.fmt, 'ext_net', True, as_admin=True,
+            arg_list=self.extension_attributes, **kwargs)['network']
 
         # Create router as tenant_2.
         kwargs = {'apic:external_provided_contracts': ['p1', 'p2'],
@@ -1181,7 +1183,6 @@ class TestNeutronMapping(AimValidationTestCase):
             # delete BridgeDomain.
             bd = aim_resource.BridgeDomain.from_dn(bd_dn)
             self.aim_mgr.delete(self.aim_ctx, bd)
-
             # delete EndpointGroup.
             epg = aim_resource.EndpointGroup.from_dn(epg_dn)
             self.aim_mgr.delete(self.aim_ctx, epg)
@@ -1242,7 +1243,7 @@ class TestNeutronMapping(AimValidationTestCase):
             sg['id'], 'ingress', 'tcp', '22', '23')
         rules = {'security_group_rules': [rule1['security_group_rule']]}
         sg_rule = self._make_security_group_rule(
-            self.fmt, rules)['security_group_rules'][0]
+            self.fmt, rules, as_admin=True)['security_group_rules'][0]
 
         # Test the AIM SecurityGroup.
         tenant_name = self.driver.aim_mech_driver.name_mapper.project(
@@ -1384,8 +1385,8 @@ class TestGbpMapping(AimValidationTestCase):
                   'apic:distinguished_names':
                   {'ExternalNetwork': 'uni/tn-common/out-l1/instP-n1'}}
         net_resp = self._make_network(
-            self.fmt, 'ext_net', True, arg_list=self.extension_attributes,
-            **kwargs)
+            self.fmt, 'ext_net', True, as_admin=True,
+            arg_list=self.extension_attributes, **kwargs)
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.0.1', '10.0.0.0/24')['subnet']
 

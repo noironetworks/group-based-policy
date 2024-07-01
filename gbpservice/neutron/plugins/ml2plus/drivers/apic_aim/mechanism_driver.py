@@ -3323,8 +3323,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         original_port = payload.states[0]
         port = payload.states[1]
         if payload.metadata:
-            orig_binding = payload.metadata['orig_binding']
-            new_binding = payload.metadata['new_binding']
+            orig_binding = payload.metadata.get('orig_binding')
+            new_binding = payload.metadata.get('new_binding')
 
         if self._is_port_bound(original_port) and 'fixed_ips' in port:
             # When a bound port is updated with a subnet, if the port
