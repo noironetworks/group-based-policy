@@ -14,8 +14,8 @@
 #    under the License.
 
 from gbpclient.v2_0 import client as gbp_client
-from keystoneclient import auth as ksc_auth
-from keystoneclient import session as ksc_session
+from keystoneauth1 import loading as ks_loading
+from keystoneauth1 import session as ks_session
 from keystoneclient.v3 import client as ksc_client
 from neutron_lib.plugins import directory
 from neutronclient.neutron.v2_0 import purge
@@ -31,9 +31,7 @@ LOG = logging.getLogger(__name__)
 # admin. If we keep this, we should probably move it to a separate
 # config module. But we should also investigate whether admin is even
 # needed, or if neutron's credentials could somehow be used.
-AUTH_GROUP = 'apic_aim_auth'
-ksc_session.Session.register_conf_options(cfg.CONF, AUTH_GROUP)
-ksc_auth.register_conf_options(cfg.CONF, AUTH_GROUP)
+AUTH_GROUP = 'keystone_authtoken'
 
 
 class ProjectDetailsCache(object):
@@ -54,13 +52,12 @@ class ProjectDetailsCache(object):
         # keystoneclient auth plugins have been deprecated, and we
         # should use keystoneauth instead.
         LOG.debug("Getting keystone client")
-        auth = ksc_auth.load_from_conf_options(cfg.CONF, AUTH_GROUP)
+        auth = ks_loading.load_auth_from_conf_options(cfg.CONF, AUTH_GROUP)
         LOG.debug("Got auth: %s", auth)
         if not auth:
             LOG.warning('No auth_plugin configured in %s',
                         AUTH_GROUP)
-        session = ksc_session.Session.load_from_conf_options(
-            cfg.CONF, AUTH_GROUP, auth=auth)
+        session = ks_session.Session(auth=auth)
         LOG.debug("Got session: %s", session)
         self.keystone = ksc_client.Client(session=session)
         LOG.debug("Got keystone client: %s", self.keystone)
