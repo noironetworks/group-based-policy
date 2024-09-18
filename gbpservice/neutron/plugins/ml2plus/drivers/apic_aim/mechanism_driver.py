@@ -3041,10 +3041,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             if type(resource) == aim_resource.SpanVepgSummary:
                 with db_api.CONTEXT_READER.using(session):
                     query = BAKERY(lambda s: s.query(
-                                models_v2.Network))
+                        models_v2.Network))
                     query += lambda q: q.filter_by(
-                                id=network_id)
-                    net = query(session).params().first()
+                        id=sa.bindparam('network_id'))
+                    net = query(session).params(
+                        network_id=network_id).one()
                     if net:
                         resource.mtu = net.mtu
 
