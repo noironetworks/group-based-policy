@@ -1324,7 +1324,8 @@ class TestPolicyTargetGroup(ResourceMappingTestCase):
 
         data = {'policy_target_group': {'l2_policy_id': l2p_id,
             'tenant_id': 'admin'}}
-        req = self.new_create_request('policy_target_groups', data)
+        req = self.new_create_request('policy_target_groups',
+                                      data, as_admin=True)
         data = self.deserialize(self.fmt, req.get_response(self.ext_api))
         self.assertEqual('CrossTenantPolicyTargetGroupL2PolicyNotSupported',
                          data['NeutronError']['type'])
@@ -1452,7 +1453,7 @@ class TestL2Policy(ResourceMappingTestCase):
 
     def _test_explicit_network_lifecycle(self, shared=False):
         # Create L2 policy with explicit network.
-        with self.network(shared=shared) as network:
+        with self.network(shared=shared, as_admin=True) as network:
             network_id = network['network']['id']
             l2p = self.create_l2_policy(name="l2p1", network_id=network_id,
                                         shared=shared)
@@ -1583,10 +1584,11 @@ class TestL3Policy(ResourceMappingTestCase,
             self.assertEqual(router_id, routers[0])
 
             # Verify deleting L3 policy does not cleanup router.
-            req = self.new_delete_request('l3_policies', l3p_id)
+            req = self.new_delete_request('l3_policies', l3p_id, as_admin=True)
             res = req.get_response(self.ext_api)
             self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
-            req = self.new_show_request('routers', router_id, fmt=self.fmt)
+            req = self.new_show_request('routers', router_id, fmt=self.fmt,
+                                        as_admin=True)
             res = req.get_response(self.ext_api)
             self.assertEqual(webob.exc.HTTPOk.code, res.status_int)
 
@@ -1660,8 +1662,8 @@ class TestL3Policy(ResourceMappingTestCase,
 
     def test_create_l3p_es(self):
         # Simple test to verify l3p created with 1-N ES
-        with self.network(router__external=True) as net1:
-            with self.network(router__external=True) as net2:
+        with self.network(router__external=True, as_admin=True) as net1:
+            with self.network(router__external=True, as_admin=True) as net2:
                 with self.subnet(cidr='10.10.1.0/24', network=net1) as sub1:
                     with self.subnet(cidr='10.10.2.0/24',
                                      network=net2) as sub2:
@@ -1688,8 +1690,8 @@ class TestL3Policy(ResourceMappingTestCase,
 
     def test_update_l3p_es(self):
         # Simple test to verify l3p updated with 1-N ES
-        with self.network(router__external=True) as net1:
-            with self.network(router__external=True) as net2:
+        with self.network(router__external=True, as_admin=True) as net1:
+            with self.network(router__external=True, as_admin=True) as net2:
                 with self.subnet(cidr='10.10.1.0/24', network=net1) as sub1:
                     with self.subnet(cidr='10.10.2.0/24',
                                      network=net2) as sub2:
@@ -1718,8 +1720,8 @@ class TestL3Policy(ResourceMappingTestCase,
                                          res['NeutronError']['type'])
 
     def test_es_router_plumbing(self):
-        with self.network(router__external=True) as net1:
-            with self.network(router__external=True) as net2:
+        with self.network(router__external=True, as_admin=True) as net1:
+            with self.network(router__external=True, as_admin=True) as net2:
                 with self.subnet(cidr='10.10.1.0/24', network=net1) as sub1:
                     with self.subnet(cidr='10.10.2.0/24',
                                      network=net2) as sub2:
@@ -1775,8 +1777,8 @@ class TestL3Policy(ResourceMappingTestCase,
                    {'destination': '172.0.0.0/16', 'nexthop': '10.10.1.1'}]
         routes2 = [{'destination': '0.0.0.0/0', 'nexthop': '10.10.2.1'},
                    {'destination': '172.0.0.0/16', 'nexthop': '10.10.2.1'}]
-        with self.network(router__external=True) as net1:
-            with self.network(router__external=True) as net2:
+        with self.network(router__external=True, as_admin=True) as net1:
+            with self.network(router__external=True, as_admin=True) as net2:
                 with self.subnet(cidr='10.10.1.0/24', network=net1) as sub1:
                     with self.subnet(cidr='10.10.2.0/24',
                                      network=net2) as sub2:
@@ -1823,7 +1825,8 @@ class TestL3Policy(ResourceMappingTestCase,
                              res['NeutronError']['type'])
 
     def _show_subnetpool(self, id):
-        req = self.new_show_request('subnetpools', id, fmt=self.fmt)
+        req = self.new_show_request('subnetpools', id, fmt=self.fmt,
+                                    as_admin=True)
         return self.deserialize(self.fmt,
                                 req.get_response(self.api))['subnetpool']
 
@@ -1874,7 +1877,8 @@ class TestL3Policy(ResourceMappingTestCase,
         for version in subnetpools_versions:
             sp_id = l3p[version][0]
             subpool = self._show_subnetpool(sp_id)
-            req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
+            req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt,
+                                        as_admin=True)
             res = self.deserialize(self.fmt, req.get_response(self.api))
             subpool = res['subnetpool']
             self.assertIn(subpool['prefixes'][0], l3p['ip_pool'])
@@ -1903,7 +1907,8 @@ class TestL3Policy(ResourceMappingTestCase,
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
         for version in subnetpools_versions:
             sp_id = l3p[version][0]
-            req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt)
+            req = self.new_show_request('subnetpools', sp_id, fmt=self.fmt,
+                                        as_admin=True)
             res = req.get_response(self.api)
             if explicit_subnetpool or (
                    version == 'subnetpools_v4' and v4_default) or (
@@ -2581,7 +2586,7 @@ class TestPolicyRuleSet(ResourceMappingTestCase):
         pr = self._create_ssh_allow_rule()
         prs = self.create_policy_rule_set(
             policy_rules=[pr['id']])['policy_rule_set']
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     subnet_id=sub['subnet']['id'],
@@ -2795,7 +2800,7 @@ class TestExternalSegment(ResourceMappingTestCase):
 
     def test_explicit_subnet_lifecycle(self):
 
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     subnet_id=sub['subnet']['id'])['external_segment']
@@ -2809,7 +2814,7 @@ class TestExternalSegment(ResourceMappingTestCase):
                                  es['ip_version'])
 
     def test_update(self, proxy_ip_pool1=None, proxy_ip_pool2=None):
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
                 changes = {'port_address_translation': True}
                 es = self.create_external_segment(
@@ -2903,7 +2908,7 @@ class TestExternalSegment(ResourceMappingTestCase):
 
     def test_update_different_tenant(self):
         with self.network(router__external=True, shared=True,
-                          tenant_id='admin') as net:
+                          tenant_id='admin', as_admin=True) as net:
             with self.subnet(cidr='10.10.1.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     subnet_id=sub['subnet']['id'],
@@ -2931,7 +2936,7 @@ class TestExternalSegment(ResourceMappingTestCase):
                 self._verify_prs_rules(prs['id'])
 
     def test_implicit_es(self):
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -2952,7 +2957,8 @@ class TestExternalSegment(ResourceMappingTestCase):
                     expected_res_status=200)
 
     def test_implicit_es_shared(self):
-        with self.network(router__external=True, shared=True) as net:
+        with self.network(router__external=True, shared=True,
+                          as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     shared=True,
@@ -2974,7 +2980,8 @@ class TestExternalSegment(ResourceMappingTestCase):
                     expected_res_status=200)
 
     def test_delete(self):
-        with self.network(router__external=True, shared=True) as net:
+        with self.network(router__external=True, shared=True,
+                          as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -2983,7 +2990,8 @@ class TestExternalSegment(ResourceMappingTestCase):
                 self.show_external_segment(es['id'], expected_res_status=404)
 
     def test_delete_in_use(self):
-        with self.network(router__external=True, shared=True) as net:
+        with self.network(router__external=True, shared=True,
+                          as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -2997,7 +3005,8 @@ class TestExternalSegment(ResourceMappingTestCase):
                 self.show_external_segment(es['id'], expected_res_status=200)
 
     def test_update_l3p_remove_es(self):
-        with self.network(router__external=True, shared=True) as net:
+        with self.network(router__external=True, shared=True,
+                          as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 self.create_external_segment(
                     name="default", subnet_id=sub['subnet']['id'])
@@ -3011,7 +3020,7 @@ class TestExternalSegment(ResourceMappingTestCase):
 class TestExternalPolicy(ResourceMappingTestCase):
 
     def test_create(self):
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='10.10.1.0/24', network=net) as sub1:
                 with self.subnet(cidr='10.10.2.0/24', network=net) as sub2:
                     es1 = self.create_external_segment(
@@ -3046,7 +3055,7 @@ class TestExternalPolicy(ResourceMappingTestCase):
                                      res['NeutronError']['type'])
 
     def test_update(self):
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='10.10.1.0/24', network=net) as sub1:
                 with self.subnet(cidr='10.10.2.0/24', network=net) as sub2:
                     route = {'destination': '172.0.0.0/8', 'nexthop': None}
@@ -3245,7 +3254,7 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
     def test_create_nsp_ip_pool_multiple_ptgs(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -3308,7 +3317,7 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
     def test_nsp_fip_single(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -3353,7 +3362,7 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
     def test_nsp_fip_single_different_pool(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -3408,7 +3417,7 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
     def test_nsp_rejected_without_nat_pool(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 self.create_external_segment(
                     name="default",
@@ -3467,8 +3476,8 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
                              "name": "test"}],
                     expected_res_status=webob.exc.HTTPCreated.code)[
                                                     'network_service_policy']
-        with self.network(router__external=True) as net1:
-            with self.network(router__external=True) as net2:
+        with self.network(router__external=True, as_admin=True) as net1:
+            with self.network(router__external=True, as_admin=True) as net2:
                 with self.subnet(cidr='192.168.1.0/24', network=net1) as sub1:
                     with self.subnet(
                             cidr='192.168.2.0/24', network=net2) as sub2:
@@ -3500,7 +3509,7 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
     def test_nsp_delete_nat_pool_rejected(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -3526,7 +3535,7 @@ class TestNetworkServicePolicy(ResourceMappingTestCase):
 
     def test_update_nsp_nat_pool_after_pt_create(self):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -3789,7 +3798,8 @@ class TestNatPool(ResourceMappingTestCase):
     def _test_overlapping_peer_rejected(self, shared1=False, shared2=False):
         shared_net = shared1 or shared2
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True, shared=shared_net) as net:
+        with self.network(router__external=True, shared=shared_net,
+                          as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -3825,7 +3835,8 @@ class TestNatPool(ResourceMappingTestCase):
 
     def _test_implicit_subnet_created(self, shared=False):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True, shared=shared) as net:
+        with self.network(router__external=True, shared=shared,
+                          as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default",
@@ -3850,7 +3861,8 @@ class TestNatPool(ResourceMappingTestCase):
 
     def _test_partially_overlapping_subnets_rejected(self, shared=False):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True, shared=shared) as net:
+        with self.network(router__external=True, shared=shared,
+                          as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 with self.subnet(cidr='192.168.1.0/28', network=net):
                     es = self.create_external_segment(
@@ -3875,7 +3887,8 @@ class TestNatPool(ResourceMappingTestCase):
 
     def _test_overlapping_subnets(self, shared=False):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True, shared=shared) as net:
+        with self.network(router__external=True, shared=shared,
+                          as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 with self.subnet(cidr='192.168.1.0/24', network=net) as sub2:
                     es = self.create_external_segment(
@@ -3901,7 +3914,7 @@ class TestNatPool(ResourceMappingTestCase):
 
     def _test_subnet_swap(self, owned=True):
         routes = [{'destination': '0.0.0.0/0', 'nexthop': None}]
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/24', network=net) as sub:
                 es = self.create_external_segment(
                     name="default", subnet_id=sub['subnet']['id'],
@@ -3932,7 +3945,8 @@ class TestNatPool(ResourceMappingTestCase):
                     ip_version=4, ip_pool=ip_pool,
                     expected_res_status=webob.exc.HTTPCreated.code)['nat_pool']
                 sub_id = nat_pool['subnet_id']
-                with self.network(router__external=True) as net2:
+                with self.network(router__external=True,
+                                  as_admin=True) as net2:
                     with self.subnet(cidr='192.167.0.0/24',
                                      network=net2) as sub2:
                         es2 = self.create_external_segment(
@@ -3973,7 +3987,7 @@ class TestNatPool(ResourceMappingTestCase):
                          result['NeutronError']['type'])
 
     def test_delete_with_fip_allocated(self):
-        with self.network(router__external=True) as net:
+        with self.network(router__external=True, as_admin=True) as net:
             with self.subnet(cidr='192.168.0.0/30', enable_dhcp=False,
                              network=net) as sub:
                 es = self.create_external_segment(

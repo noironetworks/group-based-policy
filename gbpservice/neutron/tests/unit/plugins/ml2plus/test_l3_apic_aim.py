@@ -149,7 +149,7 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
         # there will be four calls in total to the event handler
         self._verify_event_handler_calls(floatingip,
                                          expected_call_count=2)
-        self._delete('floatingips', floatingip['id'])
+        self._delete('floatingips', floatingip['id'], as_admin=True)
         # Expecting 2 more calls - 1 for the port, 1 for the floatingip
         self._verify_event_handler_calls(
             [internal_port, floatingip], expected_call_count=4)

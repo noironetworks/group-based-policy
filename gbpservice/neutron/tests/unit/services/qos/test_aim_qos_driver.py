@@ -211,7 +211,8 @@ class TestQosPolicy(TestAIMQosBase):
         kwargs['qos_policy_id'] = net_qos_id
 
         resp = self._create_network(
-            self.fmt, 'net', True, arg_list=tuple(list(kwargs.keys())),
+            self.fmt, 'net', True, as_admin=True,
+            arg_list=tuple(list(kwargs.keys())),
             **kwargs)
         result = self.deserialize(self.fmt, resp)
         self.assertEqual(

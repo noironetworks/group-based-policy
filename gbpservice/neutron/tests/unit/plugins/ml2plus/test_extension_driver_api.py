@@ -42,7 +42,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         data = {'subnetpool': {'prefixes': ['10.0.0.0/8'],
                                'name': 'sp1',
                                'tenant_id': tenant_id}}
-        req = self.new_create_request('subnetpools', data)
+        req = self.new_create_request('subnetpools', data, as_admin=True)
         res = req.get_response(self.api)
         self.assertEqual(code, res.status_int)
 
@@ -57,7 +57,8 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         sp_id = subnetpool['subnetpool']['id']
         new_name = 'a_brand_new_name'
         data = {'subnetpool': {'name': new_name}}
-        req = self.new_update_request('subnetpools', data, sp_id)
+        req = self.new_update_request('subnetpools', data, sp_id,
+                                      as_admin=True)
         res = req.get_response(self.api)
         self.assertEqual(code, res.status_int)
         error = self.deserialize(self.fmt, res)
@@ -99,7 +100,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             self.assertIsNotNone(ent)
 
             # Test list subnetpools
-            res = self._list('subnetpools')
+            res = self._list('subnetpools', as_admin=True)
             val = res['subnetpools'][0].get('subnetpool_extension')
             self.assertEqual('Test_SubnetPool_Extension_extend', val)
 
@@ -108,7 +109,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                     {'subnetpool_extension':
                      'Test_SubnetPool_Extension_Update'}}
             res = self._update('subnetpools', subnetpool['subnetpool']['id'],
-                               data)
+                               data, as_admin=True)
             val = res['subnetpool'].get('subnetpool_extension')
             self.assertEqual('Test_SubnetPool_Extension_Update_update', val)
 
@@ -132,7 +133,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         data = {'address_scope': {'ip_version': 4,
                                   'name': 'as1',
                                   'tenant_id': tenant_id}}
-        req = self.new_create_request('address-scopes', data)
+        req = self.new_create_request('address-scopes', data, as_admin=True)
         res = req.get_response(self.ext_api)
         self.assertEqual(code, res.status_int)
 
@@ -147,7 +148,8 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         as_id = address_scope['address_scope']['id']
         new_name = 'a_brand_new_name'
         data = {'address_scope': {'name': new_name}}
-        req = self.new_update_request('address-scopes', data, as_id)
+        req = self.new_update_request('address-scopes', data,
+                                      as_id, as_admin=True)
         res = req.get_response(self.ext_api)
         self.assertEqual(code, res.status_int)
         error = self.deserialize(self.fmt, res)
@@ -190,7 +192,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             self.assertIsNotNone(ent)
 
             # Test list address_scopes
-            res = self._list('address-scopes')
+            res = self._list('address-scopes', as_admin=True)
             val = res['address_scopes'][0].get('address_scope_extension')
             self.assertEqual('Test_AddressScope_Extension_extend', val)
 
@@ -199,7 +201,8 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                     {'address_scope_extension':
                      'Test_AddressScope_Extension_Update'}}
             res = self._update('address-scopes',
-                               address_scope['address_scope']['id'], data)
+                               address_scope['address_scope']['id'], data,
+                               as_admin=True)
             val = res['address_scope'].get('address_scope_extension')
             self.assertEqual('Test_AddressScope_Extension_Update_update', val)
 
@@ -235,12 +238,12 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             sp_id = subnetpool['subnetpool']['id']
             val = subnetpool['subnetpool']['subnetpool_extension']
             self.assertEqual("", val)
-            res = self._show('subnetpools', sp_id)
+            res = self._show('subnetpools', sp_id, as_admin=True)
             val = res['subnetpool']['subnetpool_extension']
             self.assertEqual("", val)
 
             # Test list.
-            res = self._list('subnetpools')
+            res = self._list('subnetpools', as_admin=True)
             val = res['subnetpools'][0]['subnetpool_extension']
             self.assertEqual("", val)
 
@@ -250,22 +253,23 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                  'name': 'sp2',
                  'tenant_id': 't1',
                  'subnetpool_extension': 'abc'}}
-        req = self.new_create_request('subnetpools', data, self.fmt)
+        req = self.new_create_request('subnetpools', data, self.fmt,
+                                      as_admin=True)
         res = req.get_response(self.api)
         subnetpool = self.deserialize(self.fmt, res)
         subnetpool_id = subnetpool['subnetpool']['id']
         val = subnetpool['subnetpool']['subnetpool_extension']
         self.assertEqual("abc", val)
-        res = self._show('subnetpools', subnetpool_id)
+        res = self._show('subnetpools', subnetpool_id, as_admin=True)
         val = res['subnetpool']['subnetpool_extension']
         self.assertEqual("abc", val)
 
         # Test update.
         data = {'subnetpool': {'subnetpool_extension': "def"}}
-        res = self._update('subnetpools', subnetpool_id, data)
+        res = self._update('subnetpools', subnetpool_id, data, as_admin=True)
         val = res['subnetpool']['subnetpool_extension']
         self.assertEqual("def", val)
-        res = self._show('subnetpools', subnetpool_id)
+        res = self._show('subnetpools', subnetpool_id, as_admin=True)
         val = res['subnetpool']['subnetpool_extension']
         self.assertEqual("def", val)
 
@@ -276,12 +280,12 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             as_id = address_scope['address_scope']['id']
             val = address_scope['address_scope']['address_scope_extension']
             self.assertEqual("", val)
-            res = self._show('address-scopes', as_id)
+            res = self._show('address-scopes', as_id, as_admin=True)
             val = res['address_scope']['address_scope_extension']
             self.assertEqual("", val)
 
             # Test list.
-            res = self._list('address-scopes')
+            res = self._list('address-scopes', as_admin=True)
             val = res['address_scopes'][0]['address_scope_extension']
             self.assertEqual("", val)
 
@@ -291,21 +295,23 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                  'name': 'as2',
                  'tenant_id': 't1',
                  'address_scope_extension': 'abc'}}
-        req = self.new_create_request('address-scopes', data, self.fmt)
+        req = self.new_create_request('address-scopes', data, self.fmt,
+                                      as_admin=True)
         res = req.get_response(self.ext_api)
         address_scope = self.deserialize(self.fmt, res)
         address_scope_id = address_scope['address_scope']['id']
         val = address_scope['address_scope']['address_scope_extension']
         self.assertEqual("abc", val)
-        res = self._show('address-scopes', address_scope_id)
+        res = self._show('address-scopes', address_scope_id, as_admin=True)
         val = res['address_scope']['address_scope_extension']
         self.assertEqual("abc", val)
 
         # Test update.
         data = {'address_scope': {'address_scope_extension': "def"}}
-        res = self._update('address-scopes', address_scope_id, data)
+        res = self._update('address-scopes', address_scope_id, data,
+                           as_admin=True)
         val = res['address_scope']['address_scope_extension']
         self.assertEqual("def", val)
-        res = self._show('address-scopes', address_scope_id)
+        res = self._show('address-scopes', address_scope_id, as_admin=True)
         val = res['address_scope']['address_scope_extension']
         self.assertEqual("def", val)
