@@ -446,13 +446,14 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         req = self.new_create_request('ports', data, self.fmt, as_admin=True)
         return self.deserialize(self.fmt, req.get_response(self.api))
 
-    def _bind_port_to_host(self, port_id, host, **kwargs):
+    def _bind_port_to_host(self, port_id, host, as_admin=False,
+                           as_service=True, **kwargs):
         data = {'port': {'binding:host_id': host,
                          'device_owner': 'compute:',
                          'device_id': 'someid'}}
         data['port'].update(kwargs)
         req = self.new_update_request('ports', data, port_id,
-                self.fmt, as_admin=True)
+                self.fmt, as_admin=as_admin, as_service=as_service)
         return self.deserialize(self.fmt, req.get_response(self.api))
 
     def _bind_dhcp_port_to_host(self, port_id, host):
@@ -3985,7 +3986,8 @@ class TestAimMapping(ApicAimTestCase):
                 self.fmt, net_id, fixed_ips=fixed_ips,
                 tenant_id=project)['port']
             port_id = port['id']
-            port = self._bind_port_to_host(port_id, 'host1')['port']
+            port = self._bind_port_to_host(port_id, 'host1', as_admin=True,
+                    as_service=False)['port']
             port['dns_name'] = ''
             return net_id, subnet_id, port
 
@@ -5975,7 +5977,7 @@ class TestPortBinding(ApicAimTestCase):
             data['binding'].update(kwargs)
         binding_resource = 'ports/%s/bindings' % port_id
         binding_req = self.new_create_request(binding_resource, data, fmt,
-                                            as_admin=True)
+                                            as_service=True)
         return binding_req.get_response(self.api)
 
     def _update_port_binding(self, fmt, port_id, host, **kwargs):
@@ -6004,7 +6006,7 @@ class TestPortBinding(ApicAimTestCase):
         return self._check_code_and_serialize(response, raw_response)
 
     def _delete_port_binding(self, port_id, host):
-        response = self._req(
+        response = self._service_req(
             'DELETE', 'ports', fmt=self.fmt, id=port_id,
             subresource='bindings', sub_id=host).get_response(self.api)
         return response
@@ -8774,7 +8776,8 @@ class TestExtensionAttributes(ApicAimTestCase):
                              **erspan_config, as_admin=True)['port']
         self.assertEqual(erspan_config.get('apic:erspan_config'),
                          p2['apic:erspan_config'])
-        self._bind_port_to_host(p2['id'], 'host1')
+        self._bind_port_to_host(p2['id'], 'host1', as_admin=True,
+                                as_service=False)
         source_name = p2['id'] + '-both'
         dest_name = '192.168.0.10' + '-' + '1023'
         source_resources[0].append(aim_resource.SpanVsourceGroup(
@@ -8817,7 +8820,7 @@ class TestExtensionAttributes(ApicAimTestCase):
             span_vdest_group_names=[res.name for res in dest_resources[0]])])
         check_erspan_config(aim_ctx, source_resources, dest_resources)
         # Unbuind the second port, and verify that no resources are left.
-        self._bind_port_to_host(p2['id'], '')
+        self._bind_port_to_host(p2['id'], '', as_admin=True, as_service=False)
         source_resources = [[], [], []]
         dest_resources = [
             [], [], [], [aim_resource.InfraAccBundleGroup(name=host1_pg)]]
