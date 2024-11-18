@@ -9698,7 +9698,7 @@ class TestExternalConnectivityBase(object):
             fip2 = fip2['floatingip']
             self.assertEqual('ACTIVE', fip2['status'])
             # notification on p[2] is for SNAT info recalculation
-            mock_notif.has_calls([mock.call(mock.ANY, p[1]),
+            mock_notif.assert_has_calls([mock.call(mock.ANY, p[1]),
                                   mock.call(mock.ANY, p[2])],
                                  any_order=True)
             fip2 = self._show('floatingips', fip2['id'])['floatingip']
@@ -9710,7 +9710,7 @@ class TestExternalConnectivityBase(object):
             fip2 = fip2['floatingip']
             calls = [mock.call(mock.ANY, p[1]), mock.call(mock.ANY, p[2])]
             self.assertEqual(len(calls), mock_notif.call_count)
-            mock_notif.has_calls(calls)
+            mock_notif.assert_has_calls(calls)
             self.assertEqual('ACTIVE', fip2['status'])
             fip2 = self._show('floatingips', fip2['id'])['floatingip']
             self.assertEqual('ACTIVE', fip2['status'])
