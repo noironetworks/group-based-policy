@@ -5188,65 +5188,95 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _manage_external_connectivity(self, context, router, old_network,
                                       new_network, vrf):
-        session = context.session
-        aim_ctx = aim_context.AimContext(db_session=session)
+        with db_api.CONTEXT_WRITER.using(context) as session:
+            aim_ctx = aim_context.AimContext(db_session=session)
 
-        # Keep only the identity attributes of the VRF so that calls to
-        # nat-library have consistent resource values. This
-        # is mainly required to ease unit-test verification.
-        vrf = aim_resource.VRF(tenant_name=vrf.tenant_name, name=vrf.name)
-        rtr_dbs = self._get_routers_for_vrf(session, vrf)
+            # Keep only the identity attributes of the VRF so that calls to
+            # nat-library have consistent resource values. This
+            # is mainly required to ease unit-test verification.
+            vrf = aim_resource.VRF(tenant_name=vrf.tenant_name, name=vrf.name)
+            rtr_dbs = self._get_routers_for_vrf(session, vrf)
 
-        prov_dict = {}
-        cons_dict = {}
+            prov_dict = {}
+            cons_dict = {}
 
-        def update_contracts(router, ext_net):
-            contract = self._map_router(session, router, True)
-            prov_dict[
-                contract.name] = aim_resource.ExternalNetworkProvidedContract(
-                    tenant_name=ext_net.tenant_name,
-                    l3out_name=ext_net.l3out_name,
-                    ext_net_name=ext_net.name,
-                    name=contract.name)
-            cons_dict[
-                contract.name] = aim_resource.ExternalNetworkConsumedContract(
-                    tenant_name=ext_net.tenant_name,
-                    l3out_name=ext_net.l3out_name,
-                    ext_net_name=ext_net.name,
-                    name=contract.name)
-
-            r_info = self.get_router_extn_db(session, router['id'])
-            for p_con in r_info[a_l3.EXTERNAL_PROVIDED_CONTRACTS]:
+            def update_contracts(router, ext_net):
+                contr = self._map_router(session, router, True)
                 prov_dict[
-                    p_con] = aim_resource.ExternalNetworkProvidedContract(
+                    contr.name] = aim_resource.ExternalNetworkProvidedContract(
                         tenant_name=ext_net.tenant_name,
                         l3out_name=ext_net.l3out_name,
-                        ext_net_name=ext_net.name, name=p_con)
-            for c_con in r_info[a_l3.EXTERNAL_CONSUMED_CONTRACTS]:
+                        ext_net_name=ext_net.name,
+                        name=contr.name)
                 cons_dict[
-                    c_con] = aim_resource.ExternalNetworkConsumedContract(
+                    contr.name] = aim_resource.ExternalNetworkConsumedContract(
                         tenant_name=ext_net.tenant_name,
                         l3out_name=ext_net.l3out_name,
-                        ext_net_name=ext_net.name, name=c_con)
+                        ext_net_name=ext_net.name,
+                        name=contr.name)
 
-        if old_network:
-            _, ext_net, ns = self._get_aim_nat_strategy(old_network)
-            if ext_net:
-                # Find Neutron networks that share the APIC external network.
-                eqv_nets = self.get_network_ids_by_ext_net_dn(
-                    session, ext_net.dn, lock_update=True)
-                rtr_old = [r for r in rtr_dbs
-                           if (r.gw_port_id and
-                               r.gw_port.network_id in eqv_nets)]
-                prov_dict = {}
-                cons_dict = {}
-                for r in rtr_old:
-                    update_contracts(r, ext_net)
+                r_info = self.get_router_extn_db(session, router['id'])
+                for p_con in r_info[a_l3.EXTERNAL_PROVIDED_CONTRACTS]:
+                    prov_dict[
+                        p_con] = aim_resource.ExternalNetworkProvidedContract(
+                            tenant_name=ext_net.tenant_name,
+                            l3out_name=ext_net.l3out_name,
+                            ext_net_name=ext_net.name, name=p_con)
+                for c_con in r_info[a_l3.EXTERNAL_CONSUMED_CONTRACTS]:
+                    cons_dict[
+                        c_con] = aim_resource.ExternalNetworkConsumedContract(
+                            tenant_name=ext_net.tenant_name,
+                            l3out_name=ext_net.l3out_name,
+                            ext_net_name=ext_net.name, name=c_con)
 
-                wanted_epg_name = self._determine_epg_name(
-                    old_network.get(cisco_apic.MULTI_EXT_NETS, False),
-                    old_network['id'])
-                if rtr_old:
+            if old_network:
+                _, ext_net, ns = self._get_aim_nat_strategy(old_network)
+                if ext_net:
+                    # Find Neutron networks that share
+                    # the APIC external network.
+                    eqv_nets = self.get_network_ids_by_ext_net_dn(
+                        session, ext_net.dn, lock_update=True)
+                    rtr_old = [r for r in rtr_dbs
+                               if (r.gw_port_id and
+                                   r.gw_port.network_id in eqv_nets)]
+                    prov_dict = {}
+                    cons_dict = {}
+                    for r in rtr_old:
+                        update_contracts(r, ext_net)
+
+                    wanted_epg_name = self._determine_epg_name(
+                        old_network.get(cisco_apic.MULTI_EXT_NETS, False),
+                        old_network['id'])
+                    if rtr_old:
+                        prov_list = list(prov_dict.values())
+                        cons_list = list(cons_dict.values())
+                        provided = sorted(prov_list, key=lambda x: x.name)
+                        consumed = sorted(cons_list, key=lambda x: x.name)
+                        ns.connect_vrf(aim_ctx, ext_net, vrf,
+                            provided_contracts=provided,
+                            consumed_contracts=consumed,
+                            epg_name=wanted_epg_name)
+                    else:
+                        ns.disconnect_vrf(aim_ctx, ext_net, vrf,
+                                          epg_name=wanted_epg_name)
+            if new_network:
+                _, ext_net, ns = self._get_aim_nat_strategy(new_network)
+                if ext_net:
+                    # Find Neutron networks that share
+                    # the APIC external network.
+                    eqv_nets = self.get_network_ids_by_ext_net_dn(
+                        session, ext_net.dn, lock_update=True)
+                    rtr_new = [r for r in rtr_dbs
+                               if (r.gw_port_id and
+                                   r.gw_port.network_id in eqv_nets)]
+                    prov_dict = {}
+                    cons_dict = {}
+                    for r in rtr_new:
+                        update_contracts(r, ext_net)
+                    update_contracts(router, ext_net)
+                    wanted_epg_name = self._determine_epg_name(
+                        new_network.get(cisco_apic.MULTI_EXT_NETS, False),
+                        new_network['id'])
                     prov_list = list(prov_dict.values())
                     cons_list = list(cons_dict.values())
                     provided = sorted(prov_list, key=lambda x: x.name)
@@ -5255,34 +5285,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         provided_contracts=provided,
                         consumed_contracts=consumed,
                         epg_name=wanted_epg_name)
-                else:
-                    ns.disconnect_vrf(aim_ctx, ext_net, vrf,
-                                      epg_name=wanted_epg_name)
-        if new_network:
-            _, ext_net, ns = self._get_aim_nat_strategy(new_network)
-            if ext_net:
-                # Find Neutron networks that share the APIC external network.
-                eqv_nets = self.get_network_ids_by_ext_net_dn(
-                    session, ext_net.dn, lock_update=True)
-                rtr_new = [r for r in rtr_dbs
-                           if (r.gw_port_id and
-                               r.gw_port.network_id in eqv_nets)]
-                prov_dict = {}
-                cons_dict = {}
-                for r in rtr_new:
-                    update_contracts(r, ext_net)
-                update_contracts(router, ext_net)
-                wanted_epg_name = self._determine_epg_name(
-                    new_network.get(cisco_apic.MULTI_EXT_NETS, False),
-                    new_network['id'])
-                prov_list = list(prov_dict.values())
-                cons_list = list(cons_dict.values())
-                provided = sorted(prov_list, key=lambda x: x.name)
-                consumed = sorted(cons_list, key=lambda x: x.name)
-                ns.connect_vrf(aim_ctx, ext_net, vrf,
-                    provided_contracts=provided,
-                    consumed_contracts=consumed,
-                    epg_name=wanted_epg_name)
 
     def _is_port_bound(self, port):
         return port.get(portbindings.VIF_TYPE) not in [
