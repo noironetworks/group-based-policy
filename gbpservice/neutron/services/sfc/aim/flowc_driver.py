@@ -128,20 +128,19 @@ class FlowclassifierAIMDriver(FlowclassifierAIMDriverBase):
 
     def _get_classifiers_by_network_id(self, plugin_context, network_id):
         context = plugin_context
-        with context.session.begin(subtransactions=True):
-            classifier_ids = []
-            for keyword in [sfc_cts.LOGICAL_SRC_NET, sfc_cts.LOGICAL_DST_NET]:
-                query = BAKERY(lambda s: s.query(
-                    flc_db.L7Parameter))
-                query += lambda q: q.filter_by(
-                    keyword=sa.bindparam('keyword'))
-                query += lambda q: q.filter_by(
-                    value=sa.bindparam('network_id'))
-                classifier_ids.extend(
-                    [x.classifier_id for x in query(context.session).params(
-                        keyword=keyword, network_id=network_id).all()])
+        classifier_ids = []
+        for keyword in [sfc_cts.LOGICAL_SRC_NET, sfc_cts.LOGICAL_DST_NET]:
+            query = BAKERY(lambda s: s.query(
+                flc_db.L7Parameter))
+            query += lambda q: q.filter_by(
+                keyword=sa.bindparam('keyword'))
+            query += lambda q: q.filter_by(
+                value=sa.bindparam('network_id'))
+            classifier_ids.extend(
+                [x.classifier_id for x in query(context.session).params(
+                    keyword=keyword, network_id=network_id).all()])
 
-            return classifier_ids
+        return classifier_ids
 
     @registry.receives(resources.NETWORK, [events.PRECOMMIT_DELETE])
     def _handle_network_delete(self, rtype, event, trigger, payload):

@@ -46,7 +46,7 @@ class ApicReuseBdDBMixin(object):
 
     def add_reuse_bd_l2policy(self, session, l2_policy_id,
                               target_l2_policy_id):
-        with session.begin(subtransactions=True):
+        with session.begin():
             row = ApicReuseBdDB(l2_policy_id=l2_policy_id,
                                 target_l2_policy_id=target_l2_policy_id)
             session.add(row)

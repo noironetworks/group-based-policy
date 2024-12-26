@@ -494,21 +494,19 @@ class DbMixin(object):
         return query(session).all()
 
     def _set_vm_name(self, session, device_id, vm_name):
-        with session.begin(subtransactions=True):
-            db_obj = self._get_vm_name(session, device_id,
-                                       is_detailed=True)
-            if db_obj:
-                db_obj.vm_name = vm_name
-            else:
-                db_obj = VMName(device_id=device_id, vm_name=vm_name)
-            session.add(db_obj)
+        db_obj = self._get_vm_name(session, device_id,
+                                   is_detailed=True)
+        if db_obj:
+            db_obj.vm_name = vm_name
+        else:
+            db_obj = VMName(device_id=device_id, vm_name=vm_name)
+        session.add(db_obj)
 
     def _delete_vm_name(self, session, device_id):
-        with session.begin(subtransactions=True):
-            db_obj = self._get_vm_name(session, device_id,
-                                       is_detailed=True)
-            if db_obj:
-                session.delete(db_obj)
+        db_obj = self._get_vm_name(session, device_id,
+                                   is_detailed=True)
+        if db_obj:
+            session.delete(db_obj)
 
     # VMNameUpdate functions.
 
@@ -519,16 +517,16 @@ class DbMixin(object):
     def _set_vm_name_update(self, session, db_obj, host_id,
                             last_incremental_update_time,
                             last_full_update_time=None):
-        with session.begin(subtransactions=True):
-            if db_obj:
-                db_obj.host_id = host_id
-                db_obj.last_incremental_update_time = (
-                                    last_incremental_update_time)
-                if last_full_update_time:
-                    db_obj.last_full_update_time = last_full_update_time
-            else:
-                db_obj = VMNameUpdate(
-                    purpose=VM_UPDATE_PURPOSE, host_id=host_id,
-                    last_incremental_update_time=last_incremental_update_time,
-                    last_full_update_time=last_full_update_time)
-            session.add(db_obj)
+        if db_obj:
+            db_obj.host_id = host_id
+            db_obj.last_incremental_update_time = (
+                                last_incremental_update_time)
+            if last_full_update_time:
+                db_obj.last_full_update_time = last_full_update_time
+        else:
+            db_obj = VMNameUpdate(
+                purpose=VM_UPDATE_PURPOSE, host_id=host_id,
+                last_incremental_update_time=last_incremental_update_time,
+                last_full_update_time=last_full_update_time)
+        session.add(db_obj)
+        session.flush()

@@ -45,8 +45,8 @@ NetworkExtensionDb = sa.Table(
 
 
 def upgrade():
-    session = sa.orm.Session(bind=op.get_bind(), autocommit=True)
-    with session.begin(subtransactions=True):
+    session = sa.orm.Session(bind=op.get_bind())
+    with session.begin():
         # Migrate networks.
         net_dbs = (session.query(models_v2.Network)
                    .options(lazyload('*')).all())

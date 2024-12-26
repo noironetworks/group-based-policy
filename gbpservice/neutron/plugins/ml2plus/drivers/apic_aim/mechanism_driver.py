@@ -188,7 +188,6 @@ class KeystoneNotificationEndpoint(object):
             # cases, their nameAlias will be set when the first resource is
             # being created under that tenant
             ctx = n_context.get_admin_context()
-            # TODO(pulkit): replace with AIM writer context once API
             # supports it.
             with db_api.CONTEXT_WRITER.using(ctx):
                 tenant_aname = self._driver.name_mapper.project(ctx.session,
@@ -216,7 +215,6 @@ class KeystoneNotificationEndpoint(object):
 
             # delete the tenant and AP in AIM also
             ctx = n_context.get_admin_context()
-            # TODO(pulkit): replace with AIM writer context once API
             # supports it.
             with db_api.CONTEXT_WRITER.using(ctx):
                 tenant_aname = self._driver.name_mapper.project(ctx.session,
@@ -465,7 +463,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     @db_api.retry_db_errors
     def _ensure_static_resources(self):
         ctx = n_context.get_admin_context()
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with db_api.CONTEXT_WRITER.using(ctx):
             aim_ctx = aim_context.AimContext(ctx.session)
             self._ensure_common_tenant(aim_ctx)
@@ -1796,7 +1793,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # the identity_map and fixes the issue. This is being put in as
         # a workaround pending determination of the root cause.
         networks_db = (session.query(models_v2.Network).
-                       options(orm.noload('subnets')).
+                       options(orm.noload(models_v2.Network.subnets)).
                        filter(models_v2.Network.id.in_(net_ids)).all())
         net_map = {network['id']: network for network in networks_db}
 
@@ -1876,7 +1873,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # to be set to 'error').
             aim_status_track[AIM_RESOURCES_CNT] = len(aim_resources)
             aim_resources_aggregate.extend(aim_resources)
-
         self._merge_aim_status_bulk(aim_ctx, aim_resources_aggregate,
                                     res_dict_by_aim_res_dn)
 
@@ -6013,7 +6009,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     host=host)
             LOG.debug('Adding static path %s for EPG %s',
                       static_path, epg)
-            self.aim.create(aim_ctx, static_path)
+            self.aim.create(aim_ctx, static_path, overwrite=True)
 
     def _get_static_ports(self, plugin_context, host, segment,
                           port_context=None):
@@ -7182,7 +7178,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         query = BAKERY(lambda s: s.query(
             models_v2.Network))
         query += lambda q: q.options(
-            orm.joinedload('segments'))
+            orm.joinedload(models_v2.Network.segments))
         net_dbs = {net_db.id: net_db
             for net_db in query(mgr.actual_session)}
 
@@ -7931,7 +7927,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         query = BAKERY(lambda s: s.query(
             models_v2.Port))
         query += lambda q: q.options(
-            orm.joinedload('binding_levels'))
+            orm.joinedload(models_v2.Port.binding_levels))
         for port in query(mgr.actual_session):
             binding = port.port_bindings[0] if port.port_bindings else None
             levels = port.binding_levels

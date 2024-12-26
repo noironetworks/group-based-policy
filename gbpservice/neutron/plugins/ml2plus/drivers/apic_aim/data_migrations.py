@@ -139,112 +139,111 @@ def do_apic_aim_persist_migration(session):
 
     # REVISIT: needs to add support for context_reader/
     # context_writer
-    with session.begin(subtransactions=True):
-        # Migrate address scopes.
-        scope_dbs = (session.query(as_db.AddressScope)
-                     .options(lazyload('*')).all())
-        for scope_db in scope_dbs:
-            # REVISIT: commit eb6104c0ac61216234ea958f2fd322e70b8e4bec
-            # in upstream neutron breaks the __repr__ method of the model
-            # class. We work around this for now by using the dict members.
-            # This should be removed once the model class is fixed upstream.
-            scope_dict = {}
-            for k, v in list(scope_db.__dict__.items()):
-                if k == '_sa_instance_state':
-                    continue
-                if k == 'shared_':
-                    k = 'shared'
-                scope_dict[k] = v
-            alembic_util.msg("Migrating address scope: %s" % scope_dict)
-            vrf = None
-            ext_db = (session.query(DefunctAddressScopeExtensionDb).
-                      filter_by(address_scope_id=scope_db.id).
-                      one_or_none())
-            if ext_db:
-                # It has a pre-existing VRF.
-                vrf = aim_resource.VRF.from_dn(ext_db.vrf_dn)
-                # REVISIT: Get VRF to verify it exists?
-                vrf_owned = False
-            if not vrf:
-                # It does not have a pre-existing VRF.
-                aname = mapper.address_scope(session, scope_db.id)
-                vrfs = aim.find(
-                    aim_ctx, aim_resource.VRF,
-                    name=aname)
+    # Migrate address scopes.
+    scope_dbs = (session.query(as_db.AddressScope)
+                .options(lazyload('*')).all())
+    for scope_db in scope_dbs:
+        # REVISIT: commit eb6104c0ac61216234ea958f2fd322e70b8e4bec
+        # in upstream neutron breaks the __repr__ method of the model
+        # class. We work around this for now by using the dict members.
+        # This should be removed once the model class is fixed upstream.
+        scope_dict = {}
+        for k, v in list(scope_db.__dict__.items()):
+            if k == '_sa_instance_state':
+                continue
+            if k == 'shared_':
+                k = 'shared'
+            scope_dict[k] = v
+        alembic_util.msg("Migrating address scope: %s" % scope_dict)
+        vrf = None
+        ext_db = (session.query(DefunctAddressScopeExtensionDb).
+                 filter_by(address_scope_id=scope_db.id).
+                 one_or_none())
+        if ext_db:
+            # It has a pre-existing VRF.
+            vrf = aim_resource.VRF.from_dn(ext_db.vrf_dn)
+            # REVISIT: Get VRF to verify it exists?
+            vrf_owned = False
+        if not vrf:
+            # It does not have a pre-existing VRF.
+            aname = mapper.address_scope(session, scope_db.id)
+            vrfs = aim.find(
+                aim_ctx, aim_resource.VRF,
+                name=aname)
+            if vrfs:
+                vrf = vrfs[0]
+                vrf_owned = True
+        if vrf:
+            _add_address_scope_mapping(
+                session, scope_db.id, vrf, vrf_owned)
+        else:
+            alembic_util.warn(
+                "No AIM VRF found for address scope: %s" % scope_db)
+
+    # Migrate networks.
+    net_dbs = (session.query(models_v2.Network)
+              .options(lazyload('*')).all())
+    for net_db in net_dbs:
+        alembic_util.msg("Migrating network: %s" % net_db)
+        bd = None
+        epg = None
+        vrf = None
+        ext_db = (session.query(NetworkExtensionDb).
+                 filter_by(network_id=net_db.id).
+                 one_or_none())
+        if ext_db and ext_db.external_network_dn:
+            # Its a managed external network.
+            ext_net = aim_resource.ExternalNetwork.from_dn(
+                ext_db.external_network_dn)
+            # REVISIT: Get ExternalNetwork to verify it exists?
+            l3out = aim_resource.L3Outside(
+                tenant_name=ext_net.tenant_name,
+                name=ext_net.l3out_name)
+            if ext_db.nat_type == '':
+                ns_cls = nat_strategy.NoNatStrategy
+            elif ext_db.nat_type == 'edge':
+                ns_cls = nat_strategy.EdgeNatStrategy
+            else:
+                ns_cls = nat_strategy.DistributedNatStrategy
+            ns = ns_cls(aim)
+            ns.app_profile_name = 'OpenStack'
+            for resource in ns.get_l3outside_resources(aim_ctx, l3out):
+                if isinstance(resource, aim_resource.BridgeDomain):
+                    bd = resource
+                elif isinstance(resource, aim_resource.EndpointGroup):
+                    epg = resource
+                elif isinstance(resource, aim_resource.VRF):
+                    vrf = resource
+        if not bd:
+            # It must be a normal network.
+            aname = mapper.network(session, net_db.id)
+            bds = aim.find(
+                aim_ctx, aim_resource.BridgeDomain,
+                name=aname)
+            if bds:
+                bd = bds[0]
+            epgs = aim.find(
+                aim_ctx, aim_resource.EndpointGroup,
+                name=aname)
+            if epgs:
+                epg = epgs[0]
+            if bd:
+                vrfs = (
+                    aim.find(
+                        aim_ctx, aim_resource.VRF,
+                        tenant_name=bd.tenant_name,
+                        name=bd.vrf_name) or
+                    aim.find(
+                        aim_ctx, aim_resource.VRF,
+                        tenant_name='common',
+                        name=bd.vrf_name))
                 if vrfs:
                     vrf = vrfs[0]
-                    vrf_owned = True
-            if vrf:
-                _add_address_scope_mapping(
-                    session, scope_db.id, vrf, vrf_owned)
-            else:
-                alembic_util.warn(
-                    "No AIM VRF found for address scope: %s" % scope_db)
-
-        # Migrate networks.
-        net_dbs = (session.query(models_v2.Network)
-                   .options(lazyload('*')).all())
-        for net_db in net_dbs:
-            alembic_util.msg("Migrating network: %s" % net_db)
-            bd = None
-            epg = None
-            vrf = None
-            ext_db = (session.query(NetworkExtensionDb).
-                      filter_by(network_id=net_db.id).
-                      one_or_none())
-            if ext_db and ext_db.external_network_dn:
-                # Its a managed external network.
-                ext_net = aim_resource.ExternalNetwork.from_dn(
-                    ext_db.external_network_dn)
-                # REVISIT: Get ExternalNetwork to verify it exists?
-                l3out = aim_resource.L3Outside(
-                    tenant_name=ext_net.tenant_name,
-                    name=ext_net.l3out_name)
-                if ext_db.nat_type == '':
-                    ns_cls = nat_strategy.NoNatStrategy
-                elif ext_db.nat_type == 'edge':
-                    ns_cls = nat_strategy.EdgeNatStrategy
-                else:
-                    ns_cls = nat_strategy.DistributedNatStrategy
-                ns = ns_cls(aim)
-                ns.app_profile_name = 'OpenStack'
-                for resource in ns.get_l3outside_resources(aim_ctx, l3out):
-                    if isinstance(resource, aim_resource.BridgeDomain):
-                        bd = resource
-                    elif isinstance(resource, aim_resource.EndpointGroup):
-                        epg = resource
-                    elif isinstance(resource, aim_resource.VRF):
-                        vrf = resource
-            if not bd:
-                # It must be a normal network.
-                aname = mapper.network(session, net_db.id)
-                bds = aim.find(
-                    aim_ctx, aim_resource.BridgeDomain,
-                    name=aname)
-                if bds:
-                    bd = bds[0]
-                epgs = aim.find(
-                    aim_ctx, aim_resource.EndpointGroup,
-                    name=aname)
-                if epgs:
-                    epg = epgs[0]
-                if bd:
-                    vrfs = (
-                        aim.find(
-                            aim_ctx, aim_resource.VRF,
-                            tenant_name=bd.tenant_name,
-                            name=bd.vrf_name) or
-                        aim.find(
-                            aim_ctx, aim_resource.VRF,
-                            tenant_name='common',
-                            name=bd.vrf_name))
-                    if vrfs:
-                        vrf = vrfs[0]
-            if bd and epg and vrf:
-                _add_network_mapping(session, net_db.id, bd, epg, vrf)
-            elif not net_db.external:
-                alembic_util.warn(
-                    "AIM BD, EPG or VRF not found for network: %s" % net_db)
+        if bd and epg and vrf:
+            _add_network_mapping(session, net_db.id, bd, epg, vrf)
+        elif not net_db.external:
+            alembic_util.warn(
+                "AIM BD, EPG or VRF not found for network: %s" % net_db)
 
     alembic_util.msg(
         "Finished data migration for apic_aim mechanism driver persistence.")
@@ -277,7 +276,7 @@ def do_ap_name_change(session, conf=None):
     alembic_util.msg("APIC System ID: %s" % system_id)
     # REVISIT: needs to add support for context_reader/
     # context_writer
-    with session.begin(subtransactions=True):
+    with session.begin():
         net_dbs = session.query(models_v2.Network).options(lazyload('*')).all()
         for net_db in net_dbs:
             ext_db = _get_network_extn_db(session, net_db.id)
@@ -371,7 +370,7 @@ def do_apic_aim_security_group_migration(session):
     mapper = apic_mapper.APICNameMapper()
     # REVISIT: needs to add support for context_reader/
     # context_writer
-    with session.begin(subtransactions=True):
+    with session.begin():
         # Migrate SG.
         sg_dbs = (session.query(sg_models.SecurityGroup).
                   options(lazyload('*')).all())
@@ -445,7 +444,7 @@ def do_sg_rule_remote_group_id_insertion(session):
     mapper = apic_mapper.APICNameMapper()
     # REVISIT: needs to add support for context_reader/
     # context_writer
-    with session.begin(subtransactions=True):
+    with session.begin():
         sg_rule_dbs = (session.query(sg_models.SecurityGroupRule).
                        options(lazyload('*')).all())
         for sg_rule_db in sg_rule_dbs:
@@ -477,25 +476,24 @@ def do_ha_ip_duplicate_entries_removal(session):
 
     # REVISIT: needs to add support for context_reader/
     # context_writer
-    with session.begin(subtransactions=True):
-        port_and_haip_dbs = (session.query(models_v2.Port,
-                             HAIPAddressToPortAssociation).join(
-                             HAIPAddressToPortAssociation,
-                             haip_port_id == models_v2.Port.id))
-        net_to_ha_ip_dict = {}
-        for port_db, ha_ip, port_id, network_id in port_and_haip_dbs:
-            ha_ip_dict = net_to_ha_ip_dict.setdefault(
-                port_db.network_id, {})
-            ha_ip_dict.setdefault(
-                ha_ip, []).append(tuple((ha_ip, port_id)))
-        for haip_dict in list(net_to_ha_ip_dict.values()):
-            for ha_ip in list(haip_dict.keys()):
-                if len(haip_dict[ha_ip]) > 1:
-                    for (haip, portid) in haip_dict[ha_ip]:
-                        delete_q = HAIPAddressToPortAssociation.delete().where(
-                            haip_ip == haip).where(
-                            haip_port_id == portid)
-                        session.execute(delete_q)
+    port_and_haip_dbs = (session.query(models_v2.Port,
+                         HAIPAddressToPortAssociation).join(
+                         HAIPAddressToPortAssociation,
+                         haip_port_id == models_v2.Port.id))
+    net_to_ha_ip_dict = {}
+    for port_db, ha_ip, port_id, network_id in port_and_haip_dbs:
+        ha_ip_dict = net_to_ha_ip_dict.setdefault(
+            port_db.network_id, {})
+        ha_ip_dict.setdefault(
+            ha_ip, []).append(tuple((ha_ip, port_id)))
+    for haip_dict in list(net_to_ha_ip_dict.values()):
+        for ha_ip in list(haip_dict.keys()):
+            if len(haip_dict[ha_ip]) > 1:
+                for (haip, portid) in haip_dict[ha_ip]:
+                    delete_q = HAIPAddressToPortAssociation.delete().where(
+                        haip_ip == haip).where(
+                        haip_port_id == portid)
+                    session.execute(delete_q)
 
     alembic_util.msg(
         "Finished duplicate entries removal for HA IP table.")
@@ -511,19 +509,17 @@ def do_ha_ip_network_id_insertion(session):
 
     # REVISIT: needs to add support for context_reader/
     # context_writer
-    with session.begin(subtransactions=True):
+    port_and_haip_dbs = (session.query(models_v2.Port,
+                         HAIPAddressToPortAssociation).join(
+                         HAIPAddressToPortAssociation,
+                         haip_port_id == models_v2.Port.id))
 
-        port_and_haip_dbs = (session.query(models_v2.Port,
-                             HAIPAddressToPortAssociation).join(
-                             HAIPAddressToPortAssociation,
-                             haip_port_id == models_v2.Port.id))
-
-        for port_db, ha_ip, port_id, network_id in port_and_haip_dbs:
-            update_q = HAIPAddressToPortAssociation.update().where(
-                haip_ip == ha_ip).where(
-                        haip_port_id == port_id).values(
-                                {'network_id': port_db.network_id})
-            session.execute(update_q)
+    for port_db, ha_ip, port_id, network_id in port_and_haip_dbs:
+        update_q = HAIPAddressToPortAssociation.update().where(
+            haip_ip == ha_ip).where(
+                    haip_port_id == port_id).values(
+                            {'network_id': port_db.network_id})
+        session.execute(update_q)
 
     alembic_util.msg(
         "Finished network id insertion for HA IP table.")
@@ -535,7 +531,7 @@ def do_hpp_insertion(session):
 
     # REVISIT: needs to add support for context_reader/
     # context_writer
-    with session.begin(subtransactions=True):
+    with session.begin():
         session.execute(HPPDB.insert().values(hpp_normalized=False))
 
     alembic_util.msg(

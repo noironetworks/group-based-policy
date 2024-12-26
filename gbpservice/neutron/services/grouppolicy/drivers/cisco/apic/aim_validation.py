@@ -636,7 +636,7 @@ class ValidationSession(object):
     def __init__(self, validation_mgr):
         self._mgr = validation_mgr
 
-    def begin(self, subtransactions=False, nested=False):
+    def begin(self, nested=False):
         return _begin()
 
     def add(self, instance):

@@ -90,8 +90,7 @@ class ImplicitSubnetpoolMixin(object):
             filters["tenant_id"] = [tenant]
         else:
             filters["shared"] = [True]
-        with context.session.begin(subtransactions=True):
-            return self.get_subnetpools(admin_context, filters)
+        return self.get_subnetpools(admin_context, filters)
 
     def _get_implicit_subnetpool(self, context, subnetpool_id):
         return (context.session.query(ImplicitSubnetpool).
@@ -113,31 +112,30 @@ class ImplicitSubnetpoolMixin(object):
         is_implicit = False
         if validators.is_attr_set(subnetpool.get('is_implicit')):
             is_implicit = subnetpool['is_implicit']
-        with context.session.begin(subtransactions=True):
-            if is_implicit:
-                # Verify feasibility. Only one implicit SP must exist per
-                # tenant (or global)
-                msg = _('There can be at most one implicit '
-                        'subnetpool per address family per tenant.')
+        if is_implicit:
+            # Verify feasibility. Only one implicit SP must exist per
+            # tenant (or global)
+            msg = _('There can be at most one implicit '
+                    'subnetpool per address family per tenant.')
+            self._validate_implicit_subnetpool(
+                context, subnetpool['id'], tenant=subnetpool['tenant_id'],
+                msg=msg, ip_version=subnetpool['ip_version'])
+            if subnetpool['shared']:
+                # Check globally too
+                msg = _('There can be at most one global implicit '
+                        'subnetpool per address family.')
                 self._validate_implicit_subnetpool(
-                    context, subnetpool['id'], tenant=subnetpool['tenant_id'],
+                    context, subnetpool['id'],
+                    tenant=None,
                     msg=msg, ip_version=subnetpool['ip_version'])
-                if subnetpool['shared']:
-                    # Check globally too
-                    msg = _('There can be at most one global implicit '
-                            'subnetpool per address family.')
-                    self._validate_implicit_subnetpool(
-                        context, subnetpool['id'],
-                        tenant=None,
-                        msg=msg, ip_version=subnetpool['ip_version'])
-            db_obj = self._get_implicit_subnetpool(
-                context, subnetpool['id'])
-            if db_obj:
-                db_obj.is_implicit = is_implicit
-            db_obj = db_obj or ImplicitSubnetpool(
-                subnetpool_id=subnetpool['id'],
-                is_implicit=is_implicit)
-            context.session.add(db_obj)
+        db_obj = self._get_implicit_subnetpool(
+            context, subnetpool['id'])
+        if db_obj:
+            db_obj.is_implicit = is_implicit
+        db_obj = db_obj or ImplicitSubnetpool(
+            subnetpool_id=subnetpool['id'],
+            is_implicit=is_implicit)
+        context.session.add(db_obj)
         return is_implicit
 
     def _validate_implicit_subnetpool(self, context, subnetpool_id,

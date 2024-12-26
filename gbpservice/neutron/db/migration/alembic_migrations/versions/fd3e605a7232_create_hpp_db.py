@@ -39,8 +39,8 @@ def upgrade():
         from gbpservice.neutron.plugins.ml2plus.drivers.apic_aim import (
              data_migrations)
 
-        session = sa.orm.Session(bind=bind, autocommit=True)
-        with session.begin(subtransactions=True):
+        session = sa.orm.Session(bind=bind)
+        with session.begin():
             data_migrations.do_hpp_insertion(session)
     except Exception as e:
         util.warn("Caught exception while migrating data in %s: %s" %

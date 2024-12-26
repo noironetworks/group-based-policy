@@ -176,20 +176,20 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def _get_nsp_qosp_mapping(self, nsp_id):
         ctx = nctx.get_admin_context()
-        with ctx.session.begin(subtransactions=True):
+        with ctx.session.begin():
             return (ctx.session.query(
                 nsp_manager.ServicePolicyQosPolicyMapping).
                     filter_by(service_policy_id=nsp_id).first())
 
     def _get_qos_policy(self, qos_policy_id):
         ctx = nctx.get_admin_context()
-        with ctx.session.begin(subtransactions=True):
+        with ctx.session.begin():
             return (ctx.session.query(qos_models.QosPolicy).
                     filter_by(id=qos_policy_id).first())
 
     def _get_qos_rules(self, qos_policy_id):
         ctx = nctx.get_admin_context()
-        with ctx.session.begin(subtransactions=True):
+        with ctx.session.begin():
             return (ctx.session.query(qos_models.QosBandwidthLimitRule).
                     filter_by(qos_policy_id=qos_policy_id).all())
 
@@ -401,7 +401,7 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
 
     def _get_nsp_ptg_fip_mapping(self, ptg_id):
         ctx = nctx.get_admin_context()
-        with ctx.session.begin(subtransactions=True):
+        with ctx.session.begin():
             return (ctx.session.query(
                         nsp_manager.ServicePolicyPTGFipMapping).
                     filter_by(policy_target_group_id=ptg_id).

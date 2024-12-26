@@ -43,18 +43,17 @@ class ApicIntraPtgDBMixin(object):
 
     def set_intra_ptg_allow(self, session, policy_target_group_id,
                             intra_ptg_allow=True):
-        with session.begin(subtransactions=True):
-            query = BAKERY(lambda s: s.query(
-                ApicIntraPtgDB))
-            query += lambda q: q.filter_by(
-                policy_target_group_id=sa.bindparam('policy_target_group_id'))
-            row = query(session).params(
-                policy_target_group_id=policy_target_group_id).first()
+        query = BAKERY(lambda s: s.query(
+            ApicIntraPtgDB))
+        query += lambda q: q.filter_by(
+            policy_target_group_id=sa.bindparam('policy_target_group_id'))
+        row = query(session).params(
+            policy_target_group_id=policy_target_group_id).first()
 
-            if not row:
-                row = ApicIntraPtgDB(
-                    policy_target_group_id=policy_target_group_id,
-                    intra_ptg_allow=intra_ptg_allow)
-                session.add(row)
-            else:
-                row.update({'intra_ptg_allow': intra_ptg_allow})
+        if not row:
+            row = ApicIntraPtgDB(
+                policy_target_group_id=policy_target_group_id,
+                intra_ptg_allow=intra_ptg_allow)
+            session.add(row)
+        else:
+            row.update({'intra_ptg_allow': intra_ptg_allow})

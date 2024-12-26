@@ -101,7 +101,6 @@ class AimValidationTestMixin(object):
         resource = copy.copy(resource)
 
         # Make sure the AIM resource exists.
-        # TODO(pulkit): replace with AIM reader context once API supports it.
         with self.db_session.begin():
             actual_resource = self.aim_mgr.get(self.aim_ctx, resource)
         self.assertIsNotNone(actual_resource)
@@ -109,12 +108,10 @@ class AimValidationTestMixin(object):
         # Only test deleting and modifying if not monitored.
         if not actual_resource.monitored:
             # Delete the AIM resource and test.
-            # TODO(pulkit): replace with AIM writer context once API
             # supports it.
             with self.db_session.begin():
                 self.aim_mgr.delete(self.aim_ctx, resource)
             self._validate_repair_validate()
-            # TODO(pulkit): replace with AIM writer context once API
             # supports it.
             with self.db_session.begin():
                 self.assertTrue(
@@ -125,7 +122,6 @@ class AimValidationTestMixin(object):
                 self.aim_mgr.update(
                     self.aim_ctx, resource, display_name='not what it was')
             self._validate_repair_validate()
-            # TODO(pulkit): replace with AIM reader context once API
             # supports it.
             with self.db_session.begin():
                 self.assertTrue(
@@ -134,7 +130,6 @@ class AimValidationTestMixin(object):
 
         # Add unexpected AIM resource and test.
         setattr(resource, unexpected_attr_name, unexpected_attr_value)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.create(self.aim_ctx, resource)
         self._validate_repair_validate()
@@ -142,14 +137,12 @@ class AimValidationTestMixin(object):
         if test_unexpected_monitored:
             # Add unexpected monitored AIM resource and test.
             resource.monitored = True
-            # TODO(pulkit): replace with AIM writer context once API
             # supports it.
             with self.db_session.begin():
                 self.aim_mgr.create(self.aim_ctx, resource)
             self._validate()
 
             # Delete unexpected monitored AIM resource.
-            # TODO(pulkit): replace with AIM writer context once API
             # supports it.
             with self.db_session.begin():
                 self.aim_mgr.delete(self.aim_ctx, resource)
@@ -194,7 +187,6 @@ class TestNeutronMapping(AimValidationTestCase):
 
         # Delete the common Tenant and test.
         tenant = aim_resource.Tenant(name='common')
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, tenant)
         self._validate_repair_validate()
@@ -489,7 +481,6 @@ class TestNeutronMapping(AimValidationTestCase):
         bd = aim_resource.BridgeDomain(tenant_name=tenant_name,
                                        name='some_bd_name')
         bd.monitored = True
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             bd = self.aim_mgr.create(self.aim_ctx, bd)
 
@@ -533,7 +524,6 @@ class TestNeutronMapping(AimValidationTestCase):
         # Create AIM HostDomainMappingV2.
         hd_mapping = aim_infra.HostDomainMappingV2(
             host_name='*', domain_name='vm2', domain_type='OpenStack')
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.create(self.aim_ctx, hd_mapping)
 
@@ -609,7 +599,6 @@ class TestNeutronMapping(AimValidationTestCase):
     def test_preexisting_external_network(self):
         # Create pre-existing AIM VRF.
         vrf = aim_resource.VRF(tenant_name='common', name='v1', monitored=True)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.create(self.aim_ctx, vrf)
 
@@ -671,13 +660,11 @@ class TestNeutronMapping(AimValidationTestCase):
         self._test_network_attrs(net)
 
         # Delete pre-existing AIM VRF and test.
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, vrf)
         self._validate_unrepairable()
 
         # Replace pre-existing AIM VRF and test.
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.create(self.aim_ctx, vrf)
         self._validate()
@@ -699,20 +686,17 @@ class TestNeutronMapping(AimValidationTestCase):
         # that might break existing use cases.
 
         # Delete pre-existing AIM L3Outside and test.
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, l3out)
         self._validate_repair_validate()
 
         # Delete pre-existing AIM ExternalNetwork, along with its
         # child ExternalSubnet, and test.
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, ext_net, cascade=True)
         self._validate_repair_validate()
 
         # Delete just the pre-existing AIM ExternalSubnet and test.
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, ext_sn)
         self._validate_repair_validate()
@@ -1130,7 +1114,6 @@ class TestNeutronMapping(AimValidationTestCase):
         host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
         self.hlink1 = aim_infra.HostLink(
             host_name='host1', interface_name='eth0', path=host1_dn)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.create(self.aim_ctx, self.hlink1)
             acc_bundle = aim_resource.InfraAccBundleGroup(name=host1_pg,
@@ -1148,7 +1131,6 @@ class TestNeutronMapping(AimValidationTestCase):
 
         # Delete source group from AIM, and verify that it
         # can be repaired.
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             source_groups = self.aim_mgr.find(self.aim_ctx,
                                             aim_resource.SpanVsourceGroup)
@@ -1194,7 +1176,6 @@ class TestNeutronMapping(AimValidationTestCase):
         # setting scope to security group but
         # should validate common tenant resources
         tenant = aim_resource.Tenant(name='common')
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, tenant)
         self._validate_repair_validate_scoped(["security_group"], None)
@@ -1206,13 +1187,11 @@ class TestNeutronMapping(AimValidationTestCase):
         epg_dn1 = net1['apic:distinguished_names']['EndpointGroup']
 
         bd1 = aim_resource.BridgeDomain.from_dn(bd_dn1)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, bd1)
 
         # delete EndpointGroup.
         epg1 = aim_resource.EndpointGroup.from_dn(epg_dn1)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, epg1)
 
@@ -1223,13 +1202,11 @@ class TestNeutronMapping(AimValidationTestCase):
         epg_dn2 = net2['apic:distinguished_names']['EndpointGroup']
 
         bd2 = aim_resource.BridgeDomain.from_dn(bd_dn2)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, bd2)
 
         # delete EndpointGroup.
         epg2 = aim_resource.EndpointGroup.from_dn(epg_dn2)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, epg2)
         self._validate_repair_validate_scoped(None, ['prj_ten_1'])
@@ -1252,7 +1229,6 @@ class TestNeutronMapping(AimValidationTestCase):
         aim_sg = aim_resource.SecurityGroup(
             name=sg_name, tenant_name=tenant_name)
         self._test_aim_resource(aim_sg)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, aim_sg)
 
@@ -1261,7 +1237,6 @@ class TestNeutronMapping(AimValidationTestCase):
             name='default', security_group_name=sg_name,
             tenant_name=tenant_name)
         self._test_aim_resource(aim_subject)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, aim_subject)
 
@@ -1272,13 +1247,11 @@ class TestNeutronMapping(AimValidationTestCase):
             security_group_name=sg_name,
             tenant_name=tenant_name)
         self._test_aim_resource(aim_rule)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, aim_rule)
 
         aim_tenant = aim_resource.Tenant(name=tenant_name)
         self._test_aim_resource(aim_tenant)
-        # TODO(pulkit): replace with AIM writer context once API supports it.
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, aim_tenant)
 

@@ -1,6 +1,6 @@
 - job:
     name: group-based-policy-dsvm-aim
-    parent: legacy-dsvm-base
+    parent: base
     run: playbooks/legacy/group-based-policy-dsvm-aim/run.yaml
     post-run: playbooks/legacy/group-based-policy-dsvm-aim/post.yaml
     timeout: 7800
@@ -12,7 +12,7 @@
 
 - job:
     name: group-based-policy-dsvm-functional
-    parent: legacy-dsvm-base
+    parent: base
     run: playbooks/legacy/group-based-policy-dsvm-functional/run.yaml
     post-run: playbooks/legacy/group-based-policy-dsvm-functional/post.yaml
     timeout: 7800
@@ -24,7 +24,7 @@
 
 - job:
     name: group-based-policy-dsvm-nfp
-    parent: legacy-dsvm-base
+    parent: base
     run: playbooks/legacy/group-based-policy-dsvm-nfp/run.yaml
     post-run: playbooks/legacy/group-based-policy-dsvm-nfp/post.yaml
     timeout: 7800
@@ -51,37 +51,37 @@
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py38:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py312:
             nodeset: ubuntu-noble
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py313:
-            voting: False
+            voting: false
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - group-based-policy-dsvm-functional:
             voting: false
         - group-based-policy-dsvm-aim:
@@ -94,34 +94,34 @@
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py38:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py312:
             nodeset: ubuntu-noble
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol
         - openstack-tox-py313:
-            voting: False
+            voting: false
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/2024.1
+                override-checkout: 2024.2-eol

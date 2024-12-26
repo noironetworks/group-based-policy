@@ -259,9 +259,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             # current context, which should be available in
             # the session.info's dictionary, with a key of
             # 'using_context').
-            with session.begin(subtransactions=True):
-                plugin.extension_manager.extend_subnet_dict(
-                        session, subnetdb, result)
+            plugin.extension_manager.extend_subnet_dict(
+                    session, subnetdb, result)
         else:
             session = db_api.get_writer_session()
             plugin.extension_manager.extend_subnet_dict(
@@ -293,9 +292,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             # current context, which should be available in
             # the session.info's dictionary, with a key of
             # 'using_context').
-            with session.begin(subtransactions=True):
-                plugin.extension_manager.extend_subnetpool_dict(
-                        session, subnetpooldb, result)
+            plugin.extension_manager.extend_subnetpool_dict(
+                    session, subnetpooldb, result)
         else:
             session = db_api.get_writer_session()
             plugin.extension_manager.extend_subnetpool_dict(

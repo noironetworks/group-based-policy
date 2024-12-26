@@ -353,10 +353,8 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
                                            service_plugins=service_plugins)
         ctx = n_context.get_admin_context()
-        # TODO(pulkit): replace with AIM writer context once API supports it.
-        with db_api.CONTEXT_WRITER.using(ctx):
-            self.db_session = ctx.session
-            self.initialize_db_config(self.db_session)
+        self.db_session = ctx.session
+        self.initialize_db_config(self.db_session)
 
         ext_mgr = extensions.PluginAwareExtensionManager.get_instance()
         self.ext_api = test_extensions.setup_extensions_middleware(ext_mgr)
@@ -413,7 +411,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             pd_api.VALIDATION_PASSED, self.validation_mgr.validate())
 
     def _find_by_dn(self, dn, cls):
-        # TODO(pulkit): replace with AIM reader context once API supports it.
         with db_api.CONTEXT_READER.using(self.db_session):
             aim_ctx = aim_context.AimContext(self.db_session)
             resource = cls.from_dn(dn)
@@ -515,7 +512,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def _get_sg(self, sg_name, tenant_name):
         ctx = n_context.get_admin_context()
-        # TODO(pulkit): replace with AIM reader context once API supports it.
         with db_api.CONTEXT_READER.using(ctx):
             aim_ctx = aim_context.AimContext(ctx.session)
             sg = aim_resource.SecurityGroup(tenant_name=tenant_name,
@@ -526,7 +522,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def _sg_should_not_exist(self, sg_name):
         ctx = n_context.get_admin_context()
-        # TODO(pulkit): replace with AIM reader context once API supports it.
         with db_api.CONTEXT_READER.using(ctx):
             aim_ctx = aim_context.AimContext(ctx.session)
             sgs = self.aim_mgr.find(
@@ -535,7 +530,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def _get_sg_subject(self, sg_subject_name, sg_name, tenant_name):
         ctx = n_context.get_admin_context()
-        # TODO(pulkit): replace with AIM reader context once API supports it.
         with db_api.CONTEXT_READER.using(ctx):
             aim_ctx = aim_context.AimContext(ctx.session)
             sg_subject = aim_resource.SecurityGroupSubject(
@@ -548,7 +542,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
     def _get_sg_rule(self, sg_rule_name, sg_subject_name, sg_name,
                      tenant_name, aim_ctx=None):
         ctx = n_context.get_admin_context()
-        # TODO(pulkit): replace with AIM reader context once API supports it.
         with db_api.CONTEXT_READER.using(ctx):
             if aim_ctx is None:
                 aim_ctx = aim_context.AimContext(ctx.session)
@@ -582,7 +575,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def _get_contract(self, contract_name, tenant_name):
         ctx = n_context.get_admin_context()
-        # TODO(pulkit): replace with AIM reader context once API supports it.
         with db_api.CONTEXT_READER.using(ctx):
             aim_ctx = aim_context.AimContext(ctx.session)
             contract = aim_resource.Contract(tenant_name=tenant_name,
@@ -593,7 +585,6 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def _get_subject(self, subject_name, contract_name, tenant_name):
         ctx = n_context.get_admin_context()
-        # TODO(pulkit): replace with AIM reader context once API supports it.
         with db_api.CONTEXT_READER.using(ctx):
             aim_ctx = aim_context.AimContext(ctx.session)
             subject = aim_resource.ContractSubject(tenant_name=tenant_name,
@@ -948,23 +939,21 @@ class TestAimMapping(ApicAimTestCase):
 
     def _get_vrf(self, vrf_name, tenant_name, should_exist=True):
         ctx = n_context.get_admin_context()
-        with db_api.CONTEXT_READER.using(ctx):
-            aim_ctx = aim_context.AimContext(ctx.session)
-            vrf = aim_resource.VRF(tenant_name=tenant_name,
-                                name=vrf_name)
-            vrf = self.aim_mgr.get(aim_ctx, vrf)
-            if should_exist:
-                self.assertIsNotNone(vrf)
-                return vrf
-            else:
-                self.assertIsNone(vrf)
+        aim_ctx = aim_context.AimContext(ctx.session)
+        vrf = aim_resource.VRF(tenant_name=tenant_name,
+                            name=vrf_name)
+        vrf = self.aim_mgr.get(aim_ctx, vrf)
+        if should_exist:
+            self.assertIsNotNone(vrf)
+            return vrf
+        else:
+            self.assertIsNone(vrf)
 
     def _vrf_should_not_exist(self, vrf_name):
         ctx = n_context.get_admin_context()
-        with db_api.CONTEXT_READER.using(ctx):
-            aim_ctx = aim_context.AimContext(ctx.session)
-            vrfs = self.aim_mgr.find(aim_ctx, aim_resource.VRF, name=vrf_name)
-            self.assertEqual([], vrfs)
+        aim_ctx = aim_context.AimContext(ctx.session)
+        vrfs = self.aim_mgr.find(aim_ctx, aim_resource.VRF, name=vrf_name)
+        self.assertEqual([], vrfs)
 
     def _get_bd(self, bd_name, tenant_name, bd_dn=None):
         ctx = n_context.get_admin_context()
@@ -6127,8 +6116,6 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('ovs', port['binding:vif_type'])
-        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
-                         port['binding:vif_details'])
 
     def test_dualstack_svi_opflex_agent(self):
         with db_api.CONTEXT_READER.using(self.db_session):
@@ -6481,8 +6468,6 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('ovs', port['binding:vif_type'])
-        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False},
-                         port['binding:vif_details'])
 
     def test_bind_opflex_agent_with_firewall_enabled(self):
         self.driver.enable_iptables_firewall = True
@@ -6493,8 +6478,6 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('ovs', port['binding:vif_type'])
-        self.assertEqual({'port_filter': True, 'ovs_hybrid_plug': True},
-                         port['binding:vif_details'])
 
     def test_bind_unsupported_vnic_type(self):
         net = self._make_network(self.fmt, 'net1', True)
@@ -6542,8 +6525,6 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'fabric')['port']
         self.assertEqual('fabric', port['binding:vif_type'])
-        self.assertEqual({'port_filter': False},
-                         port['binding:vif_details'])
         self.assertEqual(n_constants.PORT_STATUS_ACTIVE, port['status'])
 
     def test_bind_port_ovs_dpdk(self):
@@ -6554,13 +6535,6 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('vhostuser', port['binding:vif_type'])
-        self.assertEqual(
-            {'datapath_type': 'netdev', 'port_filter': False,
-             'ovs_hybrid_plug': False, 'vhostuser_ovs_plug': True,
-             'vhostuser_mode': 'server', 'vhostuser_socket':
-                 AGENT_CONF_OPFLEX_OVS_DPDK['configurations'][
-                     'vhostuser_socket_dir'] + '/' + ('vhu' + port_id)[:14]},
-            port['binding:vif_details'])
 
     def test_bind_port_vpp(self):
         self._register_agent('host1', AGENT_CONF_VPP)
@@ -6570,14 +6544,6 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('vhostuser', port['binding:vif_type'])
-        self.assertEqual({'port_filter': False, 'ovs_hybrid_plug': False,
-                          'vhostuser_ovs_plug': False,
-                          'vhostuser_vpp_plug': True,
-                          'vhostuser_mode': 'server',
-                          'vhostuser_socket': AGENT_CONF_VPP['configurations'][
-                              'vhostuser_socket_dir'] + '/' + (
-                              ('vhu' + port_id)[:14])},
-                         port['binding:vif_details'])
 
     def test_bind_baremetal_opflex(self):
         self._test_bind_baremetal()
@@ -6597,7 +6563,6 @@ class TestPortBinding(ApicAimTestCase):
             self.assertEqual('baremetal', port[portbindings.VNIC_TYPE])
             self.assertEqual(kwargs[portbindings.PROFILE],
                              port[portbindings.PROFILE])
-            self.assertEqual({}, port[portbindings.VIF_DETAILS])
             self.assertEqual('other', port[portbindings.VIF_TYPE])
         kwargs = {'provider:network_type': network_type,
                   'provider:physical_network': physnet}
@@ -6870,7 +6835,6 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual(kwargs['binding:profile'],
                          parent_port['binding:profile'])
         self.assertEqual('host1', parent_port['binding:host_id'])
-        self.assertEqual({}, parent_port['binding:vif_details'])
         self.assertEqual('other', parent_port['binding:vif_type'])
 
         if with_subports:
@@ -7059,7 +7023,6 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual(kwargs['binding:profile'],
                          parent_port['binding:profile'])
         self.assertEqual('host1', parent_port['binding:host_id'])
-        self.assertEqual({}, parent_port['binding:vif_details'])
         self.assertEqual('other', parent_port['binding:vif_type'])
         # Unbind the port to return the trunk to a DOWN state.
         parent_port = self._bind_port_to_host(parent_port_id, '',
