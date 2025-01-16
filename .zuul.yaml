@@ -23,6 +23,7 @@
                 override-checkout: train-eol
         - openstack-tox-py35:
             nodeset: ubuntu-xenial
+            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: train-eol
@@ -56,6 +57,7 @@
                 override-checkout: train-eol
         - openstack-tox-py35:
             nodeset: ubuntu-xenial
+            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: train-eol
