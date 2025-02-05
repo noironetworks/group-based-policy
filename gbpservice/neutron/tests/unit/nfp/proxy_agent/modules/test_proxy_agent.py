@@ -10,11 +10,11 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import unittest
 from unittest import mock
 
 from gbpservice.nfp.proxy_agent.modules import proxy_agent
 from neutron_lib import context as ctx
-import unittest2
 
 rpc_manager = proxy_agent.RpcHandler
 
@@ -34,7 +34,7 @@ class TestContext(object):
 "Common class for proxy agent test cases"
 
 
-class ConfigAgentProxyTestCase(unittest2.TestCase):
+class ConfigAgentProxyTestCase(unittest.TestCase):
 
     def setUp(self):
         self.manager = rpc_manager('conf', 'sc')
@@ -86,4 +86,4 @@ class ConfigAgentProxyTestCase(unittest2.TestCase):
 
 
 if __name__ == "__main__":
-    unittest2.main()
+    unittest.main()

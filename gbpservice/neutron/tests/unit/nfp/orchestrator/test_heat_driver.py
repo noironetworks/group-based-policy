@@ -11,6 +11,7 @@
 #    under the License.
 
 import copy
+import unittest
 
 from unittest import mock
 
@@ -20,7 +21,6 @@ from keystoneclient.v2_0 import client as identity_client
 from neutronclient.v2_0 import client as neutron_client
 from oslo_config import cfg
 from oslo_utils import uuidutils
-import unittest2
 
 from gbpclient.v2_0 import client as gbp_client
 from gbpservice.neutron.tests.unit.nfp.orchestrator import mock_dicts
@@ -76,7 +76,7 @@ SVC_MGMT_PTG_NAME = 'svc_management_ptg'
 RESOURCE_OWNER_TENANT_ID = '8ae6701128994ab281dde6b92207bb19'
 
 
-class TestHeatDriver(unittest2.TestCase):
+class TestHeatDriver(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
         super(TestHeatDriver, self).__init__(*args, **kwargs)

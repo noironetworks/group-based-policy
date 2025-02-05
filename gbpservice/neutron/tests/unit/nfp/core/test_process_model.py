@@ -13,6 +13,7 @@
 import multiprocessing
 import random
 import time
+import unittest
 
 from unittest import mock
 
@@ -24,7 +25,6 @@ from gbpservice.nfp.core import manager as nfp_manager
 from gbpservice.nfp.core import worker as nfp_worker
 from oslo_config import cfg as oslo_config
 import six
-import unittest2
 
 NFP_MODULES_PATH = ['gbpservice.neutron.tests.unit.nfp.core']
 
@@ -117,7 +117,7 @@ class Object(object):
         pass
 
 
-class Test_Process_Model(unittest2.TestCase):
+class Test_Process_Model(unittest.TestCase):
 
     def setUp(self):
         nfp_context.init()
@@ -872,4 +872,4 @@ class Test_Process_Model(unittest2.TestCase):
 
 
 if __name__ == '__main__':
-    unittest2.main()
+    unittest.main()

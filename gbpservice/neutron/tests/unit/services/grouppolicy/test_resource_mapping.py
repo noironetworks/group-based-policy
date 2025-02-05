@@ -12,6 +12,7 @@
 # limitations under the License.
 
 import copy
+import unittest
 
 from unittest import mock
 
@@ -31,7 +32,6 @@ from neutron_lib.plugins import constants as pconst
 from neutron_lib.plugins import directory
 from oslo_utils import uuidutils
 import six
-import unittest2
 import webob.exc
 
 from gbpservice.common import utils
@@ -3298,7 +3298,7 @@ class TestServiceChain(ResourceMappingTestCase):
 
     # This test is being skipped because the NCP plugin does not support
     # multiple servicechain_specs per servicechain_instance
-    @unittest2.skip('skipping')
+    @unittest.skip('skipping')
     def test_action_spec_value_update(self):
         scs1_id = self._create_servicechain_spec()
         action_id, classifier_id, policy_rule_id = (
@@ -3525,7 +3525,7 @@ class TestServiceChain(ResourceMappingTestCase):
 
     # This test is being skipped because the NCP plugin does not support
     # multiple servicechain_specs per servicechain_instance
-    @unittest2.skip('skipping')
+    @unittest.skip('skipping')
     def test_parent_ruleset_update_for_redirect(self):
         scs_id = self._create_servicechain_spec()
         _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
@@ -3578,7 +3578,7 @@ class TestServiceChain(ResourceMappingTestCase):
 
     # This test is being skipped because the NCP plugin does not support
     # multiple servicechain_specs per servicechain_instance
-    @unittest2.skip('skipping')
+    @unittest.skip('skipping')
     def test_enforce_parent_redirect_after_ptg_create(self):
         scs_id = self._create_servicechain_spec()
         _, classifier_id, policy_rule_id = self._create_tcp_redirect_rule(
@@ -3641,7 +3641,7 @@ class TestServiceChain(ResourceMappingTestCase):
 
     # This test is being skipped because the NCP plugin does not support
     # multiple servicechain_specs per servicechain_instance
-    @unittest2.skip('skipping')
+    @unittest.skip('skipping')
     def test_hierarchical_redirect(self):
         scs_id = self._create_servicechain_spec()
         action_id, classifier_id, policy_rule_id = (
@@ -3728,7 +3728,7 @@ class TestServiceChain(ResourceMappingTestCase):
 
     # This test is being skipped because the NCP plugin does not support
     # multiple servicechain_specs per servicechain_instance
-    @unittest2.skip('skipping')
+    @unittest.skip('skipping')
     def test_rule_update_hierarchial_prs(self):
         scs_id = self._create_servicechain_spec()
         action_id, classifier_id, policy_rule_id = (
@@ -3831,7 +3831,7 @@ class TestServiceChain(ResourceMappingTestCase):
 
     # This test is being skipped because the NCP plugin does not support
     # multiple servicechain_specs per servicechain_instance
-    @unittest2.skip('skipping')
+    @unittest.skip('skipping')
     def test_redirect_multiple_ptgs_single_prs(self):
         scs_id = self._create_servicechain_spec()
         _, _, policy_rule_id = self._create_tcp_redirect_rule(
