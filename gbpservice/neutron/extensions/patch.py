@@ -10,6 +10,8 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import os
+from importlib import util as imp_util
 from neutron.api import extensions
 from neutron.db.db_base_plugin_v2 import _constants
 from neutron.db import l3_db
@@ -174,6 +176,41 @@ def extend_resources(self, version, attr_map):
 
 
 extensions.ExtensionManager.extend_resources = extend_resources
+
+
+def _load_all_extensions_from_path(self, path):
+    # Sorting the extension list makes the order in which they
+    # are loaded predictable across a cluster of load-balanced
+    # Neutron Servers
+    for f in sorted(os.listdir(path)):
+        try:
+            LOG.debug('Loading extension file: %s', f)
+            mod_name, file_ext = os.path.splitext(os.path.split(f)[-1])
+            ext_path = os.path.join(path, f)
+            if file_ext.lower() == '.py' and not mod_name.startswith('_'):
+                spec = imp_util.spec_from_file_location(mod_name, ext_path)
+                mod = imp_util.module_from_spec(spec)
+                if (mod_name == 'flowclassifier' or mod_name == 'sfc'):
+                    sys.modules[mod_name] = mod
+                spec.loader.exec_module(mod)
+                ext_name = mod_name.capitalize()
+                new_ext_class = getattr(mod, ext_name, None)
+                if not new_ext_class:
+                    LOG.warning('Did not find expected name '
+                                '"%(ext_name)s" in %(file)s',
+                                {'ext_name': ext_name,
+                                    'file': ext_path})
+                    continue
+                new_ext = new_ext_class()
+                self.add_extension(new_ext)
+        except Exception as exception:
+            LOG.warning("Extension file %(f)s wasn't loaded due to "
+                        "%(exception)s",
+                        {'f': f, 'exception': exception})
+
+
+extensions.ExtensionManager._load_all_extensions_from_path = (
+    _load_all_extensions_from_path)
 
 
 def fill_post_defaults(
