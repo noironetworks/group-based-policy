@@ -98,6 +98,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self._setup_dhcp()
         self._start_rpc_notifiers()
         self.add_agent_status_check_worker(self.agent_health_check)
+        self.add_workers(self.mechanism_manager.get_workers())
         self._verify_service_plugins_requirements()
         LOG.info("Modular L2 Plugin (extended) initialization complete")
 
