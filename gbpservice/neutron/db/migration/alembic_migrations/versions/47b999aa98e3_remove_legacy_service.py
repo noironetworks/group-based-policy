@@ -30,6 +30,7 @@ down_revision = '68fcb81878c5'
 
 
 def upgrade():
+    op.execute('SET FOREIGN_KEY_CHECKS = 0')
     op.drop_table('service_profiles')
     op.drop_table('sc_specs')
     op.drop_table('sc_instances')
@@ -41,3 +42,4 @@ def upgrade():
     op.drop_table('gpm_ptgs_servicechain_mapping')
     op.drop_table('ncp_node_to_driver_mapping')
     op.drop_table('ncp_service_targets')
+    op.execute('SET FOREIGN_KEY_CHECKS = 1')
