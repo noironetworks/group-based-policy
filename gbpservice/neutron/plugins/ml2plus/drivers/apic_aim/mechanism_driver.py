@@ -268,7 +268,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                             keystone_notification_topic)
         self.keystone_notification_pool = (cfg.CONF.ml2_apic_aim.
                                            keystone_notification_pool)
-        self._setup_keystone_notification_listeners()
         self.apic_optimized_dhcp_lease_time = (cfg.CONF.ml2_apic_aim.
                                                apic_optimized_dhcp_lease_time)
         self.enable_keystone_notification_purge = (cfg.CONF.ml2_apic_aim.
@@ -291,8 +290,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         "any existing overlap and set this option to False "
                         "(the default) as soon as possible.")
         self.host_id = 'id-%s-%s' % (net.get_hostname(), str(os.getpid()))
-        self._setup_nova_vm_update()
-        self._ensure_static_resources()
         trunk_driver.register()
         self.port_desc_re = re.compile(ACI_PORT_DESCR_FORMATS)
         self.vpcport_desc_re = re.compile(ACI_VPCPORT_DESCR_FORMAT)
@@ -306,6 +303,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def start_rpc_listeners(self):
         LOG.info("APIC AIM MD starting RPC listeners")
+        self._ensure_static_resources()
+        self._setup_nova_vm_update()
+        self._setup_keystone_notification_listeners()
         return self._start_rpc_listeners()
 
     def _setup_nova_vm_update(self):

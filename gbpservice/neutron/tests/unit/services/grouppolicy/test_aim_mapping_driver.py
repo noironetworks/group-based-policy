@@ -210,6 +210,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self._t1_aname = self.name_mapper.project(None, 't1')
         self._dn_t1_l1_n1 = ('uni/tn-%s/out-l1/instP-n1' % self._t1_aname)
         self._mock_aim_obj_eq_operator()
+        self._init_plugin_and_driver()
 
     def tearDown(self):
         ksc_client.Client = self.saved_keystone_client
