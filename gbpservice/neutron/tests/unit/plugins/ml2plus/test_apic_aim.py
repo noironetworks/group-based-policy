@@ -301,6 +301,16 @@ class ApicAimTestMixin(object):
             raise webob.exc.HTTPClientError(code=subnet_res.status_int)
         return self.deserialize(fmt, subnet_res)
 
+    def _init_plugin_and_driver(self):
+        self.plugin = directory.get_plugin()
+        driver = self.plugin.mechanism_manager.mech_drivers[
+            'apic_aim'].obj
+        # UTs don't create RPC listeners, which is where we make the call to
+        # ensure we have static resources. Make the call here to ensure that we
+        # have them
+        driver._ensure_static_resources()
+        return driver
+
 
 class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_l3.L3NatTestCaseMixin, ApicAimTestMixin,
@@ -357,9 +367,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         FakeProjectManager.reset()
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = FakeKeystoneClient
-        self.plugin = directory.get_plugin()
-        self.driver = self.plugin.mechanism_manager.mech_drivers[
-            'apic_aim'].obj
+        self.driver = self._init_plugin_and_driver()
         self.l3_plugin = directory.get_plugin(pconst.L3)
         self.aim_mgr = aim_manager.AimManager()
         self._app_profile_name = self.driver.ap_name
