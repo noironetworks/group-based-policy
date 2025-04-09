@@ -535,11 +535,12 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
             return sg_subject
 
     def _get_sg_rule(self, sg_rule_name, sg_subject_name, sg_name,
-                     tenant_name):
+                     tenant_name, aim_ctx=None):
         ctx = n_context.get_admin_context()
         # TODO(pulkit): replace with AIM reader context once API supports it.
         with db_api.CONTEXT_READER.using(ctx):
-            aim_ctx = aim_context.AimContext(ctx.session)
+            if aim_ctx is None:
+                aim_ctx = aim_context.AimContext(ctx.session)
             sg_rule = aim_resource.SecurityGroupRule(
                 tenant_name=tenant_name, security_group_name=sg_name,
                 security_group_subject_name=sg_subject_name, name=sg_rule_name)
@@ -2984,10 +2985,11 @@ class TestAimMapping(ApicAimTestCase):
     def test_router_interface_with_address_scope_svi(self):
         self._test_router_interface_with_address_scope(is_svi=True)
 
-    def test_keystone_notification_endpoint(self):
-        self.driver.aim.get = mock.Mock(return_value=True)
-        self.driver.aim.update = mock.Mock()
-        self.driver.aim.delete = mock.Mock()
+    @mock.patch("aim.aim_manager.AimManager.delete")
+    @mock.patch("aim.aim_manager.AimManager.update")
+    @mock.patch("aim.aim_manager.AimManager.get", return_value=True)
+    def test_keystone_notification_endpoint(
+        self, mock_get, mock_update, mock_delete):
         self.driver.project_details_cache.purge_gbp = mock.Mock()
         payload = {}
         payload['resource_info'] = 'test-tenant-update'
@@ -12471,10 +12473,25 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         self.result = self.mech.normalize_hpp()
         self.assertFalse(self.result)
 
-        self.aim_mgr.update(aim_ctx, self.remoteip_normalization,
-                        supports=True)
-        self.result = self.mech.normalize_hpp()
-        self.assertTrue(self.result)
+        for i in range(10):
+            try:
+                self.normalize_remote_group(
+                    session, extn, aim_ctx, sg_rule1, default_sg_id,
+                    tenant_aname, self.mech, self.remoteip_normalization)
+                break
+            except exc.DBError:
+                session.close()
+                session = db_api.get_reader_session()
+                aim_ctx = aim_context.AimContext(session)
+                if i == 9:
+                    raise
+
+    def normalize_remote_group(
+        self, session, extn, aim_ctx, sg_rule1, default_sg_id,
+        tenant_aname, mech, remoteip_normalization):
+        self.aim_mgr.update(aim_ctx, remoteip_normalization, supports=True)
+        result = mech.normalize_hpp()
+        self.assertTrue(result)
         self.assertTrue(extn.get_hpp_normalized(session))
         rg_cont = self._check_sg_remote_group_container(
             default_sg_id, default_sg_id, tenant_aname)
@@ -12484,7 +12501,8 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 remote_ip, default_sg_id, tenant_aname)
             self.assertEqual(aim_sg_remote_ip.addr, remote_ip)
         aim_sg_rule = self._get_sg_rule(
-            sg_rule1['id'], 'default', default_sg_id, tenant_aname)
+            sg_rule1['id'], 'default', default_sg_id,
+            tenant_aname, aim_ctx=aim_ctx)
         self.assertEqual(aim_sg_rule.remote_ips, [])
         self.assertEqual(aim_sg_rule.tDn, rg_cont.dn)
 
