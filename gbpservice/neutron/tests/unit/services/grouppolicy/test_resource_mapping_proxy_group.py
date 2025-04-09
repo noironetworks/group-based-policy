@@ -478,8 +478,7 @@ class TestL2Policy(ResourceMappingProxyGroupGBPTestCase,
             proxy_ip_pool='182.169.0.0/16')
 
 
-class TestL3Policy(ResourceMappingProxyGroupGBPTestCase,
-                   test_resource_mapping.TestL3Policy):
+class TestL3Policy(ResourceMappingProxyGroupGBPTestCase):
 
     def test_implicit_l3p_proxy_pool(self):
         default_proxy_pool = '192.168.0.0/16'
