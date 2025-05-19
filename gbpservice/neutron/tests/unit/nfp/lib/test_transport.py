@@ -10,6 +10,7 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import unittest
 from unittest import mock
 
 from neutron_lib import context as ctx
@@ -17,7 +18,6 @@ from neutron_lib import rpc as n_rpc
 from oslo_config import cfg
 from oslo_serialization import jsonutils
 import six
-import unittest2
 
 from gbpservice.nfp.lib import transport
 
@@ -79,7 +79,7 @@ class TestContext(object):
         return variables
 
 
-class CommonLibraryTest(unittest2.TestCase):
+class CommonLibraryTest(unittest.TestCase):
 
     def setUp(self):
         n_rpc.init(cfg.CONF)
@@ -183,4 +183,4 @@ class CommonLibraryTest(unittest2.TestCase):
 
 
 if __name__ == '__main__':
-    unittest2.main()
+    unittest.main()
