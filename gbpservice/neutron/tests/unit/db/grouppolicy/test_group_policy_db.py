@@ -12,9 +12,9 @@
 # limitations under the License.
 
 import copy
-from importlib import util as imp_util
+
 import os
-import sys
+
 
 from unittest import mock
 
@@ -27,7 +27,7 @@ from neutron.tests.unit.db import test_db_base_plugin_v2
 from neutron_lib import context
 from neutron_lib.plugins import constants
 from neutron_lib.plugins import directory
-from oslo_log import log as logging
+
 from oslo_utils import importutils
 from oslo_utils import uuidutils
 import six
@@ -42,8 +42,6 @@ from gbpservice.neutron.tests.unit import common as cm
 from networking_sfc.extensions import flowclassifier
 from networking_sfc.extensions import sfc
 
-
-LOG = logging.getLogger(__name__)
 
 JSON_FORMAT = 'json'
 _uuid = uuidutils.generate_uuid
@@ -386,39 +384,6 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
                     '_aliases']:
                 plugins.get('CORE').__dict__['_aliases'].remove(
                         'dhcp_agent_scheduler')
-
-    def _load_all_extensions_from_path(self, path):
-        # Sorting the extension list makes the order in which they
-        # are loaded predictable across a cluster of load-balanced
-        # Neutron Servers
-        for f in sorted(os.listdir(path)):
-            try:
-                LOG.debug('Loading extension file: %s', f)
-                mod_name, file_ext = os.path.splitext(os.path.split(f)[-1])
-                ext_path = os.path.join(path, f)
-                if file_ext.lower() == '.py' and not mod_name.startswith('_'):
-                    spec = imp_util.spec_from_file_location(mod_name, ext_path)
-                    mod = imp_util.module_from_spec(spec)
-                    if (mod_name == 'flowclassifier' or mod_name == 'sfc'):
-                        sys.modules[mod_name] = mod
-                    spec.loader.exec_module(mod)
-                    ext_name = mod_name.capitalize()
-                    new_ext_class = getattr(mod, ext_name, None)
-                    if not new_ext_class:
-                        LOG.warning('Did not find expected name '
-                                    '"%(ext_name)s" in %(file)s',
-                                    {'ext_name': ext_name,
-                                     'file': ext_path})
-                        continue
-                    new_ext = new_ext_class()
-                    self.add_extension(new_ext)
-            except Exception as exception:
-                LOG.warning("Extension file %(f)s wasn't loaded due to "
-                            "%(exception)s",
-                            {'f': f, 'exception': exception})
-
-    extensions.ExtensionManager._load_all_extensions_from_path = (
-        _load_all_extensions_from_path)
 
     def tearDown(self):
         self._unset_notification_mocks()
