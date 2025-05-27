@@ -5958,6 +5958,13 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
 
 class TestPortBinding(ApicAimTestCase):
 
+    def _bound_drivers(self, bound_drivers):
+        if 'bound_drivers' not in bound_drivers:
+            return {}
+        if len(bound_drivers['bound_drivers']) == 1:
+            return {'bound_drivers': {'0': 'apic_aim'}}
+        return {'bound_drivers': {'0': 'apic_aim', '1': 'apic_aim'}}
+
     # Helper methods for port binding APIs.
     def _check_code_and_serialize(self, response, raw_response):
         if raw_response:
@@ -6116,6 +6123,10 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('ovs', port['binding:vif_type'])
+        vif_details = self._bound_drivers(port['binding:vif_details'])
+        vif_details.update({
+            'port_filter': False, 'ovs_hybrid_plug': False})
+        self.assertEqual(vif_details, port['binding:vif_details'])
 
     def test_dualstack_svi_opflex_agent(self):
         with db_api.CONTEXT_READER.using(self.db_session):
@@ -6468,6 +6479,10 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('ovs', port['binding:vif_type'])
+        vif_details = self._bound_drivers(port['binding:vif_details'])
+        vif_details.update({
+            'port_filter': False, 'ovs_hybrid_plug': False})
+        self.assertEqual(vif_details, port['binding:vif_details'])
 
     def test_bind_opflex_agent_with_firewall_enabled(self):
         self.driver.enable_iptables_firewall = True
@@ -6478,6 +6493,10 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('ovs', port['binding:vif_type'])
+        vif_details = self._bound_drivers(port['binding:vif_details'])
+        vif_details.update({
+            'port_filter': True, 'ovs_hybrid_plug': True})
+        self.assertEqual(vif_details, port['binding:vif_details'])
 
     def test_bind_unsupported_vnic_type(self):
         net = self._make_network(self.fmt, 'net1', True)
@@ -6525,6 +6544,9 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'fabric')['port']
         self.assertEqual('fabric', port['binding:vif_type'])
+        vif_details = self._bound_drivers(port['binding:vif_details'])
+        vif_details.update({'port_filter': False})
+        self.assertEqual(vif_details, port['binding:vif_details'])
         self.assertEqual(n_constants.PORT_STATUS_ACTIVE, port['status'])
 
     def test_bind_port_ovs_dpdk(self):
@@ -6535,6 +6557,16 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('vhostuser', port['binding:vif_type'])
+        vif_details = self._bound_drivers(port['binding:vif_details'])
+        vif_details.update(
+            {
+                'datapath_type': 'netdev', 'port_filter': False,
+                'ovs_hybrid_plug': False, 'vhostuser_ovs_plug': True,
+                'vhostuser_mode': 'server', 'vhostuser_socket':
+                AGENT_CONF_OPFLEX_OVS_DPDK['configurations'][
+                    'vhostuser_socket_dir'] + '/' + ('vhu' + port_id)[:14]
+            })
+        self.assertEqual(vif_details, port['binding:vif_details'])
 
     def test_bind_port_vpp(self):
         self._register_agent('host1', AGENT_CONF_VPP)
@@ -6544,6 +6576,18 @@ class TestPortBinding(ApicAimTestCase):
         port_id = port['id']
         port = self._bind_port_to_host(port_id, 'host1')['port']
         self.assertEqual('vhostuser', port['binding:vif_type'])
+        vif_details = self._bound_drivers(port['binding:vif_details'])
+        vif_details.update(
+            {
+                'port_filter': False, 'ovs_hybrid_plug': False,
+                'vhostuser_ovs_plug': False,
+                'vhostuser_vpp_plug': True,
+                'vhostuser_mode': 'server',
+                'vhostuser_socket': AGENT_CONF_VPP['configurations'][
+                    'vhostuser_socket_dir'] + '/' + (
+                    ('vhu' + port_id)[:14])
+            })
+        self.assertEqual(vif_details, port['binding:vif_details'])
 
     def test_bind_baremetal_opflex(self):
         self._test_bind_baremetal()
@@ -6564,6 +6608,9 @@ class TestPortBinding(ApicAimTestCase):
             self.assertEqual(kwargs[portbindings.PROFILE],
                              port[portbindings.PROFILE])
             self.assertEqual('other', port[portbindings.VIF_TYPE])
+            self.assertEqual(self._bound_drivers(
+                             port['binding:vif_details']),
+                             port[portbindings.VIF_DETAILS])
         kwargs = {'provider:network_type': network_type,
                   'provider:physical_network': physnet}
         if is_svi:
@@ -6835,6 +6882,9 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual(kwargs['binding:profile'],
                          parent_port['binding:profile'])
         self.assertEqual('host1', parent_port['binding:host_id'])
+        self.assertEqual(self._bound_drivers(
+                         parent_port['binding:vif_details']),
+                         parent_port['binding:vif_details'])
         self.assertEqual('other', parent_port['binding:vif_type'])
 
         if with_subports:
@@ -7023,6 +7073,9 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual(kwargs['binding:profile'],
                          parent_port['binding:profile'])
         self.assertEqual('host1', parent_port['binding:host_id'])
+        self.assertEqual(self._bound_drivers(
+                         parent_port['binding:vif_details']),
+                         parent_port['binding:vif_details'])
         self.assertEqual('other', parent_port['binding:vif_type'])
         # Unbind the port to return the trunk to a DOWN state.
         parent_port = self._bind_port_to_host(parent_port_id, '',
