@@ -18,8 +18,6 @@
                 override-checkout: 2023.2-eol
         - openstack-tox-py38:
             nodeset: ubuntu-focal
-            # Ignore py38 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: 2023.2-eol
@@ -30,22 +28,11 @@
                 override-checkout: 2023.2-eol
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
-            # Ignore py310 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: 2023.2-eol
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
-            # Ignore py311 results until the gate is fixed
-            voting: false
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: 2023.2-eol
-        - openstack-tox-py312:
-            nodeset: ubuntu-jammy
-            # Ignore py311 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: 2023.2-eol
@@ -64,8 +51,6 @@
                 override-checkout: 2023.2-eol
         - openstack-tox-py38:
             nodeset: ubuntu-focal
-            # Ignore py38 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: 2023.2-eol
@@ -76,22 +61,11 @@
                 override-checkout: 2023.2-eol
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
-            # Ignore py310 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: 2023.2-eol
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
-            # Ignore py311 results until the gate is fixed
-            voting: false
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: 2023.2-eol
-        - openstack-tox-py312:
-            nodeset: ubuntu-jammy
-            # Ignore py311 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: 2023.2-eol
