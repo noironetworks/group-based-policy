@@ -602,8 +602,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
             net_data = self._make_networks_dict(nets_db, context)
 
             self.type_manager.extend_networks_dict_provider(context, net_data)
-            nets = self._filter_nets_provider(context, net_data, filters)
-        return [db_utils.resource_fields(net, fields) for net in nets]
+        return [db_utils.resource_fields(net, fields) for net in net_data]
 
     def _make_subnets_dict(self, subnets_db, fields=None, context=None):
         subnets = []
