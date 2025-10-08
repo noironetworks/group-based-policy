@@ -18,8 +18,6 @@
                 override-checkout: unmaintained/2023.1
         - openstack-tox-py38:
             nodeset: ubuntu-focal
-            # Ignore py38 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/2023.1
@@ -30,15 +28,11 @@
                 override-checkout: unmaintained/2023.1
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
-            # Ignore py310 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/2023.1
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
-            # Ignore py311 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/2023.1
@@ -57,8 +51,6 @@
                 override-checkout: unmaintained/2023.1
         - openstack-tox-py38:
             nodeset: ubuntu-focal
-            # Ignore py38 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/2023.1
@@ -69,15 +61,11 @@
                 override-checkout: unmaintained/2023.1
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
-            # Ignore py310 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/2023.1
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
-            # Ignore py311 results until the gate is fixed
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/2023.1
