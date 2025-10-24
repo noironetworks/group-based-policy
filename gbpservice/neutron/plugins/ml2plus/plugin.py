@@ -430,7 +430,6 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     # REVISIT(rkukura): Is create_subnetpool_bulk() needed?
 
-    @n_utils.transaction_guard
     @db_api.retry_if_session_inactive()
     def update_subnetpool(self, context, id, subnetpool):
         with db_api.CONTEXT_WRITER.using(context):
