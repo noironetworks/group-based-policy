@@ -77,6 +77,12 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/2024.1
+        - openstack-tox-py313:
+            nodeset: ubuntu-noble
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/2024.1
+            voting: false
         - group-based-policy-dsvm-functional:
             voting: false
         - group-based-policy-dsvm-aim:
@@ -115,3 +121,9 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/2024.1
+        - openstack-tox-py313:
+            nodeset: ubuntu-noble
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/2024.1
+            voting: false
