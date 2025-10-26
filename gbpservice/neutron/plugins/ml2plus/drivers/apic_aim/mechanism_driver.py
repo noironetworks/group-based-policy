@@ -2562,16 +2562,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if ports_to_notify:
             self._add_postcommit_port_notifications(context, ports_to_notify)
 
-    def _remove_router_interface(self, context, router_db, port, subnets):
+    def _remove_router_interface(self, context,
+                                 router_db, port_context, subnets):
         LOG.debug("APIC AIM MD removing subnets %(subnets)s from router "
                   "%(router)s as interface port %(port)s",
-                  {'subnets': subnets, 'router': router_db, 'port': port})
+                  {'subnets': subnets, 'router': router_db,
+                   'port': port_context.current})
 
         session = context.session
         aim_ctx = aim_context.AimContext(session)
 
+        # Router ports with IPv4 addresses can have multiple subnets per port,
+        # whereas router ports with IPv6 addresses will have separate ports per
+        # subnet. Router ports that are IPv4 also won't have the original
+        # context in removal operations.
+        if port_context.original:
+            port = port_context.original
+        else:
+            port = port_context.current
         router_id = router_db.id
-        network_id = port['network_id']
+        network_id = port_context.current['network_id']
         network_db = self.plugin._get_network(context, network_id)
 
         # Find the address_scope(s) for the old interface.
@@ -3618,7 +3628,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 context._plugin_context.elevated(),
                 filters={'id': removed_subnet_ids})
             self._remove_router_interface(
-                context._plugin_context, router_db, context.current, subnets)
+                context._plugin_context, router_db, context, subnets)
 
     def _delete_router_port(self, session, port_id):
         with db_api.CONTEXT_WRITER.using(session):
