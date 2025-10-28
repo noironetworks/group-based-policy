@@ -13,21 +13,29 @@
       jobs:
         - openstack-tox-pep8:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/xena
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/xena
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/xena
         - openstack-tox-py38:
             nodeset: ubuntu-bionic
+            ansible-version: 9
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: unmaintained/xena
+        - openstack-tox-py39:
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/xena
@@ -41,21 +49,29 @@
       jobs:
         - openstack-tox-pep8:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/xena
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/xena
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/xena
         - openstack-tox-py38:
             nodeset: ubuntu-bionic
+            ansible-version: 9
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: unmaintained/xena
+        - openstack-tox-py39:
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/xena
