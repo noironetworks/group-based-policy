@@ -13,16 +13,19 @@
       jobs:
         - openstack-tox-pep8:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: ussuri-eol
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: ussuri-eol
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: ussuri-eol
@@ -36,16 +39,19 @@
       jobs:
         - openstack-tox-pep8:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: ussuri-eol
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: ussuri-eol
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
+            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: ussuri-eol
