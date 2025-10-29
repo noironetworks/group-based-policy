@@ -13949,6 +13949,49 @@ class TestUpdateRouterSubnet(ApicAimTestCase):
             ['external_gateway_info']['external_fixed_ips'][0]['ip_address'],
             fip_sub['cidr'])
 
+    def _test_start_router_add_remove(self, net, sub1, sub2):
+        # create a router with fixed subnet
+        router = self._make_router(
+                    self.fmt, self._tenant_id, 'router1')['router']
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router['id'],
+            {'subnet_id': sub1['id']})
+        self.l3_plugin.add_router_interface(
+            n_context.get_admin_context(), router['id'],
+            {'subnet_id': sub2['id']})
+        info = self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router['id'],
+            {'subnet_id': sub1['id']})
+        self.assertEqual(sub1['id'], info['subnet_ids'][0])
+        info = self.l3_plugin.remove_router_interface(
+            n_context.get_admin_context(), router['id'],
+            {'subnet_id': sub2['id']})
+        self.assertEqual(sub2['id'], info['subnet_ids'][0])
+
+    def test_start_router_ipv4(self):
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+
+        sub1 = self._make_subnet(
+            self.fmt, {'network': net}, '40.40.40.1',
+            '40.40.40.0/24')['subnet']
+        sub2 = self._make_subnet(
+            self.fmt, {'network': net}, '50.50.50.1',
+            '50.50.50.0/24')['subnet']
+        self._test_start_router_add_remove(net, sub1, sub2)
+
+    def test_start_router_ipv6(self):
+        net_resp = self._make_network(self.fmt, 'net1', True)
+        net = net_resp['network']
+
+        sub1 = self._make_subnet(
+            self.fmt, {'network': net}, '2001:db8:0:1::1',
+            '2001:db8:0:1::/64', ip_version=n_constants.IP_VERSION_6)['subnet']
+        sub2 = self._make_subnet(
+            self.fmt, {'network': net}, '2001:db8::1',
+            '2001:db8::/64', ip_version=n_constants.IP_VERSION_6)['subnet']
+        self._test_start_router_add_remove(net, sub1, sub2)
+
 
 class TestExtensionNoNatCidrsScenarios(TestOpflexRpc, ApicAimTestCase):
     def _get_vrfid_from_net(self, net):
