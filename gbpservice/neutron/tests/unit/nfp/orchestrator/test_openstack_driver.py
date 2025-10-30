@@ -10,10 +10,10 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import unittest
 from unittest import mock
 
 from oslo_config import cfg
-import unittest2
 
 from gbpclient.v2_0 import client as gbp_client
 from gbpservice.nfp.orchestrator.openstack import openstack_driver
@@ -27,7 +27,7 @@ cfg.CONF.import_group('nfp_keystone_authtoken',
                       'gbpservice.nfp.orchestrator.modules.__init__')
 
 
-class SampleData(unittest2.TestCase):
+class SampleData(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
         super(SampleData, self).__init__(*args, **kwargs)

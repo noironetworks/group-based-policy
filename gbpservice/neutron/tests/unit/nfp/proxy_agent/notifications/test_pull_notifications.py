@@ -10,12 +10,12 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
+import unittest
 from unittest import mock
 
 from neutron_lib import context as ctx
 from neutron_lib import rpc as n_rpc
 from oslo_config import cfg
-import unittest2
 
 from gbpservice.nfp.proxy_agent.notifications import pull
 
@@ -37,7 +37,7 @@ class TestContext(object):
 """Common class for pull notification tests"""
 
 
-class PullNotificationTestCase(unittest2.TestCase):
+class PullNotificationTestCase(unittest.TestCase):
 
     def setUp(self):
         n_rpc.init(cfg.CONF)
