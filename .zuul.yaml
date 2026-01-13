@@ -15,32 +15,32 @@
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py38:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py312:
             nodeset: ubuntu-noble
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -53,29 +53,29 @@
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py38:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
         - openstack-tox-py312:
             nodeset: ubuntu-noble
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2024.1
+                override-checkout: unmaintained/2024.1
