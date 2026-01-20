@@ -16,25 +16,25 @@
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/victoria
+                override-checkout: victoria-eol
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/victoria
+                override-checkout: victoria-eol
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/victoria
+                override-checkout: victoria-eol
         - openstack-tox-py38:
             nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/victoria
+                override-checkout: victoria-eol
         - legacy-group-based-policy-dsvm-functional:
             voting: false
         - legacy-group-based-policy-dsvm-aim:
@@ -48,22 +48,22 @@
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/victoria
+                override-checkout: victoria-eol
         - openstack-tox-py36:
             nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/victoria
+                override-checkout: victoria-eol
         - openstack-tox-py37:
             nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/victoria
+                override-checkout: victoria-eol
         - openstack-tox-py38:
             nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
-                override-checkout: unmaintained/victoria
+                override-checkout: victoria-eol
