@@ -16,13 +16,6 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/yoga
-        - openstack-tox-py36:
-            voting: false
-            nodeset: ubuntu-bionic
-            ansible-version: 9
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: unmaintained/yoga
         - openstack-tox-py38:
             nodeset: ubuntu-focal
             required-projects:
@@ -48,13 +41,6 @@
       jobs:
         - openstack-tox-pep8:
             nodeset: ubuntu-focal
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: unmaintained/yoga
-        - openstack-tox-py36:
-            voting: false
-            nodeset: ubuntu-bionic
-            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: unmaintained/yoga
