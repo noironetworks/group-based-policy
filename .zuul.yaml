@@ -12,30 +12,26 @@
     check:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-bionic
-            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
         - openstack-tox-py36:
-            nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
         - openstack-tox-py37:
-            nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
         - openstack-tox-py38:
-            nodeset: ubuntu-bionic
-            ansible-version: 9
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
         - openstack-tox-py39:
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
@@ -48,30 +44,26 @@
     gate:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-bionic
-            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
         - openstack-tox-py36:
-            nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
         - openstack-tox-py37:
-            nodeset: ubuntu-bionic
             ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
         - openstack-tox-py38:
-            nodeset: ubuntu-bionic
-            ansible-version: 9
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
         - openstack-tox-py39:
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
                 override-checkout: xena-eol
