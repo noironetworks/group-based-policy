@@ -15,16 +15,6 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: wallaby-eol
-        - openstack-tox-py36:
-            ansible-version: 9
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: wallaby-eol
-        - openstack-tox-py37:
-            ansible-version: 9
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: wallaby-eol
         - openstack-tox-py38:
             nodeset: ubuntu-focal
             required-projects:
@@ -44,16 +34,6 @@
     gate:
       jobs:
         - openstack-tox-pep8:
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: wallaby-eol
-        - openstack-tox-py36:
-            ansible-version: 9
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: wallaby-eol
-        - openstack-tox-py37:
-            ansible-version: 9
             required-projects:
               - name: openstack/requirements
                 override-checkout: wallaby-eol
