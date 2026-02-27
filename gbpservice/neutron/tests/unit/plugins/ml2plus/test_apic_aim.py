@@ -8913,6 +8913,25 @@ class TestExternalConnectivityBase(object):
             mock.ANY, a_ext_net, ['0.0.0.0/0'])
         self._validate()
 
+    def test_external_network_delete_skips_monitored_l3out_resources(self):
+        with db_api.CONTEXT_READER.using(self.db_session):
+            aim_ctx = aim_context.AimContext(self.db_session)
+        monitored_np = aim_resource.L3OutNodeProfile(
+            tenant_name=self.t1_aname, l3out_name='l1',
+            name=md.L3OUT_NODE_PROFILE_NAME, monitored=True)
+        self.aim_mgr.create(aim_ctx, monitored_np, overwrite=True)
+
+        net1 = self._make_ext_network('net1', dn=self.dn_t1_l1_n1)
+
+        self.mock_ns.reset_mock()
+        self._delete('networks', net1['id'])
+        self.mock_ns.delete_l3outside.assert_not_called()
+        self.mock_ns.delete_external_network.assert_called_once_with(
+            mock.ANY,
+            aim_resource.ExternalNetwork(
+                tenant_name=self.t1_aname, l3out_name='l1', name='n1'),
+            cidrs=['0.0.0.0/0'])
+
     def test_unmanaged_external_network_lifecycle(self):
         net1 = self._make_ext_network('net1')
         self.mock_ns.create_l3outside.assert_not_called()
