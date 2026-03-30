@@ -61,6 +61,7 @@ EndpointPortInfo = namedtuple(
      'device_id',
      'device_owner',
      'host',
+     'status',
      'vif_type',
      'vif_details',
      'psec_enabled',
@@ -348,12 +349,18 @@ class ApicRpcHandlerMixin(object):
                     # the host passed to this method (i.e. the
                     # host that requested the details).
                     for port in port_infos[::-1]:
-                        if port.host != host:
+                        if (port.host != host or
+                            port.status != n_constants.PORT_STATUS_ACTIVE):
                             port_infos.remove(port)
                     if len(port_infos) > 1:
                         LOG.info("Multiple ports start with %s in "
                                  "requent_endpoint_details RPC from host %s",
                                  port_id, host)
+                    if len(port_infos) == 0:
+                        LOG.warning("No active ports with %s in "
+                                    "requent_endpoint_details RPC "
+                                    "from host %s",
+                                    port_id, host)
                         return response
                 info['port_info'] = port_info = port_infos[0]
 
@@ -502,6 +509,7 @@ class ApicRpcHandlerMixin(object):
             models_v2.Port.device_id,
             models_v2.Port.device_owner,
             ml2_models.PortBinding.host,
+            ml2_models.PortBinding.status,
             ml2_models.PortBinding.vif_type,
             ml2_models.PortBinding.vif_details,
             psec_models.PortSecurityBinding.port_security_enabled,
