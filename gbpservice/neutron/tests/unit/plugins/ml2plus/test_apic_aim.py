@@ -6060,15 +6060,14 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual('ACTIVE', bindings[0]['status'])
         self.assertEqual('INACTIVE', bindings[1]['status'])
 
-        # Verify that the port is now available on both hosts.
+        # Verify that the port is still only available on the source host.
         rpc_response = self.driver.request_endpoint_details(
             n_context.get_admin_context(), request=request, host='host1')
         self.assertIsNotNone(rpc_response.get('gbp_details'))
         self.assertEqual('host1', rpc_response['gbp_details']['host'])
         rpc_response = self.driver.request_endpoint_details(
             n_context.get_admin_context(), request=request, host='host2')
-        self.assertIsNotNone(rpc_response.get('gbp_details'))
-        self.assertEqual('host2', rpc_response['gbp_details']['host'])
+        self.assertIsNone(rpc_response.get('gbp_details'))
         # Set up live-migration port binding. We first set the "migrating_to"
         # key in the 'profile' of the original binding. At this
         # point, we expect to see two port bindings.
@@ -6091,7 +6090,7 @@ class TestPortBinding(ApicAimTestCase):
         self.assertEqual('INACTIVE', bindings[0]['status'])
         self.assertEqual('ACTIVE', bindings[1]['status'])
 
-        # Verify that port bindings are still available on both hosts.
+        # Verify that port is only available on the target host.
 
         # REVISIT: When this code is included, the test hangs on a SQL call
         # in the upstream ML2 get_bound_port_context method.
@@ -6104,7 +6103,7 @@ class TestPortBinding(ApicAimTestCase):
         self.assertIsNotNone(rpc_response.get('gbp_details'))
         self.assertEqual('host2', rpc_response['gbp_details']['host'])
 
-        # Remove the original binding
+        # Remove the original binding (source host)
         self._delete_port_binding(port_id, 'host1')
         bindings = self._list_port_bindings(port_id,
                                             raw_response=False)['bindings']
