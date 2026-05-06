@@ -18,6 +18,7 @@
 # modules save a reference to the functions being patched
 from gbpservice.neutron.extensions import patch  # noqa
 
+from neutron.api.rpc.agentnotifiers import utils as notifier_utils
 from neutron.common import utils as n_utils
 from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
@@ -91,6 +92,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.type_manager = ml2_managers.TypeManager()
         self.extension_manager = managers.ExtensionManager()
         self.mechanism_manager = managers.MechanismManager()
+        if hasattr(notifier_utils, "RPCNotifierHandler"):
+            self.notifier = notifier_utils.RPCNotifierHandler()
         super(ml2_plugin.Ml2Plugin, self).__init__()
         self.type_manager.initialize()
         self.extension_manager.initialize()
