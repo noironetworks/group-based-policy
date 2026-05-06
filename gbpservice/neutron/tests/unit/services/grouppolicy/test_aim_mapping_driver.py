@@ -2940,9 +2940,6 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
         sg_list.append({'policy-space': 'common',
                         'name': self.mech_driver.apic_system_id +
                         '_DefaultSecurityGroup'})
-        sg_list.append({'policy-space': 'common',
-                        'name': self.mech_driver.apic_system_id +
-                        '_SystemSecurityGroup'})
 
         self.assertEqual(sg_list, mapping['security_group'])
         # Set the right MTU through extra_dhcp_opts
@@ -3484,9 +3481,6 @@ class TestPolicyTarget(AIMBaseTestCase,
         sg_list.append({'policy-space': 'common',
                         'name': self.mech_driver.apic_system_id +
                         '_DefaultSecurityGroup'})
-        sg_list.append({'policy-space': 'common',
-                        'name': self.mech_driver.apic_system_id +
-                        '_SystemSecurityGroup'})
 
         self.assertEqual(sg_list, mapping['security_group'])
         # Set the right MTU through extra_dhcp_opts
