@@ -1205,6 +1205,7 @@ class TestPortChain(TestAIMServiceFunctionChainingBase):
         self._verify_pc_delete(pc)
         # If I also delete the physdom, everything fails
         self.aim_mgr.delete(ctx, self.physdom)
+        ctx.store.db_session.flush()
         pc = self.create_port_chain(port_pair_groups=[ppg['id']],
                                     flow_classifiers=[fc['id']],
                                     expected_res_status=400)
