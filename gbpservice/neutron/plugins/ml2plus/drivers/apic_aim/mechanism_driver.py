@@ -6024,7 +6024,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     host=host)
             LOG.debug('Adding static path %s for EPG %s',
                       static_path, epg)
-            self.aim.create(aim_ctx, static_path)
+            self.aim.create(aim_ctx, static_path, overwrite=True)
 
     def _get_static_ports(self, plugin_context, host, segment,
                           port_context=None):
