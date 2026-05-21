@@ -80,6 +80,8 @@ class NetworkExtensionDb(model_base.BASEV2):
     nested_domain_service_vlan = sa.Column(sa.Integer, nullable=True)
     nested_domain_node_network_vlan = sa.Column(sa.Integer, nullable=True)
     multi_ext_nets = sa.Column(sa.Boolean, default=False, nullable=False)
+    service_network_enable = sa.Column(sa.Boolean, default=False,
+                                       nullable=False)
 
 
 class NetworkExtensionCidrDb(model_base.BASEV2):
@@ -170,10 +172,26 @@ class SubnetExtensionDb(model_base.BASEV2):
     advertised_externally = sa.Column(sa.Boolean)
     shared_between_vrfs = sa.Column(sa.Boolean)
     router_gw_ip_pool = sa.Column(sa.Boolean)
+    service_network_id = sa.Column(sa.String(36))
+    dist_snat_start_port = sa.Column(sa.Integer)
+    dist_snat_end_port = sa.Column(sa.Integer)
+    dist_snat_alloc_size = sa.Column(sa.Integer)
     subnet = orm.relationship(models_v2.Subnet,
                               backref=orm.backref(
                                   'aim_extension_mapping', lazy='joined',
                                   uselist=False, cascade='delete'))
+
+
+class DistSnatMappingDb(model_base.BASEV2):
+
+    __tablename__ = 'apic_aim_dist_snat_mappings'
+
+    snat_ip = sa.Column(sa.String(64), primary_key=True)
+    host_name = sa.Column(sa.String(255), primary_key=True)
+    start_port = sa.Column(sa.Integer, primary_key=True)
+    end_port = sa.Column(sa.Integer, nullable=False)
+    subnet_id = sa.Column(sa.String(36))
+    service_port_id = sa.Column(sa.String(36))
 
 
 class RouterExtensionContractDb(model_base.BASEV2):
@@ -379,6 +397,8 @@ class ExtensionDbMixin(object):
             net_res[cisco_apic.NO_NAT_CIDRS] = [
                 c.cidr for c in db_no_nat_cidrs]
             net_res[cisco_apic.MULTI_EXT_NETS] = db_obj['multi_ext_nets']
+            net_res[cisco_apic.SERVICE_NETWORK_ENABLE] = db_obj[
+                'service_network_enable']
         if net_res.get(cisco_apic.EXTERNAL_NETWORK):
             net_res[cisco_apic.EXTERNAL_CIDRS] = [c.cidr for c in db_cidrs]
         return net_res
@@ -429,6 +449,9 @@ class ExtensionDbMixin(object):
                         cisco_apic.POLICY_ENFORCEMENT_PREF]
             if cisco_apic.MULTI_EXT_NETS in res_dict:
                 db_obj['multi_ext_nets'] = res_dict[cisco_apic.MULTI_EXT_NETS]
+            if cisco_apic.SERVICE_NETWORK_ENABLE in res_dict:
+                db_obj['service_network_enable'] = res_dict[
+                        cisco_apic.SERVICE_NETWORK_ENABLE]
             session.add(db_obj)
 
             if cisco_apic.EXTERNAL_CIDRS in res_dict:
@@ -581,6 +604,14 @@ class ExtensionDbMixin(object):
                                   db_obj['shared_between_vrfs'])
             self._set_if_not_none(result, cisco_apic.ROUTER_GW_IP_POOL,
                                   db_obj['router_gw_ip_pool'])
+            self._set_if_not_none(result, cisco_apic.SERVICE_NETWORK,
+                                  db_obj['service_network_id'])
+            self._set_if_not_none(result, cisco_apic.DIST_SNAT_START_PORT,
+                                  db_obj['dist_snat_start_port'])
+            self._set_if_not_none(result, cisco_apic.DIST_SNAT_END_PORT,
+                                  db_obj['dist_snat_end_port'])
+            self._set_if_not_none(result, cisco_apic.DIST_SNAT_ALLOC_SIZE,
+                                  db_obj['dist_snat_alloc_size'])
         return result
 
     def set_subnet_extn_db(self, session, subnet_id, res_dict):
@@ -611,7 +642,71 @@ class ExtensionDbMixin(object):
         if cisco_apic.ROUTER_GW_IP_POOL in res_dict:
             db_obj['router_gw_ip_pool'] = res_dict[
                                             cisco_apic.ROUTER_GW_IP_POOL]
+        if cisco_apic.SERVICE_NETWORK in res_dict:
+            db_obj['service_network_id'] = res_dict[cisco_apic.SERVICE_NETWORK]
+        if cisco_apic.DIST_SNAT_START_PORT in res_dict:
+            db_obj['dist_snat_start_port'] = res_dict[
+                                            cisco_apic.DIST_SNAT_START_PORT]
+        if cisco_apic.DIST_SNAT_END_PORT in res_dict:
+            db_obj['dist_snat_end_port'] = res_dict[
+                                            cisco_apic.DIST_SNAT_END_PORT]
+        if cisco_apic.DIST_SNAT_ALLOC_SIZE in res_dict:
+            db_obj['dist_snat_alloc_size'] = res_dict[
+                                            cisco_apic.DIST_SNAT_ALLOC_SIZE]
         session.add(db_obj)
+
+    def get_dist_snat_mappings(self, session, snat_ip=None, host_name=None,
+                               start_port=None, subnet_id=None,
+                               service_port_id=None):
+        query = session.query(DistSnatMappingDb)
+        if snat_ip is not None:
+            query = query.filter_by(snat_ip=snat_ip)
+        if host_name is not None:
+            query = query.filter_by(host_name=host_name)
+        if start_port is not None:
+            query = query.filter_by(start_port=start_port)
+        if subnet_id is not None:
+            query = query.filter_by(subnet_id=subnet_id)
+        if service_port_id is not None:
+            query = query.filter_by(service_port_id=service_port_id)
+        return query.all()
+
+    def set_dist_snat_mapping(self, session, snat_ip, host_name, start_port,
+                              end_port, subnet_id=None, service_port_id=None):
+        db_obj = session.query(DistSnatMappingDb).filter_by(
+            snat_ip=snat_ip, host_name=host_name,
+            start_port=start_port).first()
+        db_obj = db_obj or DistSnatMappingDb(
+            snat_ip=snat_ip, host_name=host_name, start_port=start_port)
+        db_obj['end_port'] = end_port
+        db_obj['subnet_id'] = subnet_id
+        db_obj['service_port_id'] = service_port_id
+        session.add(db_obj)
+        return db_obj
+
+    def delete_dist_snat_mappings(self, session, snat_ip=None, host_name=None,
+                                  start_port=None, subnet_id=None,
+                                  service_port_id=None):
+        query = session.query(DistSnatMappingDb)
+        has_filter = False
+        if snat_ip is not None:
+            query = query.filter_by(snat_ip=snat_ip)
+            has_filter = True
+        if host_name is not None:
+            query = query.filter_by(host_name=host_name)
+            has_filter = True
+        if start_port is not None:
+            query = query.filter_by(start_port=start_port)
+            has_filter = True
+        if subnet_id is not None:
+            query = query.filter_by(subnet_id=subnet_id)
+            has_filter = True
+        if service_port_id is not None:
+            query = query.filter_by(service_port_id=service_port_id)
+            has_filter = True
+        if not has_filter:
+            return 0
+        return query.delete(synchronize_session=False)
 
     def get_router_extn_db(self, session, router_id):
         query = BAKERY(lambda s: s.query(
