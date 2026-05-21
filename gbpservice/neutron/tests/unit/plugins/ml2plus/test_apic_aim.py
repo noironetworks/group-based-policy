@@ -135,6 +135,11 @@ EPG_SUBNET = 'apic:epg_subnet'
 ADVERTISED_EXTERNALLY = 'apic:advertised_externally'
 SHARED_BETWEEN_VRFS = 'apic:shared_between_vrfs'
 ROUTER_GW_IP_POOL = 'apic:router_gw_ip_pool'
+SERVICE_NETWORK_ENABLE = 'apic:service_network_enable'
+SERVICE_NETWORK = 'apic:service_network'
+DIST_SNAT_START_PORT = 'apic:dist_snat_start_port'
+DIST_SNAT_END_PORT = 'apic:dist_snat_end_port'
+DIST_SNAT_ALLOC_SIZE = 'apic:dist_snat_alloc_size'
 
 
 def sort_if_list(attr):
@@ -8208,6 +8213,66 @@ class TestExtensionAttributes(ApicAimTestCase):
         with db_api.CONTEXT_READER.using(ctx):
             self.assertFalse(extn.get_subnet_extn_db(ctx.session,
                                                      sbv_subnet['id']))
+
+    def test_dist_snat_extension_db_state(self):
+        ctx = n_context.get_admin_context()
+        extn = extn_db.ExtensionDbMixin()
+
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.0.1',
+            '10.0.0.0/24')['subnet']
+
+        with db_api.CONTEXT_WRITER.using(ctx):
+            extn.set_network_extn_db(
+                ctx.session, net['id'], {SERVICE_NETWORK_ENABLE: True})
+            extn.set_subnet_extn_db(
+                ctx.session, subnet['id'],
+                {SERVICE_NETWORK: net['id'],
+                 DIST_SNAT_START_PORT: 5000,
+                 DIST_SNAT_END_PORT: 65000,
+                 DIST_SNAT_ALLOC_SIZE: 500})
+
+        with db_api.CONTEXT_READER.using(ctx):
+            net_ext = extn.get_network_extn_db(ctx.session, net['id'])
+            self.assertTrue(net_ext[SERVICE_NETWORK_ENABLE])
+
+            subnet_ext = extn.get_subnet_extn_db(ctx.session, subnet['id'])
+            self.assertEqual(net['id'], subnet_ext[SERVICE_NETWORK])
+            self.assertEqual(5000, subnet_ext[DIST_SNAT_START_PORT])
+            self.assertEqual(65000, subnet_ext[DIST_SNAT_END_PORT])
+            self.assertEqual(500, subnet_ext[DIST_SNAT_ALLOC_SIZE])
+
+    def test_dist_snat_mapping_db_state(self):
+        ctx = n_context.get_admin_context()
+        extn = extn_db.ExtensionDbMixin()
+
+        with db_api.CONTEXT_WRITER.using(ctx):
+            extn.set_dist_snat_mapping(
+                ctx.session, '66.66.66.7', 'host-a', 5000, 5499,
+                subnet_id='subnet-1', service_port_id='port-1')
+            extn.set_dist_snat_mapping(
+                ctx.session, '66.66.66.7', 'host-b', 5500, 5999,
+                subnet_id='subnet-1', service_port_id='port-2')
+
+        with db_api.CONTEXT_READER.using(ctx):
+            mappings = extn.get_dist_snat_mappings(
+                ctx.session, snat_ip='66.66.66.7')
+            self.assertEqual(
+                [('host-a', 5000, 5499, 'subnet-1', 'port-1'),
+                 ('host-b', 5500, 5999, 'subnet-1', 'port-2')],
+                sorted((m.host_name, m.start_port, m.end_port,
+                        m.subnet_id, m.service_port_id)
+                       for m in mappings))
+
+        with db_api.CONTEXT_WRITER.using(ctx):
+            extn.delete_dist_snat_mappings(
+                ctx.session, snat_ip='66.66.66.7', host_name='host-a')
+
+        with db_api.CONTEXT_READER.using(ctx):
+            mappings = extn.get_dist_snat_mappings(
+                ctx.session, snat_ip='66.66.66.7')
+            self.assertEqual(['host-b'], [m.host_name for m in mappings])
 
     def test_router_lifecycle(self):
         ctx = n_context.get_admin_context()
