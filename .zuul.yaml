@@ -48,40 +48,34 @@
     check:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-focal
+            nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
-        - openstack-tox-py38:
-            nodeset: ubuntu-focal
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py312:
             nodeset: ubuntu-noble
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py313:
-            voting: false
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - group-based-policy-dsvm-functional:
             voting: false
         - group-based-policy-dsvm-aim:
@@ -91,37 +85,31 @@
     gate:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-focal
+            nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
-        - openstack-tox-py38:
-            nodeset: ubuntu-focal
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py39:
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py310:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py312:
             nodeset: ubuntu-noble
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
         - openstack-tox-py313:
-            voting: false
             required-projects:
               - name: openstack/requirements
-                override-checkout: 2024.2-eol
+                override-checkout: stable/2025.1
