@@ -1231,8 +1231,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         session, l3out.dn))
                 other_nets.discard(current['id'])
                 if not other_nets:
-                    ns.delete_l3outside(aim_ctx, l3out, epg_name=current['id'],
-                                cidrs=cidrs_to_delete)
+                    if self._has_monitored_l3outside_resources(aim_ctx, l3out):
+                        LOG.info("Skipping delete of L3Outside %s because "
+                                 "monitored resources exist under it",
+                                 l3out.dn)
+                    else:
+                        ns.delete_l3outside(
+                            aim_ctx, l3out, epg_name=current['id'],
+                            cidrs=cidrs_to_delete)
             else:
                 # REVISIT: lock_update=True is needed to handle races. Find
                 # alternative solutions since Neutron discourages using such
@@ -1251,8 +1257,13 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                         session, l3out.dn))
                 other_nets.discard(current['id'])
                 if not other_nets:
-                    ns.delete_l3outside(aim_ctx, l3out,
-                                        cidrs=cidrs_to_delete)
+                    if self._has_monitored_l3outside_resources(aim_ctx, l3out):
+                        LOG.info("Skipping delete of L3Outside %s because "
+                                 "monitored resources exist under it",
+                                 l3out.dn)
+                    else:
+                        ns.delete_l3outside(aim_ctx, l3out,
+                                            cidrs=cidrs_to_delete)
 
         elif self._is_svi(current):
             l3out, ext_net, _ = self._get_aim_external_objects(current)
@@ -5057,6 +5068,28 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not self._is_external(network):
             return None, None, None
         return self._get_aim_external_objects(network)
+
+    def _has_monitored_l3outside_resources(self, aim_ctx, l3out):
+        actual_l3out = self.aim.get(aim_ctx, l3out)
+        if actual_l3out and actual_l3out.monitored:
+            return True
+
+        resource_classes = [
+            aim_resource.L3OutNodeProfile,
+            aim_resource.L3OutNode,
+            aim_resource.L3OutStaticRoute,
+            aim_resource.L3OutInterfaceProfile,
+            aim_resource.L3OutInterface,
+            aim_resource.L3OutInterfaceBgpPeerP]
+        for resource_class in resource_classes:
+            resources = self.aim.find(
+                aim_ctx, resource_class,
+                tenant_name=l3out.tenant_name,
+                l3out_name=l3out.name,
+                monitored=True)
+            if resources:
+                return True
+        return False
 
     def _get_aim_external_objects_db(self, session, network_db):
         extn_info = self.get_network_extn_db(session, network_db.id)
