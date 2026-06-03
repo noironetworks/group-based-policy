@@ -23,7 +23,7 @@ from neutron.api.rpc.callbacks.producer import registry
 from neutron import policy
 from neutron.services.trunk.rpc import server as trunk_server
 from neutron.tests.unit.api import test_extensions
-from neutron.tests.unit.db import test_db_base_plugin_v2
+from neutron.tests.common import test_db_base_plugin_v2
 from neutron_lib import context
 from neutron_lib.plugins import constants
 from neutron_lib.plugins import directory

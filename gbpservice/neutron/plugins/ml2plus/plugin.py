@@ -104,7 +104,6 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
 
     def start_rpc_listeners(self):
         servers = super(Ml2PlusPlugin, self).start_rpc_listeners()
-        servers.extend(self.mechanism_manager.start_rpc_listeners())
         return servers
 
     # REVISIT: Handle directly in mechanism driver?

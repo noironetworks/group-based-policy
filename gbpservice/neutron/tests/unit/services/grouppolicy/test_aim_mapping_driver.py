@@ -28,7 +28,7 @@ from neutron.db.models import securitygroup as sg_models
 from neutron.db.port_security import models as psec_models
 from neutron.extensions import dns
 from neutron.objects.qos import policy as policy_object
-from neutron.tests.unit.db import test_db_base_plugin_v2 as test_plugin
+from neutron.tests.common import test_db_base_plugin_v2 as test_plugin
 from neutron.tests.unit.extensions import test_address_scope
 from neutron.tests.unit.extensions import test_securitygroup
 from neutron_lib.api import extensions
