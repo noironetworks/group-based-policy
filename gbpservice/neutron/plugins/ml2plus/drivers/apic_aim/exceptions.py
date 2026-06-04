@@ -157,3 +157,33 @@ class InvalidNetworkForErspanSession(exceptions.BadRequest):
 
 class SnatPoolCannotBeUsedForGatewayIp(exceptions.BadRequest):
     message = _("Snat only subnet cannot be used to assign network gateway.")
+
+
+class ServiceNetworkMustBeExternalVlanProvider(exceptions.BadRequest):
+    message = _("Network %(network_id)s can be marked as service network only "
+                "when it is an external VLAN provider network.")
+
+
+class ServiceNetworkInUse(exceptions.BadRequest):
+    message = _("Cannot delete service network %(network_id)s because it is "
+                "referenced by distributed SNAT subnet %(subnet_id)s.")
+
+
+class DistributedSnatSubnetInUse(exceptions.BadRequest):
+    message = _("Cannot disable distributed SNAT on subnet %(subnet_id)s "
+                "while router gateway ports still use it.")
+
+
+class ServiceNetworkSnatHostPoolConflict(exceptions.BadRequest):
+    message = _("apic:service_network and apic:snat_host_pool are mutually "
+                "exclusive.")
+
+
+class ServiceNetworkReferenceInvalid(exceptions.BadRequest):
+    message = _("Network %(network_id)s is not a valid service network.")
+
+
+class DirectSnatModeTransitionNotSupported(exceptions.BadRequest):
+    message = _("Cannot directly transition subnet %(subnet_id)s between "
+                "host-pool SNAT and distributed SNAT. Disable one mode "
+                "first, then enable the other.")
