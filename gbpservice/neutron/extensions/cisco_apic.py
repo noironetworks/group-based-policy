@@ -134,6 +134,12 @@ def _validate_erspan_flow_id(data, key_specs=None):
     return msg
 
 
+def _validate_non_negative_or_none(data, key_specs=None):
+    if data is None:
+        return
+    return valid.validate_non_negative(data)
+
+
 def _validate_erspan_configs(data, valid_values=None):
     """Validate a list of unique ERSPAN configurations.
 
@@ -230,6 +236,7 @@ valid.validators['type:apic_vlan_range_list'] = functools.partial(
 valid.validators['type:dict_or_string'] = _validate_dict_or_string
 valid.validators['type:apic_erspan_flow_id'] = _validate_erspan_flow_id
 valid.validators['type:apic_erspan_configs'] = _validate_erspan_configs
+valid.validators['type:non_negative_or_none'] = _validate_non_negative_or_none
 
 
 APIC_ATTRIBUTES = {
@@ -264,6 +271,13 @@ PORT_ATTRIBUTES = {
 }
 
 NET_ATTRIBUTES = {
+    SERVICE_NETWORK_ENABLE: {
+        # Whether this external VLAN provider network can be used as
+        # distributed SNAT service network.
+        'allow_post': True, 'allow_put': False,
+        'is_visible': True, 'default': False,
+        'convert_to': conv.convert_to_boolean,
+    },
     SVI: {
         'allow_post': True, 'allow_put': False,
         'is_visible': True, 'default': False,
@@ -436,6 +450,27 @@ EXT_SUBNET_ATTRIBUTES = {
         'allow_post': True, 'allow_put': True,
         'is_visible': True, 'default': False,
         'convert_to': conv.convert_to_boolean,
+    },
+    SERVICE_NETWORK: {
+        # Service network id used for distributed SNAT.
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': '',
+        'validate': {'type:string': None},
+    },
+    DIST_SNAT_START_PORT: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'validate': {'type:non_negative_or_none': None},
+    },
+    DIST_SNAT_END_PORT: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'validate': {'type:non_negative_or_none': None},
+    },
+    DIST_SNAT_ALLOC_SIZE: {
+        'allow_post': True, 'allow_put': True,
+        'is_visible': True, 'default': None,
+        'validate': {'type:non_negative_or_none': None},
     }
 }
 
