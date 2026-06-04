@@ -819,6 +819,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         wanted_epg_name = current['id'] if multi_ext_nets_enb else None
         is_svi = self._is_svi(current)
 
+        if current.get(cisco_apic.SERVICE_NETWORK_ENABLE):
+            self._validate_service_network_network(current)
+
         if ((current[cisco_apic.EXTRA_PROVIDED_CONTRACTS] or
              current[cisco_apic.EXTRA_CONSUMED_CONTRACTS]) and
             (is_ext or is_svi)):
@@ -1210,6 +1213,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
 
+        refs = self._get_service_network_references(session, current['id'])
+        if refs:
+            raise exceptions.ServiceNetworkInUse(
+                network_id=current['id'], subnet_id=refs[0])
+
         if self._is_external(current):
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
             if not ext_net:
@@ -1526,6 +1534,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_id = current['network_id']
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
+        self._validate_subnet_snat_mode(
+            context._plugin_context, current,
+            snat_pool=current.get(cisco_apic.SNAT_HOST_POOL, False),
+            service_network=current.get(cisco_apic.SERVICE_NETWORK))
 
         wanted_epg_name = self._determine_epg_name(
             network_db.aim_extension_mapping.multi_ext_nets,
@@ -1643,6 +1655,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_id = current['network_id']
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
+        self._validate_subnet_snat_mode(
+            context._plugin_context, current,
+            snat_pool=current.get(cisco_apic.SNAT_HOST_POOL, False),
+            service_network=current.get(cisco_apic.SERVICE_NETWORK),
+            original_snat_pool=original.get(cisco_apic.SNAT_HOST_POOL, False),
+            original_service_network=original.get(cisco_apic.SERVICE_NETWORK))
 
         wanted_epg_name = self._determine_epg_name(
             network_db.aim_extension_mapping.multi_ext_nets,
@@ -6735,6 +6753,73 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                                         session, sub_ids)
         self._add_postcommit_port_notifications(
             plugin_context, affected_port_ids)
+
+    def _validate_service_network_network(self, network):
+        if (not self._is_external(network) or
+                network.get('provider:network_type') !=
+                n_constants.TYPE_VLAN or
+                not network.get('provider:physical_network')):
+            raise exceptions.ServiceNetworkMustBeExternalVlanProvider(
+                network_id=network['id'])
+
+    def _get_service_network_references(self, session, network_id):
+        extn_db_sn = extension_db.SubnetExtensionDb
+        query = BAKERY(lambda s: s.query(extn_db_sn.subnet_id))
+        query += lambda q: q.filter(
+            extn_db_sn.service_network_id == sa.bindparam('network_id'))
+        refs = query(session).params(network_id=network_id).all()
+        return [r[0] for r in refs]
+
+    def _subnet_has_router_gateway_port(self, session, subnet_id):
+        query = BAKERY(lambda s: s.query(models_v2.Port.id))
+        query += lambda q: q.join(
+            models_v2.IPAllocation,
+            models_v2.IPAllocation.port_id == models_v2.Port.id)
+        query += lambda q: q.filter(
+            models_v2.IPAllocation.subnet_id == sa.bindparam('subnet_id'),
+            models_v2.Port.device_owner == n_constants.DEVICE_OWNER_ROUTER_GW)
+        return query(session).params(subnet_id=subnet_id).first()
+
+    def _validate_subnet_snat_mode(self, plugin_context, subnet,
+                                   snat_pool, service_network,
+                                   original_snat_pool=None,
+                                   original_service_network=None):
+        service_network = service_network or ''
+        dist_snat_enabled = bool(service_network)
+
+        if snat_pool and dist_snat_enabled:
+            raise exceptions.ServiceNetworkSnatHostPoolConflict()
+
+        if dist_snat_enabled:
+            try:
+                service_net = self.plugin.get_network(
+                    plugin_context.elevated(), service_network)
+            except n_exceptions.NetworkNotFound:
+                raise exceptions.ServiceNetworkReferenceInvalid(
+                    network_id=service_network)
+            if not service_net.get(cisco_apic.SERVICE_NETWORK_ENABLE):
+                raise exceptions.ServiceNetworkReferenceInvalid(
+                    network_id=service_network)
+            self._validate_service_network_network(service_net)
+
+        if original_snat_pool is None and original_service_network is None:
+            return
+
+        original_service_network = original_service_network or ''
+        original_dist_snat_enabled = bool(original_service_network)
+
+        if ((original_snat_pool and dist_snat_enabled and
+                not original_dist_snat_enabled) or
+                (original_dist_snat_enabled and snat_pool and
+                 not original_snat_pool)):
+            raise exceptions.DirectSnatModeTransitionNotSupported(
+                subnet_id=subnet['id'])
+
+        if (original_dist_snat_enabled and not dist_snat_enabled and
+                self._subnet_has_router_gateway_port(plugin_context.session,
+                                                     subnet['id'])):
+            raise exceptions.DistributedSnatSubnetInUse(
+                subnet_id=subnet['id'])
 
     def _get_router_ids_from_exteral_net(self, session, network_id):
         query = BAKERY(lambda s: s.query(
