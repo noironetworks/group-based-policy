@@ -143,6 +143,8 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     cisco_apic.BGP: is_bgp_enabled,
                     cisco_apic.BGP_TYPE: bgp_type,
                     cisco_apic.BGP_ASN: asn,
+                    cisco_apic.SERVICE_NETWORK_ENABLE:
+                    data.get(cisco_apic.SERVICE_NETWORK_ENABLE, False),
                     cisco_apic.NESTED_DOMAIN_NAME:
                     data.get(cisco_apic.NESTED_DOMAIN_NAME),
                     cisco_apic.NESTED_DOMAIN_TYPE:
@@ -284,6 +286,14 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 res_dict.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
             result[cisco_apic.ROUTER_GW_IP_POOL] = (
                 res_dict.get(cisco_apic.ROUTER_GW_IP_POOL, False))
+            result[cisco_apic.SERVICE_NETWORK] = (
+                res_dict.get(cisco_apic.SERVICE_NETWORK, ''))
+            result[cisco_apic.DIST_SNAT_START_PORT] = (
+                res_dict.get(cisco_apic.DIST_SNAT_START_PORT))
+            result[cisco_apic.DIST_SNAT_END_PORT] = (
+                res_dict.get(cisco_apic.DIST_SNAT_END_PORT))
+            result[cisco_apic.DIST_SNAT_ALLOC_SIZE] = (
+                res_dict.get(cisco_apic.DIST_SNAT_ALLOC_SIZE))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -311,6 +321,14 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     res_dict.get(cisco_apic.SHARED_BETWEEN_VRFS, False))
                 result[cisco_apic.ROUTER_GW_IP_POOL] = (
                     res_dict.get(cisco_apic.ROUTER_GW_IP_POOL, False))
+                result[cisco_apic.SERVICE_NETWORK] = (
+                    res_dict.get(cisco_apic.SERVICE_NETWORK, ''))
+                result[cisco_apic.DIST_SNAT_START_PORT] = (
+                    res_dict.get(cisco_apic.DIST_SNAT_START_PORT))
+                result[cisco_apic.DIST_SNAT_END_PORT] = (
+                    res_dict.get(cisco_apic.DIST_SNAT_END_PORT))
+                result[cisco_apic.DIST_SNAT_ALLOC_SIZE] = (
+                    res_dict.get(cisco_apic.DIST_SNAT_ALLOC_SIZE))
         except Exception as e:
             with excutils.save_and_reraise_exception():
                 if db_api.is_retriable(e):
@@ -333,7 +351,15 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                     cisco_apic.SHARED_BETWEEN_VRFS:
                     data.get(cisco_apic.SHARED_BETWEEN_VRFS, False),
                     cisco_apic.ROUTER_GW_IP_POOL:
-                    data.get(cisco_apic.ROUTER_GW_IP_POOL, False)}
+                    data.get(cisco_apic.ROUTER_GW_IP_POOL, False),
+                    cisco_apic.SERVICE_NETWORK:
+                    data.get(cisco_apic.SERVICE_NETWORK, ''),
+                    cisco_apic.DIST_SNAT_START_PORT:
+                    data.get(cisco_apic.DIST_SNAT_START_PORT),
+                    cisco_apic.DIST_SNAT_END_PORT:
+                    data.get(cisco_apic.DIST_SNAT_END_PORT),
+                    cisco_apic.DIST_SNAT_ALLOC_SIZE:
+                    data.get(cisco_apic.DIST_SNAT_ALLOC_SIZE)}
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
         result.update(res_dict)
@@ -343,7 +369,11 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
                 cisco_apic.SNAT_SUBNET_ONLY not in data and
                 cisco_apic.ADVERTISED_EXTERNALLY not in data and
                 cisco_apic.SHARED_BETWEEN_VRFS not in data and
-                cisco_apic.ROUTER_GW_IP_POOL not in data):
+            cisco_apic.ROUTER_GW_IP_POOL not in data and
+            cisco_apic.SERVICE_NETWORK not in data and
+            cisco_apic.DIST_SNAT_START_PORT not in data and
+            cisco_apic.DIST_SNAT_END_PORT not in data and
+            cisco_apic.DIST_SNAT_ALLOC_SIZE not in data):
             return
 
         res_dict = {}
@@ -366,6 +396,22 @@ class ApicExtensionDriver(api_plus.ExtensionDriver,
         if cisco_apic.ROUTER_GW_IP_POOL in data:
             res_dict.update({cisco_apic.ROUTER_GW_IP_POOL:
                              data[cisco_apic.ROUTER_GW_IP_POOL]})
+
+        if cisco_apic.SERVICE_NETWORK in data:
+            res_dict.update({cisco_apic.SERVICE_NETWORK:
+                             data[cisco_apic.SERVICE_NETWORK]})
+
+        if cisco_apic.DIST_SNAT_START_PORT in data:
+            res_dict.update({cisco_apic.DIST_SNAT_START_PORT:
+                             data[cisco_apic.DIST_SNAT_START_PORT]})
+
+        if cisco_apic.DIST_SNAT_END_PORT in data:
+            res_dict.update({cisco_apic.DIST_SNAT_END_PORT:
+                             data[cisco_apic.DIST_SNAT_END_PORT]})
+
+        if cisco_apic.DIST_SNAT_ALLOC_SIZE in data:
+            res_dict.update({cisco_apic.DIST_SNAT_ALLOC_SIZE:
+                             data[cisco_apic.DIST_SNAT_ALLOC_SIZE]})
 
         self.set_subnet_extn_db(plugin_context.session, result['id'],
                                 res_dict)
