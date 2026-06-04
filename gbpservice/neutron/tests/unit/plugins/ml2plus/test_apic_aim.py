@@ -382,6 +382,11 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                                      BGP, BGP_TYPE, ASN,
                                      'provider:network_type',
                                      'apic:multi_ext_nets',
+                                     SERVICE_NETWORK_ENABLE,
+                                     SERVICE_NETWORK,
+                                     DIST_SNAT_START_PORT,
+                                     DIST_SNAT_END_PORT,
+                                     DIST_SNAT_ALLOC_SIZE,
                                      ADVERTISED_EXTERNALLY,
                                      SHARED_BETWEEN_VRFS,
                                      ROUTER_GW_IP_POOL
@@ -8274,6 +8279,148 @@ class TestExtensionAttributes(ApicAimTestCase):
             mappings = extn.get_dist_snat_mappings(
                 ctx.session, snat_ip='66.66.66.7')
             self.assertEqual(['host-b'], [m.host_name for m in mappings])
+
+    def _make_service_network(self, name='svc-valid'):
+        return self._make_network(
+            self.fmt, name, True, as_admin=True,
+            arg_list=self.extension_attributes + (
+                'provider:physical_network',),
+            **{'router:external': True,
+               'provider:network_type': 'vlan',
+               'provider:physical_network': 'physnet1',
+               SERVICE_NETWORK_ENABLE: True})['network']
+
+    def test_service_network_validation_and_lifecycle(self):
+        # Network must be external VLAN provider
+        resp = self._create_network(
+            self.fmt, 'svc-invalid', True, as_admin=True,
+            arg_list=self.extension_attributes,
+            **{SERVICE_NETWORK_ENABLE: True})
+        self.assertEqual(400, resp.status_code)
+        err = self.deserialize(self.fmt, resp)
+        self.assertIn('external VLAN provider network',
+                      err['NeutronError']['message'])
+
+        # Create valid service network for remaining tests
+        svc_net = self._make_service_network('svc-lifecycle')
+
+        # Service network enable is create-only
+        req = self.new_update_request(
+            'networks', {'network': {SERVICE_NETWORK_ENABLE: False}},
+            svc_net['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_code)
+        err = self.deserialize(self.fmt, resp)
+        self.assertIn('read-only attribute apic:service_network_enable',
+                      err['NeutronError']['message'])
+        svc_net = self._show('networks', svc_net['id'])['network']
+        self.assertTrue(svc_net[SERVICE_NETWORK_ENABLE])
+
+        # Cannot delete service network while referenced by subnets
+        ext_net = self._make_ext_network('ext-net-lifecycle',
+                                         dn=self.dn_t1_l1_n1)
+        self._create_subnet_with_extension(
+            self.fmt, ext_net, '10.30.0.1', '10.30.0.0/24',
+            **{SERVICE_NETWORK: svc_net['id']})
+        req = self.new_delete_request('networks', svc_net['id'])
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_code)
+        err = self.deserialize(self.fmt, resp)
+        self.assertIn('Cannot delete service network',
+                      err['NeutronError']['message'])
+        self._show('networks', svc_net['id'])
+
+    def test_subnet_snat_mode_constraints(self):
+        # Setup: Create service network and external network
+        svc_net = self._make_service_network('svc-subnet-constraints')
+        ext_net = self._make_ext_network('ext-net-subnet-constraints',
+                                         dn=self.dn_t1_l1_n1)
+
+        # Cannot disable distributed SNAT while router uses subnet
+        dist_subnet = self._create_subnet_with_extension(
+            self.fmt, ext_net, '10.31.0.1', '10.31.0.0/24',
+            **{SERVICE_NETWORK: svc_net['id']})['subnet']
+
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'dist-snat-rtr',
+            external_gateway_info={
+                'network_id': ext_net['id'],
+                'external_fixed_ips': [{'subnet_id': dist_subnet['id']}],
+            }, as_admin=True)['router']
+        self.assertIsNotNone(router)
+
+        req = self.new_update_request(
+            'subnets', {'subnet': {SERVICE_NETWORK: ''}},
+            dist_subnet['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_code)
+        err = self.deserialize(self.fmt, resp)
+        self.assertIn('Cannot disable distributed SNAT',
+                      err['NeutronError']['message'])
+        dist_subnet = self._show('subnets', dist_subnet['id'])['subnet']
+        self.assertEqual(svc_net['id'], dist_subnet[SERVICE_NETWORK])
+
+        # Reject direct transitions between host-pool and dist SNAT
+        host_pool_subnet = self._create_subnet_with_extension(
+            self.fmt, ext_net, '10.40.0.1', '10.40.0.0/24',
+            **{SNAT_POOL: True})['subnet']
+        req = self.new_update_request(
+            'subnets',
+            {'subnet': {SNAT_POOL: False, SERVICE_NETWORK: svc_net['id']}},
+            host_pool_subnet['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_code)
+        err = self.deserialize(self.fmt, resp)
+        self.assertIn('Cannot directly transition subnet',
+                      err['NeutronError']['message'])
+        host_pool_subnet = self._show(
+            'subnets', host_pool_subnet['id'])['subnet']
+        self.assertTrue(host_pool_subnet[SNAT_POOL])
+        self.assertEqual('', host_pool_subnet[SERVICE_NETWORK])
+
+        dist_subnet2 = self._create_subnet_with_extension(
+            self.fmt, ext_net, '10.41.0.1', '10.41.0.0/24',
+            **{SERVICE_NETWORK: svc_net['id']})['subnet']
+        req = self.new_update_request(
+            'subnets',
+            {'subnet': {SERVICE_NETWORK: '', SNAT_POOL: True}},
+            dist_subnet2['id'], self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_code)
+        err = self.deserialize(self.fmt, resp)
+        self.assertIn('Cannot directly transition subnet',
+                      err['NeutronError']['message'])
+        dist_subnet2 = self._show('subnets', dist_subnet2['id'])['subnet']
+        self.assertEqual(svc_net['id'], dist_subnet2[SERVICE_NETWORK])
+        self.assertFalse(dist_subnet2[SNAT_POOL])
+
+        # Keep apic:service_network mutually exclusive with apic:snat_host_pool
+        subnet_data = {'subnet': {'cidr': '10.10.0.0/24',
+                                  'ip_version': 4,
+                                  'network_id': ext_net['id'],
+                                  'tenant_id': self._tenant_id,
+                                  SNAT_POOL: True,
+                                  SERVICE_NETWORK: svc_net['id']}}
+        req = self.new_create_request('subnets', subnet_data, self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_code)
+        err = self.deserialize(self.fmt, resp)
+        self.assertIn('mutually exclusive', err['NeutronError']['message'])
+
+        # Service network reference must be enabled
+        not_service_net = self._make_ext_network('not-service',
+                                                 dn=self.dn_t1_l2_n2)
+        subnet_data = {'subnet': {'cidr': '10.20.0.0/24',
+                                  'ip_version': 4,
+                                  'network_id': ext_net['id'],
+                                  'tenant_id': self._tenant_id,
+                                  SERVICE_NETWORK: not_service_net['id']}}
+        req = self.new_create_request('subnets', subnet_data, self.fmt)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_code)
+        err = self.deserialize(self.fmt, resp)
+        self.assertIn('not a valid service network',
+                      err['NeutronError']['message'])
 
     def test_router_lifecycle(self):
         ctx = n_context.get_admin_context()
