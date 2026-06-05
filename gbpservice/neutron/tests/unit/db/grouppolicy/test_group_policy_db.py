@@ -91,10 +91,12 @@ class ApiManagerMixin(object):
             defaults.update(kwargs)
         except AttributeError:
             defaults = kwargs
-        data = {type: {'tenant_id': self._tenant_id}}
+        project_id = kwargs.get('project_id', kwargs.get('tenant_id',
+                                                        self._tenant_id))
+        data = {type: {'project_id': project_id}}
         data[type].update(defaults)
         req = self.new_create_request(plural, data, self.fmt,
-                tenant_id=kwargs.get('tenant_id', self._tenant_id),
+                project_id=project_id,
                 as_admin=is_admin_context)
         res = req.get_response(self.ext_api)
         if expected_res_status:
@@ -110,10 +112,11 @@ class ApiManagerMixin(object):
         plural = cm.get_resource_plural(type)
         type = type.split('/')[-1]
         data = {type: kwargs}
-        tenant_id = kwargs.pop('tenant_id', self._tenant_id)
+        tenant_id = kwargs.pop('project_id', kwargs.pop('tenant_id',
+                                self._tenant_id))
         # Create PT with bound port
         req = self.new_update_request(plural, data, id, self.fmt,
-                tenant_id=tenant_id, as_admin=is_admin_context)
+                project_id=tenant_id, as_admin=is_admin_context)
         res = req.get_response(api or self.ext_api)
         if expected_res_status:
             self.assertEqual(expected_res_status, res.status_int)
@@ -126,7 +129,8 @@ class ApiManagerMixin(object):
                        deserialize=True):
 
         req = self.new_show_request(plural, id, fmt=self.fmt,
-                tenant_id='' or self._tenant_id, as_admin=is_admin_context)
+            project_id=tenant_id or self._tenant_id,
+            as_admin=is_admin_context)
         res = req.get_response(self.ext_api)
 
         if expected_res_status:
@@ -360,6 +364,9 @@ class GroupPolicyDbTestCase(GroupPolicyDBTestBase,
             plugin=core_plugin, ext_mgr=ext_mgr,
             service_plugins=service_plugins
         )
+        # Neutron migrated from tenant_id to project_id;
+        # create alias for compatibility
+        self._tenant_id = self._project_id
         test_policy_file = ETCDIR + "/test-policy.json"
         policy.refresh(policy_file=test_policy_file)
         self.plugin = importutils.import_object(gp_plugin)
@@ -600,7 +607,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
 
         apg = self._show_resource(apg_id, 'application_policy_groups')[
             'application_policy_group']
-        self.assertItemsEqual([ptg1['id'], ptg2['id']],
+        self.assertCountEqual([ptg1['id'], ptg2['id']],
                               apg['policy_target_groups'])
 
         # Update the PTG to unset the APG
@@ -1274,7 +1281,7 @@ class TestGroupResources(GroupPolicyDbTestCase):
                                       pr['policy_rule']['id'])
         res = self.deserialize(self.fmt, req.get_response(self.ext_api))
 
-        self.assertItemsEqual(actions_list,
+        self.assertCountEqual(actions_list,
                               res['policy_rule']['policy_actions'])
         del attrs['policy_actions']
         for k, v in six.iteritems(attrs):

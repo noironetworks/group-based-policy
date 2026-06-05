@@ -108,7 +108,7 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
     def test_network(self):
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'ensure_tenant') as et:
-            self._make_network(self.fmt, 'net', True, tenant_id='t1')
+            self._make_network(self.fmt, 'net', True, project_id='t1')
             et.assert_has_calls([mock.call(mock.ANY, 't1')])
             self.assertEqual(2, et.call_count)
 
@@ -116,11 +116,11 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'ensure_tenant') as et:
             networks = [{'network': {'name': 'n1',
-                                     'tenant_id': 't1'}},
+                                     'project_id': 't1'}},
                         {'network': {'name': 'n2',
-                                     'tenant_id': 't2'}},
+                                     'project_id': 't2'}},
                         {'network': {'name': 'n3',
-                                     'tenant_id': 't1'}}]
+                                     'project_id': 't1'}}]
             res = self._create_bulk_from_list(self.fmt, 'network', networks,
                                             as_admin=True)
             self.assertEqual(201, res.status_int)
@@ -135,7 +135,7 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'ensure_tenant') as et:
             self._make_subnet(self.fmt, net, None, '10.0.0.0/24',
-                              tenant_id='t1', as_admin=True)
+                              project_id='t1', as_admin=True)
             et.assert_called_once_with(mock.ANY, 't1')
 
     def test_subnet_bulk(self):
@@ -148,17 +148,17 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
                                    'network_id': network_id,
                                    'ip_version': 4,
                                    'cidr': '10.0.1.0/24',
-                                   'tenant_id': 't1'}},
+                                   'project_id': 't1'}},
                        {'subnet': {'name': 's2',
                                    'network_id': network_id,
                                    'ip_version': 4,
                                    'cidr': '10.0.2.0/24',
-                                   'tenant_id': 't2'}},
+                                   'project_id': 't2'}},
                        {'subnet': {'name': 'n3',
                                    'network_id': network_id,
                                    'ip_version': 4,
                                    'cidr': '10.0.3.0/24',
-                                   'tenant_id': 't1'}}]
+                                   'project_id': 't1'}}]
             res = self._create_bulk_from_list(self.fmt, 'subnet', subnets,
                                             as_admin=True)
             self.assertEqual(201, res.status_int)
@@ -172,7 +172,7 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
 
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'ensure_tenant') as et:
-            self._make_port(self.fmt, net['network']['id'], tenant_id='t1',
+            self._make_port(self.fmt, net['network']['id'], project_id='t1',
                             as_admin=True)
             et.assert_has_calls([mock.call(mock.ANY, 't1')])
             self.assertEqual(2, et.call_count)
@@ -185,13 +185,13 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
                                'ensure_tenant') as et:
             ports = [{'port': {'name': 's1',
                                'network_id': network_id,
-                               'tenant_id': 't1'}},
+                               'project_id': 't1'}},
                      {'port': {'name': 's2',
                                'network_id': network_id,
-                               'tenant_id': 't2'}},
+                               'project_id': 't2'}},
                      {'port': {'name': 'n3',
                                'network_id': network_id,
-                               'tenant_id': 't1'}}]
+                               'project_id': 't1'}}]
             res = self._create_bulk_from_list(self.fmt, 'port', ports,
                                             as_admin=True)
             self.assertEqual(201, res.status_int)
@@ -204,13 +204,13 @@ class TestEnsureTenant(Ml2PlusPluginV2TestCase):
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'ensure_tenant') as et:
             self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
-                                  tenant_id='t1')
+                                  project_id='t1')
             et.assert_called_once_with(mock.ANY, 't1')
 
     def test_address_scope(self):
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'ensure_tenant') as et:
-            self._make_address_scope(self.fmt, 4, name='as1', tenant_id='t1')
+            self._make_address_scope(self.fmt, 4, name='as1', project_id='t1')
             et.assert_called_once_with(mock.ANY, 't1')
 
 
@@ -221,7 +221,7 @@ class TestSubnetPool(Ml2PlusPluginV2TestCase):
             with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                    'create_subnetpool_postcommit') as post:
                 self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
-                                      tenant_id='t1')
+                                      project_id='t1')
 
                 self.assertEqual(1, pre.call_count)
                 self.assertEqual('sp1',
@@ -235,7 +235,8 @@ class TestSubnetPool(Ml2PlusPluginV2TestCase):
 
     def test_update(self):
         subnetpool = self._make_subnetpool(
-            self.fmt, ['10.0.0.0/8'], name='sp1', tenant_id='t1')['subnetpool']
+            self.fmt, ['10.0.0.0/8'], name='sp1',
+            project_id='t1')['subnetpool']
         data = {'subnetpool': {'name': 'newnameforsubnetpool'}}
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'update_subnetpool_precommit') as pre:
@@ -259,7 +260,8 @@ class TestSubnetPool(Ml2PlusPluginV2TestCase):
 
     def test_delete(self):
         subnetpool = self._make_subnetpool(
-            self.fmt, ['10.0.0.0/8'], name='sp1', tenant_id='t1')['subnetpool']
+            self.fmt, ['10.0.0.0/8'], name='sp1',
+            project_id='t1')['subnetpool']
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'delete_subnetpool_precommit') as pre:
             pre.side_effect = self.exist_checker(
@@ -286,7 +288,7 @@ class TestAddressScope(Ml2PlusPluginV2TestCase):
             with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                    'create_address_scope_postcommit') as post:
                 self._make_address_scope(self.fmt, 4, name='as1',
-                                         tenant_id='t1')
+                                         project_id='t1')
 
                 self.assertEqual(1, pre.call_count)
                 self.assertEqual('as1',
@@ -300,7 +302,7 @@ class TestAddressScope(Ml2PlusPluginV2TestCase):
 
     def test_update(self):
         address_scope = self._make_address_scope(
-            self.fmt, 4, name='as1', tenant_id='t1')['address_scope']
+            self.fmt, 4, name='as1', project_id='t1')['address_scope']
         data = {'address_scope': {'name': 'newnameforaddress_scope'}}
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'update_address_scope_precommit') as pre:
@@ -324,7 +326,7 @@ class TestAddressScope(Ml2PlusPluginV2TestCase):
 
     def test_delete(self):
         address_scope = self._make_address_scope(
-            self.fmt, 4, name='as1', tenant_id='t1')['address_scope']
+            self.fmt, 4, name='as1', project_id='t1')['address_scope']
         with mock.patch.object(mech_logger.LoggerPlusMechanismDriver,
                                'delete_address_scope_precommit') as pre:
             pre.side_effect = self.exist_checker(self.plugin.get_address_scope)

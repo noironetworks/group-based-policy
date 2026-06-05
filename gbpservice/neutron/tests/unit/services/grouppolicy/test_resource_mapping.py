@@ -41,6 +41,7 @@ from gbpservice.neutron.services.grouppolicy.common import constants as gconst
 from gbpservice.neutron.services.grouppolicy.common import exceptions as gpexc
 from gbpservice.neutron.services.grouppolicy.common import utils as gp_utils
 from gbpservice.neutron.services.grouppolicy import config
+from gbpservice.neutron.services.grouppolicy.drivers import implicit_policy  # noqa
 from gbpservice.neutron.services.grouppolicy.drivers import nsp_manager
 from gbpservice.neutron.services.grouppolicy.drivers import resource_mapping
 from gbpservice.neutron.tests.unit.db.grouppolicy import test_group_policy_db
@@ -248,8 +249,9 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         return cidrs
 
     def _get_tenant_l3ps(self, ptg):
+        project_id = ptg.get('project_id', ptg['tenant_id'])
         res = self._list('l3_policies',
-                         query_params='tenant_id=' + ptg['tenant_id'])
+                         query_params='project_id=' + project_id)
         return res['l3_policies']
 
     def _get_prs_enforced_rules(self, prs):
@@ -1573,7 +1575,7 @@ class TestL3Policy(ResourceMappingTestCase,
 
     def test_explicit_router_lifecycle(self):
         # Create L3 policy with explicit router.
-        with self.router(tenant_id='tenant1') as router:
+        with self.router(project_id='tenant1') as router:
             router_id = router['router']['id']
             l3p = self.create_l3_policy(name="l3p1", tenant_id='tenant1',
                                         routers=[router_id])
@@ -1859,7 +1861,7 @@ class TestL3Policy(ResourceMappingTestCase,
         if subnetpool_prefixes:
             for version in subnetpools_versions:
                 self._extend_subnet_prefixes(prefixes_list, l3p, version)
-            self.assertItemsEqual(subnetpool_prefixes, prefixes_list)
+            self.assertCountEqual(subnetpool_prefixes, prefixes_list)
 
         params = '&'.join('id=' + id for id in ascp_ids)
         req = self.new_list_request('address-scopes',
@@ -1966,13 +1968,13 @@ class TestL3Policy(ResourceMappingTestCase,
         for prefix in prefixlist:
             self.assertIn(prefix, prefixes + implicitlist)
         self.assertEqual(l3p['subnet_prefix_length'], subnet_prefix_length)
-        self.assertItemsEqual(new_subnetpools, l3p[subnetpools_version])
+        self.assertCountEqual(new_subnetpools, l3p[subnetpools_version])
         attrs = {'id': l3p['id'], subnetpools_version: implicit_subpool}
         l3p = self.update_l3_policy(**attrs)['l3_policy']
         self.assertEqual(implicit_ip_pool, l3p['ip_pool'])
         self.assertEqual(implicit_subnet_prefix_length,
                          l3p['subnet_prefix_length'])
-        self.assertItemsEqual(implicit_subpool, l3p[subnetpools_version])
+        self.assertCountEqual(implicit_subpool, l3p[subnetpools_version])
         req = self.new_delete_request('subnetpools', sp2['id'])
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)

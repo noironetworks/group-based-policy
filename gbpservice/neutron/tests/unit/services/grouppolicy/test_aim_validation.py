@@ -263,19 +263,20 @@ class TestNeutronMapping(AimValidationTestCase):
 
         # Test address scope.
         scope = self._make_address_scope(
-            self.fmt, 4, name='as1', tenant_id='as_proj')['address_scope']
+            self.fmt, 4, name='as1', admin=True,
+            project_id='as_proj')['address_scope']
         self._test_project_resources(scope['project_id'])
 
         # Test network.
         net_resp = self._make_network(
-            self.fmt, 'net1', True, tenant_id='net_proj')
+            self.fmt, 'net1', True, project_id='net_proj')
         net = net_resp['network']
         self._test_project_resources(net['project_id'])
 
         # Test subnet.
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24',
-            as_admin=True, tenant_id='subnet_proj')['subnet']
+            as_admin=True, project_id='subnet_proj')['subnet']
         self._test_project_resources(subnet['project_id'])
 
         # Test port. Since Neutron creates the default SG for the
@@ -284,7 +285,7 @@ class TestNeutronMapping(AimValidationTestCase):
         # resource owned by port_prog.
         port = self._make_port(
             self.fmt, net['id'], security_groups=[],
-            as_admin=True, tenant_id='port_proj')['port']
+            as_admin=True, project_id='port_proj')['port']
         sgs = self._list(
             'security-groups',
             query_params='project_id=port_proj',
@@ -294,12 +295,12 @@ class TestNeutronMapping(AimValidationTestCase):
 
         # Test security group.
         sg = self._make_security_group(
-            self.fmt, 'sg1', 'desc1', tenant_id='sg_proj')['security_group']
+            self.fmt, 'sg1', 'desc1', project_id='sg_proj')['security_group']
         self._test_project_resources(sg['project_id'])
 
         # Test subnetpool.
         sp = self._make_subnetpool(
-            self.fmt, ['10.0.0.0/8'], name='sp1', tenant_id='sp_proj',
+            self.fmt, ['10.0.0.0/8'], name='sp1', project_id='sp_proj',
             default_prefixlen=24)['subnetpool']
         self._test_project_resources(sp['project_id'])
 
@@ -315,9 +316,11 @@ class TestNeutronMapping(AimValidationTestCase):
             arg_list=self.extension_attributes, **kwargs)
         ext_net = ext_net_resp['network']
         self._make_subnet(
-            self.fmt, ext_net_resp, '100.100.100.1', '100.100.100.0/24')
+            self.fmt, ext_net_resp, '100.100.100.1', '100.100.100.0/24',
+            as_admin=True)
         fip = self._make_floatingip(
-            self.fmt, ext_net['id'], tenant_id='fip_proj')['floatingip']
+            self.fmt, ext_net['id'], project_id='fip_proj',
+            as_admin=True)['floatingip']
         self._test_project_resources(fip['project_id'])
 
     def test_address_scope(self):
@@ -732,26 +735,26 @@ class TestNeutronMapping(AimValidationTestCase):
     def test_scoped_routing(self):
         # Create shared address scope and subnetpool as tenant_1.
         scope = self._make_address_scope(
-            self.fmt, 4, admin=True, name='as1', tenant_id='tenant_1',
+            self.fmt, 4, admin=True, name='as1', project_id='tenant_1',
             shared=True)['address_scope']
         pool = self._make_subnetpool(
             self.fmt, ['10.0.0.0/8'], admin=True, name='sp1',
-            tenant_id='tenant_1', address_scope_id=scope['id'],
+            project_id='tenant_1', address_scope_id=scope['id'],
             default_prefixlen=24, shared=True)['subnetpool']
         pool_id = pool['id']
 
         # Create network and subnet as tenant_2.
         net_resp = self._make_network(
-            self.fmt, 'net1', True, tenant_id='tenant_2')
+            self.fmt, 'net1', True, project_id='tenant_2')
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24',
-            subnetpool_id=pool_id, tenant_id='tenant_2')['subnet']
+            subnetpool_id=pool_id, project_id='tenant_2')['subnet']
         subnet_id = subnet['id']
 
         # Create extra unrouted subnet.
         self._make_subnet(
             self.fmt, net_resp, '10.0.2.1', '10.0.2.0/24',
-            subnetpool_id=pool_id, tenant_id='tenant_2')
+            subnetpool_id=pool_id, project_id='tenant_2')
 
         # Create external network.
         kwargs = {'router:external': True,
@@ -845,27 +848,27 @@ class TestNeutronMapping(AimValidationTestCase):
     def test_unscoped_routing(self):
         # Create shared network and unscoped subnet as tenant_1.
         net_resp = self._make_network(
-            self.fmt, 'net1', True, tenant_id='tenant_1',
+            self.fmt, 'net1', True, project_id='tenant_1',
             as_admin=True, shared=True)
         net1_id = net_resp['network']['id']
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.1.1', '10.0.1.0/24',
-            tenant_id='tenant_1')['subnet']
+            project_id='tenant_1', as_admin=True)['subnet']
         subnet1_id = subnet['id']
 
         # Create unshared network and unscoped subnet as tenant_2.
         net_resp = self._make_network(
-            self.fmt, 'net2', True, tenant_id='tenant_2')
+            self.fmt, 'net2', True, project_id='tenant_2', as_admin=True)
         net2_id = net_resp['network']['id']
         subnet = self._make_subnet(
             self.fmt, net_resp, '10.0.2.1', '10.0.2.0/24',
-            tenant_id='tenant_2')['subnet']
+            project_id='tenant_2', as_admin=True)['subnet']
         subnet2_id = subnet['id']
 
         # Create extra unrouted subnet.
         self._make_subnet(
             self.fmt, net_resp, '10.0.3.1', '10.0.3.0/24',
-            tenant_id='tenant_2')
+            project_id='tenant_2', as_admin=True)
 
         # Create external network.
         kwargs = {'router:external': True,
@@ -1181,7 +1184,7 @@ class TestNeutronMapping(AimValidationTestCase):
         self._validate_repair_validate_scoped(["security_group"], None)
 
         net_resp1 = self._make_network(
-            self.fmt, 'net1', True, tenant_id='ten_1')
+            self.fmt, 'net1', True, project_id='ten_1')
         net1 = net_resp1['network']
         bd_dn1 = net1['apic:distinguished_names']['BridgeDomain']
         epg_dn1 = net1['apic:distinguished_names']['EndpointGroup']
@@ -1196,7 +1199,7 @@ class TestNeutronMapping(AimValidationTestCase):
             self.aim_mgr.delete(self.aim_ctx, epg1)
 
         net_resp2 = self._make_network(
-            self.fmt, 'net2', True, tenant_id='ten_2')
+            self.fmt, 'net2', True, project_id='ten_2')
         net2 = net_resp2['network']
         bd_dn2 = net2['apic:distinguished_names']['BridgeDomain']
         epg_dn2 = net2['apic:distinguished_names']['EndpointGroup']
@@ -1255,7 +1258,7 @@ class TestNeutronMapping(AimValidationTestCase):
         with self.db_session.begin():
             self.aim_mgr.delete(self.aim_ctx, aim_tenant)
 
-        self._validate_repair_validate_scoped(None, [tenant_name])
+        self._validate_repair_validate_scoped(None, [sg['project_id']])
 
 
 class TestGbpMapping(AimValidationTestCase):

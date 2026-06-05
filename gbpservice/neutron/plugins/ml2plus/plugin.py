@@ -23,6 +23,7 @@ from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
+from neutron.api.rpc.agentnotifiers import utils as notifier_utils
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.quota import resource_registry
 from neutron_lib.api.definitions import address_scope as as_def
@@ -95,6 +96,7 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.type_manager.initialize()
         self.extension_manager.initialize()
         self.mechanism_manager.initialize()
+        self.notifier = notifier_utils.RPCNotifierHandler()
         self._setup_dhcp()
         self._start_rpc_notifiers()
         self.add_agent_status_check_worker(self.agent_health_check)
@@ -535,11 +537,12 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.mechanism_manager.delete_address_scope_postcommit(mech_context)
 
     def _ensure_tenant(self, context, resource):
-        tenant_id = resource['tenant_id']
+        tenant_id = resource.get('project_id', resource.get('tenant_id'))
         self.mechanism_manager.ensure_tenant(context, tenant_id)
 
     def _ensure_tenant_bulk(self, context, resources, singular):
-        tenant_ids = [resource[singular]['tenant_id']
+        tenant_ids = [resource[singular].get(
+            'project_id', resource[singular].get('tenant_id'))
                       for resource in resources]
         for tenant_id in set(tenant_ids):
             self.mechanism_manager.ensure_tenant(context, tenant_id)
@@ -548,10 +551,11 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         # Check for regular subnetpool ID first, then Tenant's implicit,
         # then global implicit.
         ip_version = subnet['ip_version']
+        tenant_id = subnet.get('project_id', subnet.get('tenant_id'))
         return (
             super(Ml2PlusPlugin, self)._get_subnetpool_id(context, subnet) or
             self.get_implicit_subnetpool_id(context,
-                                            tenant=subnet['tenant_id'],
+                                            tenant=tenant_id,
                                             ip_version=ip_version) or
             self.get_implicit_subnetpool_id(context, tenant=None,
                                             ip_version=ip_version))

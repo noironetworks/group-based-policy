@@ -34,10 +34,10 @@ class ExtensionDriverTestCase(test_ext_base.ExtensionDriverTestBase):
         l3p = self.create_l3_policy(
             name='myl3',
             allowed_vm_names=allowed_vm_names)['l3_policy']
-        self.assertItemsEqual(allowed_vm_names, l3p['allowed_vm_names'])
+        self.assertCountEqual(allowed_vm_names, l3p['allowed_vm_names'])
         l3p = self.show_l3_policy(
             l3p['id'], expected_res_status=200)['l3_policy']
-        self.assertItemsEqual([], l3p['allowed_vm_names'])
+        self.assertCountEqual([], l3p['allowed_vm_names'])
         self.delete_l3_policy(l3p['id'], tenant_id=l3p['tenant_id'],
                               expected_res_status=204)
 
@@ -45,37 +45,37 @@ class ExtensionDriverTestCase(test_ext_base.ExtensionDriverTestBase):
         l3p = self.create_l3_policy(
             name='myl3',
             allowed_vm_names=allowed_vm_names)['l3_policy']
-        self.assertItemsEqual(allowed_vm_names, l3p['allowed_vm_names'])
+        self.assertCountEqual(allowed_vm_names, l3p['allowed_vm_names'])
         l3p = self.show_l3_policy(
             l3p['id'], expected_res_status=200)['l3_policy']
-        self.assertItemsEqual(allowed_vm_names, l3p['allowed_vm_names'])
+        self.assertCountEqual(allowed_vm_names, l3p['allowed_vm_names'])
 
         allowed_vm_names = ['good_vm*', '^ok_vm*', 'safe_vm*']
         l3p = self.update_l3_policy(
             l3p['id'], allowed_vm_names=allowed_vm_names,
             expected_res_status=200)['l3_policy']
-        self.assertItemsEqual(allowed_vm_names, l3p['allowed_vm_names'])
+        self.assertCountEqual(allowed_vm_names, l3p['allowed_vm_names'])
         l3p = self.show_l3_policy(
             l3p['id'], expected_res_status=200)['l3_policy']
-        self.assertItemsEqual(allowed_vm_names, l3p['allowed_vm_names'])
+        self.assertCountEqual(allowed_vm_names, l3p['allowed_vm_names'])
 
         allowed_vm_names = []
         l3p = self.update_l3_policy(
             l3p['id'], allowed_vm_names=allowed_vm_names,
             expected_res_status=200)['l3_policy']
-        self.assertItemsEqual(allowed_vm_names, l3p['allowed_vm_names'])
+        self.assertCountEqual(allowed_vm_names, l3p['allowed_vm_names'])
         l3p = self.show_l3_policy(
             l3p['id'], expected_res_status=200)['l3_policy']
-        self.assertItemsEqual(allowed_vm_names, l3p['allowed_vm_names'])
+        self.assertCountEqual(allowed_vm_names, l3p['allowed_vm_names'])
 
         allowed_vm_names = ['^ok_vm*']
         l3p = self.update_l3_policy(
             l3p['id'], allowed_vm_names=allowed_vm_names,
             expected_res_status=200)['l3_policy']
-        self.assertItemsEqual(allowed_vm_names, l3p['allowed_vm_names'])
+        self.assertCountEqual(allowed_vm_names, l3p['allowed_vm_names'])
         l3p = self.show_l3_policy(
             l3p['id'], expected_res_status=200)['l3_policy']
-        self.assertItemsEqual(allowed_vm_names, l3p['allowed_vm_names'])
+        self.assertCountEqual(allowed_vm_names, l3p['allowed_vm_names'])
 
         self.delete_l3_policy(l3p['id'], tenant_id=l3p['tenant_id'],
                               expected_res_status=204)

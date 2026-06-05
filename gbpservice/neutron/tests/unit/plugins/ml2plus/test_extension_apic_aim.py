@@ -36,27 +36,27 @@ class TestAttributeConverters(base.BaseTestCase):
     def test_convert_apic_none_to_empty_list(self):
         test_none = None
         expt_list = []
-        self.assertItemsEqual(
+        self.assertCountEqual(
                 apic_ext.convert_apic_none_to_empty_list(
                     test_none), expt_list)
 
         expt_list = ['value1', 'value2', 'value3']
         test_list_str = "['value1', 'value2', 'value3']"
-        self.assertItemsEqual(
+        self.assertCountEqual(
                 apic_ext.convert_apic_none_to_empty_list(
                     test_list_str), expt_list)
 
-        self.assertItemsEqual(
+        self.assertCountEqual(
                 apic_ext.convert_apic_none_to_empty_list(
                     expt_list), expt_list)
 
         expt_list = [{'key1': 'value1'}, {'key2': 'value2'}]
         test_dict_list_str = "[{'key1': 'value1'}, {'key2': 'value2'}]"
-        self.assertItemsEqual(
+        self.assertCountEqual(
                 apic_ext.convert_apic_none_to_empty_list(
                     test_dict_list_str), expt_list)
 
-        self.assertItemsEqual(
+        self.assertCountEqual(
                 apic_ext.convert_apic_none_to_empty_list(
                     expt_list), expt_list)
 
@@ -65,14 +65,14 @@ class TestAttributeConverters(base.BaseTestCase):
                         "'vlan_ranges': [{'start': 6, 'end': 9}, ") + (
                         "{'start': 11, 'end': 14}]}")
         expt_list = [2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14]
-        self.assertItemsEqual(
+        self.assertCountEqual(
                 apic_ext.convert_nested_domain_allowed_vlans(
                     test_dict_str)['vlans_list'], expt_list)
         test_dict = {'vlans_list': [2, 3, 4],
                      'vlan_ranges': [{'start': 6, 'end': 9},
                                      {'start': 11, 'end': 14}]}
         expt_list = [2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14]
-        self.assertItemsEqual(
+        self.assertCountEqual(
                 apic_ext.convert_nested_domain_allowed_vlans(
                     test_dict)['vlans_list'], expt_list)
         test_dict = {'vlans_list': ['2', '3', '4', '3'],
@@ -80,7 +80,7 @@ class TestAttributeConverters(base.BaseTestCase):
                                      {'start': '11', 'end': '14'},
                                      {'start': '6', 'end': '9'}]}
         expt_list = [2, 3, 4, 6, 7, 8, 9, 11, 12, 13, 14]
-        self.assertItemsEqual(
+        self.assertCountEqual(
                 apic_ext.convert_nested_domain_allowed_vlans(
                     test_dict)['vlans_list'], expt_list)
         self.assertIsNone(apic_ext.convert_nested_domain_allowed_vlans(None))

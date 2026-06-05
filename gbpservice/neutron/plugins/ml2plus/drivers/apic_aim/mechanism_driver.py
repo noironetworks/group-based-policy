@@ -7166,7 +7166,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 # data migration.
                 attrs = {'device_id': '',
                          'device_owner': aim_cst.DEVICE_OWNER_SVI_PORT,
-                         'tenant_id': network['tenant_id'],
+                         'tenant_id': (network.get('project_id') or
+                            network.get('tenant_id')),
+                         'project_id': (network.get('project_id') or
+                            network.get('tenant_id')),
                          'name': 'apic-svi-port:node-%s' % node,
                          'network_id': network['id'],
                          'mac_address': n_constants.ATTR_NOT_SPECIFIED,

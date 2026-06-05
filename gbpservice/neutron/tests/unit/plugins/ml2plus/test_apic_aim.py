@@ -173,7 +173,7 @@ TEST_TENANT_NAMES = {
     'test-tenant': 'TestTenantName',
     'ten_1': 'prj_ten_1',
     'ten_2': 'prj_ten_2',
-    test_plugin.TEST_TENANT_ID: test_plugin.TEST_TENANT_ID,
+    test_plugin.TEST_PROJECT_ID: test_plugin.TEST_PROJECT_ID,
 }
 
 
@@ -324,7 +324,7 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
                       test_address_group.AddressGroupTestCase):
 
     def setUp(self, mechanism_drivers=None, tenant_network_types=None,
-            plugin=None, ext_mgr=None):
+              project_network_types=None, plugin=None, ext_mgr=None):
         # Enable the test mechanism driver to ensure that
         # we can successfully call through to all mechanism
         # driver apis.
@@ -337,9 +337,13 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         cfg.CONF.set_override('api_extensions_path', None)
         cfg.CONF.set_override('type_drivers',
                 ['opflex', 'local', 'vlan'], group='ml2')
-        net_type = tenant_network_types or ['opflex']
-        cfg.CONF.set_override('tenant_network_types', net_type,
-                group='ml2')
+        net_type = tenant_network_types or project_network_types or ['opflex']
+        try:
+            cfg.CONF.set_override('project_network_types', net_type,
+                                  group='ml2')
+        except cfg.NoSuchOptError:
+            cfg.CONF.set_override('tenant_network_types', net_type,
+                                  group='ml2')
         cfg.CONF.set_override('network_vlan_ranges',
                 ['physnet1:1000:1099', 'physnet2:123:165',
                  'physnet3:347:513', 'physnet4:514:514'],
@@ -358,6 +362,9 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
         self.useFixture(AimSqlFixture())
         super(ApicAimTestCase, self).setUp(PLUGIN_NAME,
                                            service_plugins=service_plugins)
+        # Neutron migrated from tenant_id to project_id;
+        # create alias for compatibility
+        self._tenant_id = self._project_id
         ctx = n_context.get_admin_context()
         self.db_session = ctx.session
         self.initialize_db_config(self.db_session)
@@ -501,18 +508,15 @@ class ApicAimTestCase(test_address_scope.AddressScopeTestCase,
 
     def _make_address_scope_for_vrf(self, vrf_dn,
                                     ip_version=n_constants.IP_VERSION_4,
-                                    expected_status=None, tenant_id=None,
+                                    expected_status=None, project_id=None,
                                     **kwargs):
         attrs = {'ip_version': ip_version}
         if vrf_dn:
             attrs[DN] = {'VRF': vrf_dn}
         attrs.update(kwargs)
-
-        tenant_id = tenant_id or self._tenant_id
-
         req = self.new_create_request('address-scopes',
                                       {'address_scope': attrs}, self.fmt,
-                                      tenant_id=tenant_id, as_admin=True)
+                                      project_id=project_id, as_admin=True)
 
         res = req.get_response(self.ext_api)
         if expected_status:
@@ -1230,13 +1234,13 @@ class TestAimMapping(ApicAimTestCase):
             self.assertEqual(aname, aim_epg.name)
             self.assertEqual(net['name'], aim_epg.display_name)
             self.assertEqual(bd_name, aim_epg.bd_name)
-            self.assertItemsEqual(provided_contract_names,
+            self.assertCountEqual(provided_contract_names,
                                   aim_epg.provided_contract_names)
-            self.assertItemsEqual(consumed_contract_names,
+            self.assertCountEqual(consumed_contract_names,
                                   aim_epg.consumed_contract_names)
-            self.assertItemsEqual(epg_contract_masters,
+            self.assertCountEqual(epg_contract_masters,
                                   aim_epg.epg_contract_masters)
-            self.assertItemsEqual(policy_enforcement_pref,
+            self.assertCountEqual(policy_enforcement_pref,
                                   aim_epg.policy_enforcement_pref)
             # REVISIT(rkukura): Check openstack_vmm_domain_names and
             # physical_domain_names?
@@ -2840,7 +2844,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Create subnet pool.
         pool = self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
-                                     tenant_id=self._tenant_id,
+                                     project_id=self._tenant_id,
                                      address_scope_id=scope_id,
                                      default_prefixlen=24)['subnetpool']
         pool_id = pool['id']
@@ -3233,7 +3237,7 @@ class TestAimMapping(ApicAimTestCase):
             scope46i_vrf = scope6['apic:distinguished_names']['VRF']
             pool6 = self._make_subnetpool(
                 self.fmt, ['2001:db8:1::0/56'], name='sp6',
-                tenant_id=self._tenant_id,
+                project_id=self._tenant_id,
                 address_scope_id=scope6_id)['subnetpool']
             pool6_id = pool6['id']
             check_vrf_notifies(notify, [scope46i_vrf])
@@ -3248,7 +3252,7 @@ class TestAimMapping(ApicAimTestCase):
             self._check_address_scope(scope4i)
             pool4i = self._make_subnetpool(
                 self.fmt, ['10.1.0.0/16'], name='sp4i',
-                tenant_id=self._tenant_id, address_scope_id=scope4i_id,
+                project_id=self._tenant_id, address_scope_id=scope4i_id,
                 default_prefixlen=24)['subnetpool']
             pool4i_id = pool4i['id']
             check_vrf_notifies(notify, [scope46i_vrf])
@@ -3261,7 +3265,7 @@ class TestAimMapping(ApicAimTestCase):
             scope4n_vrf = scope4n['apic:distinguished_names']['VRF']
             pool4n = self._make_subnetpool(
                 self.fmt, ['10.2.0.0/16'], name='sp4n',
-                tenant_id=self._tenant_id, address_scope_id=scope4n_id,
+                project_id=self._tenant_id, address_scope_id=scope4n_id,
                 default_prefixlen=24)['subnetpool']
             pool4n_id = pool4n['id']
             check_vrf_notifies(notify, [scope4n_vrf])
@@ -3270,13 +3274,13 @@ class TestAimMapping(ApicAimTestCase):
             if use_unscoped_pools:
                 pool4u = self._make_subnetpool(
                     self.fmt, ['10.3.0.0/16', '10.4.0.0/16'], name='sp4u',
-                    tenant_id=self._tenant_id,
+                    project_id=self._tenant_id,
                     default_prefixlen=24)['subnetpool']
                 pool4u_id = pool4u['id']
                 check_vrf_notifies(notify, [])
                 pool6u = self._make_subnetpool(
                     self.fmt, ['2001:db8:1::0/56'], name='sp6u',
-                    tenant_id=self._tenant_id)['subnetpool']
+                    project_id=self._tenant_id)['subnetpool']
                 pool6u_id = pool6u['id']
                 check_vrf_notifies(notify, [])
             else:
@@ -3339,7 +3343,7 @@ class TestAimMapping(ApicAimTestCase):
 
             # Create shared network with unscoped subnets.
             net_resp = self._make_network(
-                self.fmt, 'net4', True, tenant_id='tenant_2',
+                self.fmt, 'net4', True, project_id='tenant_2',
                 shared=True, as_admin=True)
             net4 = net_resp['network']
             self._check_network(net4)
@@ -3634,7 +3638,7 @@ class TestAimMapping(ApicAimTestCase):
     def test_shared_address_scope(self):
         # Create shared scope as tenant_1.
         scope = self._make_address_scope(
-            self.fmt, 4, admin=True, name='as1', tenant_id='tenant_1',
+            self.fmt, 4, admin=True, name='as1', project_id='tenant_1',
             shared=True)['address_scope']
         scope_id = scope['id']
         self._check_address_scope(scope)
@@ -3642,7 +3646,7 @@ class TestAimMapping(ApicAimTestCase):
         # Create shared pool as tenant_1.
         pool = self._make_subnetpool(
             self.fmt, ['10.0.0.0/8'], admin=True, name='sp1',
-            tenant_id='tenant_1', address_scope_id=scope_id,
+            project_id='tenant_1', address_scope_id=scope_id,
             default_prefixlen=24, shared=True)['subnetpool']
         pool_id = pool['id']
 
@@ -3653,7 +3657,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Create network as tenant_2.
         net_resp = self._make_network(self.fmt, 'net1', True,
-                                      tenant_id='tenant_2')
+                                      project_id='tenant_2')
         net = net_resp['network']
         net_id = net['id']
         self._check_network(net)
@@ -3662,7 +3666,7 @@ class TestAimMapping(ApicAimTestCase):
         gw1_ip = '10.0.1.1'
         subnet = self._make_subnet(
             self.fmt, net_resp, gw1_ip, '10.0.1.0/24',
-            subnetpool_id=pool_id, tenant_id='tenant_2')['subnet']
+            subnetpool_id=pool_id, project_id='tenant_2')['subnet']
         subnet1_id = subnet['id']
         self._check_subnet(subnet, net, [], [gw1_ip])
 
@@ -3684,7 +3688,7 @@ class TestAimMapping(ApicAimTestCase):
         gw2_ip = '10.0.2.1'
         subnet = self._make_subnet(
             self.fmt, net_resp, gw2_ip, '10.0.2.0/24',
-            subnetpool_id=pool_id, tenant_id='tenant_2')['subnet']
+            subnetpool_id=pool_id, project_id='tenant_2')['subnet']
         subnet2_id = subnet['id']
         self._check_subnet(subnet, net, [], [gw2_ip])
 
@@ -3754,7 +3758,7 @@ class TestAimMapping(ApicAimTestCase):
 
         # Create net1 as tenant_1.
         net1_resp = self._make_network(
-            self.fmt, 'net1', True, tenant_id='tenant_1')
+            self.fmt, 'net1', True, project_id='tenant_1')
         net1 = net1_resp['network']
         net1_id = net1['id']
         self._check_network(net1)
@@ -3769,7 +3773,7 @@ class TestAimMapping(ApicAimTestCase):
         # Create shared net2 as tenant_2.
         net2_resp = self._make_network(
             self.fmt, 'net2', True, as_admin=True,
-            tenant_id='tenant_2', shared=True)
+            project_id='tenant_2', shared=True)
         net2 = net2_resp['network']
         net2_id = net2['id']
         self._check_network(net2)
@@ -3778,13 +3782,13 @@ class TestAimMapping(ApicAimTestCase):
         gw2_ip = '10.0.2.1'
         subnet2 = self._make_subnet(
             self.fmt, net2_resp, gw2_ip, '10.0.2.0/24', as_admin=True,
-            tenant_id='tenant_1')['subnet']
+            project_id='tenant_1')['subnet']
         subnet2_id = subnet2['id']
         self._check_subnet(subnet2, net2, [], [gw2_ip])
 
         # Create net3 as tenant_1.
         net3_resp = self._make_network(
-            self.fmt, 'net3', True, tenant_id='tenant_1')
+            self.fmt, 'net3', True, project_id='tenant_1')
         net3 = net3_resp['network']
         net3_id = net3['id']
         self._check_network(net3)
@@ -3978,21 +3982,21 @@ class TestAimMapping(ApicAimTestCase):
         def make_net(number, project, shared=False):
             name = 'net%s' % number
             net_resp = self._make_network(
-                self.fmt, name, True, tenant_id=project,
+                self.fmt, name, True, project_id=project,
                 shared=shared, as_admin=True)
             net = net_resp['network']
             net_id = net['id']
             self._check_network(net)
             cidr = '10.0.%s.0/24' % number
             subnet = self._make_subnet(
-                self.fmt, net_resp, None, cidr, tenant_id=project)['subnet']
+                self.fmt, net_resp, None, cidr, project_id=project)['subnet']
             subnet_id = subnet['id']
             self._check_subnet(subnet, net, [], [])
             ip = '10.0.%s.100' % number
             fixed_ips = [{'subnet_id': subnet_id, 'ip_address': ip}]
             port = self._make_port(
                 self.fmt, net_id, fixed_ips=fixed_ips,
-                tenant_id=project)['port']
+                project_id=project)['port']
             port_id = port['id']
             port = self._bind_port_to_host(port_id, 'host1', as_admin=True,
                     as_service=False)['port']
@@ -4008,7 +4012,7 @@ class TestAimMapping(ApicAimTestCase):
             fixed_ips = [{'subnet_id': subnet_id, 'ip_address': gw_ip}]
             port = self._make_port(
                 self.fmt, net_id, fixed_ips=fixed_ips,
-                tenant_id=project, as_admin=True)['port']
+                project_id=project, as_admin=True)['port']
             router_ctx = n_context.Context(None, project)
             info = self.l3_plugin.add_router_interface(
                 router_ctx, router['id'], {'port_id': port['id']})
@@ -4327,7 +4331,7 @@ class TestAimMapping(ApicAimTestCase):
             pool = self._make_subnetpool(
                 self.fmt, ['10.0.0.0/8'], name='sp',
                 address_scope_id=scope['id'],
-                tenant_id=scope['tenant_id'],
+                project_id=scope['tenant_id'],
                 default_prefixlen=24)['subnetpool']
 
             net = self._make_network(self.fmt, 'net1', True)['network']
@@ -4355,13 +4359,13 @@ class TestAimMapping(ApicAimTestCase):
         # Create a non-default non-shared SP
         subnetpool = self._make_subnetpool(
             self.fmt, [prefix], name='spool1',
-            tenant_id='t1')['subnetpool']
+            project_id='t1')['subnetpool']
         net = self._make_network(self.fmt, 'pvt-net1', True,
-                                 tenant_id='t1')['network']
+                                 project_id='t1')['network']
         sub = self._make_subnet(
             self.fmt, {'network': net,
                        }, gw1, sn1,
-            tenant_id='t1',
+            project_id='t1',
             ip_version=subnetpool['ip_version'])['subnet']
         self.assertIsNone(sub['subnetpool_id'])
         # Make SP default
@@ -4370,32 +4374,32 @@ class TestAimMapping(ApicAimTestCase):
         # Make a new network since Subnets hosted on the same network must be
         # allocated from the same subnet pool
         net = self._make_network(self.fmt, 'pvt-net2', True,
-                                 tenant_id='t1')['network']
+                                 project_id='t1')['network']
         # Create another subnet
         sub = self._make_subnet(
             self.fmt, {'network': net}, gw2,
-            sn2, tenant_id='t1',
+            sn2, project_id='t1',
             ip_version=subnetpool['ip_version'])['subnet']
         # This time, SP ID is set
         self.assertEqual(subnetpool['id'], sub['subnetpool_id'])
         # Create a shared SP in a different tenant
         subnetpool_shared = self._make_subnetpool(
             self.fmt, [prefix], name='spool1', is_implicit=True,
-            shared=True, tenant_id='t2', admin=True)['subnetpool']
+            shared=True, project_id='t2', admin=True)['subnetpool']
         # A subnet created in T1 still gets the old pool ID
         sub = self._make_subnet(
             self.fmt, {'network': net}, gw3,
-            sn3, tenant_id='t1',
+            sn3, project_id='t1',
             ip_version=subnetpool_shared['ip_version'])['subnet']
         # This time, SP ID is set
         self.assertEqual(subnetpool['id'], sub['subnetpool_id'])
         # Creating a subnet somewhere else, however, will get the SP ID from
         # the shared SP
         net = self._make_network(self.fmt, 'pvt-net3', True,
-                                 tenant_id='t3')['network']
+                                 project_id='t3')['network']
         sub = self._make_subnet(
             self.fmt, {'network': net}, gw1,
-            sn1, tenant_id='t3',
+            sn1, project_id='t3',
             ip_version=subnetpool_shared['ip_version'])['subnet']
         self.assertEqual(subnetpool_shared['id'], sub['subnetpool_id'])
 
@@ -4417,7 +4421,7 @@ class TestAimMapping(ApicAimTestCase):
         # Create implicit SP (non-shared)
         sp = self._make_subnetpool(
             self.fmt, ['10.0.0.0/8'], name='spool1',
-            tenant_id='t1', is_implicit=True)['subnetpool']
+            project_id='t1', is_implicit=True)['subnetpool']
         self.assertTrue(sp['is_implicit'])
         # Update is_implicit to false
         sp = self._update(
@@ -4433,17 +4437,17 @@ class TestAimMapping(ApicAimTestCase):
         # Create another implicit in the same family, same tenant, it will fail
         self.assertRaises(webob.exc.HTTPClientError, self._make_subnetpool,
                           self.fmt, ['11.0.0.0/8'], name='spool1',
-                          tenant_id='t1', is_implicit=True)
+                          project_id='t1', is_implicit=True)
         # Create another implicit in different family, same tenant, it succeeds
         sp2 = self._make_subnetpool(
             self.fmt, ['2001:db8:1::0/56'], name='spool1',
-            is_implicit=True, tenant_id='t1')['subnetpool']
+            is_implicit=True, project_id='t1')['subnetpool']
         self.assertTrue(sp2['is_implicit'])
 
         # Create a normal SP, will succeed
         sp2 = self._make_subnetpool(
             self.fmt, ['11.0.0.0/8'], name='spool2',
-            tenant_id='t1')['subnetpool']
+            project_id='t1')['subnetpool']
         self.assertFalse(sp2['is_implicit'])
         # Try to update to implicit, will fail
         self._update('subnetpools', sp2['id'],
@@ -4453,7 +4457,7 @@ class TestAimMapping(ApicAimTestCase):
         # Create a shared implicit SP in a different tenant
         sp3 = self._make_subnetpool(
             self.fmt, ['11.0.0.0/8'], name='spoolShared',
-            tenant_id='t2', shared=True, admin=True,
+            project_id='t2', shared=True, admin=True,
             is_implicit=True)['subnetpool']
         self.assertTrue(sp3['is_implicit'])
         # Update SP shared state is not supported by Neutron
@@ -4461,13 +4465,13 @@ class TestAimMapping(ApicAimTestCase):
         # Create another shared implicit in the same family, it will fail
         self.assertRaises(webob.exc.HTTPClientError, self._make_subnetpool,
                           self.fmt, ['12.0.0.0/8'], name='spool3',
-                          tenant_id='t3', shared=True,
+                          project_id='t3', shared=True,
                           admin=True, is_implicit=True)
 
         # Create a shared implicit SP in a different address family
         sp3 = self._make_subnetpool(
             self.fmt, ['2001:db8:2::0/56'], name='spoolSharedv6',
-            tenant_id='t2', shared=True, admin=True,
+            project_id='t2', shared=True, admin=True,
             is_implicit=True)['subnetpool']
         self.assertTrue(sp3['is_implicit'])
 
@@ -5207,10 +5211,10 @@ class TestTopology(ApicAimTestCase):
         router1_id = self._make_router(
             self.fmt, 'tenant_1', 'router1')['router']['id']
         net1_resp = self._make_network(
-            self.fmt, 'net1', True, tenant_id='tenant_1')
+            self.fmt, 'net1', True, project_id='tenant_1')
         subnet1_id = self._make_subnet(
             self.fmt, net1_resp, '10.0.1.1', '10.0.1.0/24',
-            tenant_id='tenant_1')['subnet']['id']
+            project_id='tenant_1')['subnet']['id']
         self.l3_plugin.add_router_interface(
             n_context.get_admin_context(), router1_id,
             {'subnet_id': subnet1_id})
@@ -5219,10 +5223,10 @@ class TestTopology(ApicAimTestCase):
         router2_id = self._make_router(
             self.fmt, 'tenant_2', 'router2')['router']['id']
         net2_resp = self._make_network(
-            self.fmt, 'net2', True, tenant_id='tenant_2')
+            self.fmt, 'net2', True, project_id='tenant_2')
         subnet2_id = self._make_subnet(
             self.fmt, net2_resp, '10.0.1.1', '10.0.1.0/24',
-            tenant_id='tenant_2')['subnet']['id']
+            project_id='tenant_2')['subnet']['id']
         self.l3_plugin.add_router_interface(
             n_context.get_admin_context(), router2_id,
             {'subnet_id': subnet2_id})
@@ -5230,10 +5234,10 @@ class TestTopology(ApicAimTestCase):
         # Create shared network and non-overlapping subnet as tenant_2.
         net3_resp = self._make_network(
             self.fmt, 'net3', True,
-            as_admin=True, tenant_id='tenant_2', shared=True)
+            as_admin=True, project_id='tenant_2', shared=True)
         subnet3_id = self._make_subnet(
             self.fmt, net3_resp, '10.0.3.1', '10.0.3.0/24',
-            tenant_id='tenant_2')['subnet']['id']
+            project_id='tenant_2')['subnet']['id']
 
         # Verify that adding tenant_2's shared subnet to tenant_1's
         # topology is rejected due to tenant_1's overlapping CIDR
@@ -5249,21 +5253,21 @@ class TestTopology(ApicAimTestCase):
         router1_id = self._make_router(
             self.fmt, 'tenant_1', 'router1')['router']['id']
         net1_resp = self._make_network(
-            self.fmt, 'net1', True, tenant_id='tenant_1')
+            self.fmt, 'net1', True, project_id='tenant_1')
         subnet1_id = self._make_subnet(
             self.fmt, net1_resp, '10.0.1.1', '10.0.1.0/24',
-            tenant_id='tenant_1')['subnet']['id']
+            project_id='tenant_1')['subnet']['id']
         self.l3_plugin.add_router_interface(
             n_context.get_admin_context(), router1_id,
             {'subnet_id': subnet1_id})
 
         # Create shared network and non-overlapping subnet as tenant_2.
         net2_resp = self._make_network(
-            self.fmt, 'net', True, tenant_id='tenant_2',
+            self.fmt, 'net', True, project_id='tenant_2',
             shared=True, as_admin=True)
         subnet2_id = self._make_subnet(
             self.fmt, net2_resp, '10.0.2.1', '10.0.2.0/24',
-            tenant_id='tenant_2')['subnet']['id']
+            project_id='tenant_2')['subnet']['id']
 
         # Create another router as tenant_1 and add subnet shared by tenant_2.
         router2_id = self._make_router(
@@ -5276,10 +5280,10 @@ class TestTopology(ApicAimTestCase):
         # is allowed because router2's topology is using tenant_2's
         # routed VRF.
         net3_resp = self._make_network(
-            self.fmt, 'net3', True, tenant_id='tenant_1')
+            self.fmt, 'net3', True, project_id='tenant_1')
         subnet3_id = self._make_subnet(
             self.fmt, net3_resp, '10.0.1.1', '10.0.1.0/24',
-            tenant_id='tenant_1')['subnet']['id']
+            project_id='tenant_1')['subnet']['id']
         self.l3_plugin.add_router_interface(
             n_context.get_admin_context(), router2_id,
             {'subnet_id': subnet3_id})
@@ -5337,29 +5341,29 @@ class TestTopology(ApicAimTestCase):
         # Create shared net1 and subnet1 as tenant_1.
         net1_resp = self._make_network(
             self.fmt, 'net1', True, as_admin=True,
-            tenant_id='tenant_1', shared=True)
+            project_id='tenant_1', shared=True)
         gw1_ip = '10.0.1.1'
         subnet1_id = self._make_subnet(
             self.fmt, net1_resp, gw1_ip, '10.0.1.0/24',
-            tenant_id='tenant_1')['subnet']['id']
+            project_id='tenant_1')['subnet']['id']
 
         # Create shared net2 and subnet2 as tenant_2.
         net2_resp = self._make_network(
             self.fmt, 'net2', True, as_admin=True,
-            tenant_id='tenant_2', shared=True)
+            project_id='tenant_2', shared=True)
         gw2_ip = '10.0.2.1'
         subnet2_id = self._make_subnet(
             self.fmt, net2_resp, gw2_ip, '10.0.2.0/24',
-            tenant_id='tenant_2')['subnet']['id']
+            project_id='tenant_2')['subnet']['id']
 
         # Create shared net3 and subnet3 as tenant_1.
         net3_resp = self._make_network(
             self.fmt, 'net3', True, as_admin=True,
-            tenant_id='tenant_1', shared=True)
+            project_id='tenant_1', shared=True)
         gw3_ip = '10.0.3.1'
         subnet3_id = self._make_subnet(
             self.fmt, net3_resp, gw3_ip, '10.0.3.0/24',
-            tenant_id='tenant_1')['subnet']['id']
+            project_id='tenant_1')['subnet']['id']
 
         # Add shared subnet1 from tenant_1 to router.
         self.l3_plugin.add_router_interface(
@@ -5388,7 +5392,7 @@ class TestTopology(ApicAimTestCase):
 
         # Create subnetpool without address_scope.
         pool = self._make_subnetpool(self.fmt, ['10.1.0.0/16'], name='sp1',
-                                     tenant_id='test-tenant',  # REVISIT
+                                     project_id='test-tenant',  # REVISIT
                                      default_prefixlen=24)['subnetpool']
         pool_id = pool['id']
 
@@ -5443,7 +5447,7 @@ class TestTopology(ApicAimTestCase):
         scope6_vrf = scope['apic:distinguished_names']['VRF']
         pool = self._make_subnetpool(
             self.fmt, ['2001:db8:1::0/56'], name='sp6',
-            tenant_id=self._tenant_id,
+            project_id=self._tenant_id,
             address_scope_id=scope6_id)['subnetpool']
         pool6_id = pool['id']
 
@@ -5452,7 +5456,7 @@ class TestTopology(ApicAimTestCase):
             scope6_vrf, 4, name='as4i')['address_scope']
         scope4i_id = scope['id']
         pool = self._make_subnetpool(
-            self.fmt, ['10.1.0.0/16'], name='sp4i', tenant_id=self._tenant_id,
+            self.fmt, ['10.1.0.0/16'], name='sp4i', project_id=self._tenant_id,
             address_scope_id=scope4i_id, default_prefixlen=24)['subnetpool']
         pool4i_id = pool['id']
 
@@ -5461,7 +5465,7 @@ class TestTopology(ApicAimTestCase):
             self.fmt, 4, name='as4n')['address_scope']
         scope4n_id = scope['id']
         pool = self._make_subnetpool(
-            self.fmt, ['10.2.0.0/16'], name='sp4n', tenant_id=self._tenant_id,
+            self.fmt, ['10.2.0.0/16'], name='sp4n', project_id=self._tenant_id,
             address_scope_id=scope4n_id)['subnetpool']
         pool4n_id = pool['id']
 
@@ -5540,19 +5544,19 @@ class TestTopology(ApicAimTestCase):
         # can be connected to a router.
         sp = self._make_subnetpool(
             self.fmt, ['10.0.0.0/8'], name='spool1',
-            tenant_id='t1', shared=True, admin=True)['subnetpool']
-        net = self._make_network(self.fmt, 'net', True, tenant_id='t1',
+            project_id='t1', shared=True, admin=True)['subnetpool']
+        net = self._make_network(self.fmt, 'net', True, project_id='t1',
                                  shared=True, as_admin=True)
 
         sub1 = self._make_subnet(self.fmt, net, '10.10.10.1',
                                  '10.10.10.0/24', sp['id'],
-                                 tenant_id='t1', as_admin=True)['subnet']
+                                 project_id='t1', as_admin=True)['subnet']
         sub2 = self._make_subnet(self.fmt, net, '10.10.20.1',
                                  '10.10.20.0/24', sp['id'],
-                                 tenant_id='t1', as_admin=True)['subnet']
+                                 project_id='t1', as_admin=True)['subnet']
         sub3 = self._make_subnet(self.fmt, net, '10.20.10.1',
                                  '10.20.10.0/24', sp['id'],
-                                 tenant_id='t2', as_admin=True)['subnet']
+                                 project_id='t2', as_admin=True)['subnet']
 
         rtr = self._make_router(self.fmt, 't1', 'rtr')['router']
 
@@ -5716,12 +5720,12 @@ class TestMigrations(ApicAimTestCase, db.DbMixin):
                           '10.0.1.0/24')
 
         addr_scope = self._make_address_scope(
-            self.fmt, 4, name='as1', tenant_id=self.tenant_1)['address_scope']
+            self.fmt, 4, name='as1', project_id=self.tenant_1)['address_scope']
         subnetpool = self._make_subnetpool(
-            self.fmt, ['10.0.0.0/8'], name='spool1', tenant_id=self.tenant_1,
+            self.fmt, ['10.0.0.0/8'], name='spool1', project_id=self.tenant_1,
             address_scope_id=addr_scope['id'])['subnetpool']
         net_int = self._make_network(self.fmt, 'pvt-net', True,
-                                     tenant_id=self.tenant_1)['network']
+                                     project_id=self.tenant_1)['network']
         sp_id = subnetpool['id']
         sub = self._make_subnet(
             self.fmt, {'network': net_int}, '10.10.1.1', '10.10.1.0/24',
@@ -5984,10 +5988,10 @@ class TestPortBinding(ApicAimTestCase):
             raise webob.exc.HTTPClientError(code=response.status_int)
         return self.deserialize(self.fmt, response)
 
-    def _create_port_binding(self, fmt, port_id, host, tenant_id=None,
+    def _create_port_binding(self, fmt, port_id, host, project_id=None,
                              **kwargs):
-        tenant_id = tenant_id or self._tenant_id
-        data = {'binding': {'host': host, 'tenant_id': tenant_id}}
+        project_id = project_id or self._project_id
+        data = {'binding': {'host': host, 'project_id': project_id}}
         if kwargs:
             data['binding'].update(kwargs)
         binding_resource = 'ports/%s/bindings' % port_id
@@ -7693,7 +7697,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual(4093, net1['apic:nested_domain_infra_vlan'])
         self.assertEqual(1000, net1['apic:nested_domain_service_vlan'])
         self.assertEqual(1001, net1['apic:nested_domain_node_network_vlan'])
-        self.assertItemsEqual(expt_vlans,
+        self.assertCountEqual(expt_vlans,
                 net1['apic:nested_domain_allowed_vlans'])
 
         vlan_dict = {'vlans_list': ['2', '3', '4', '3']}
@@ -7714,7 +7718,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual(1093, net1['apic:nested_domain_infra_vlan'])
         self.assertEqual(2000, net1['apic:nested_domain_service_vlan'])
         self.assertEqual(2001, net1['apic:nested_domain_node_network_vlan'])
-        self.assertItemsEqual(expt_vlans,
+        self.assertCountEqual(expt_vlans,
                 net1['apic:nested_domain_allowed_vlans'])
 
         # Test delete.
@@ -7739,19 +7743,19 @@ class TestExtensionAttributes(ApicAimTestCase):
             self.fmt, 'net1', True, arg_list=tuple(list(kwargs.keys())),
             **kwargs)['network']
         net_id = net['id']
-        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
-        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+        self.assertCountEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertCountEqual(consumed, net['apic:extra_consumed_contracts'])
 
         # Test show.
         net = self._show('networks', net_id)['network']
-        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
-        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+        self.assertCountEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertCountEqual(consumed, net['apic:extra_consumed_contracts'])
 
         # Test list.
         net = self._list(
             'networks', query_params=('id=%s' % net_id))['networks'][0]
-        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
-        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+        self.assertCountEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertCountEqual(consumed, net['apic:extra_consumed_contracts'])
 
         # Test update extra contracts.
         provided = ['ep2', 'ep3']
@@ -7761,13 +7765,13 @@ class TestExtensionAttributes(ApicAimTestCase):
             {'network':
              {'apic:extra_provided_contracts': provided,
               'apic:extra_consumed_contracts': consumed}})['network']
-        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
-        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+        self.assertCountEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertCountEqual(consumed, net['apic:extra_consumed_contracts'])
 
         # Test show after update.
         net = self._show('networks', net_id)['network']
-        self.assertItemsEqual(provided, net['apic:extra_provided_contracts'])
-        self.assertItemsEqual(consumed, net['apic:extra_consumed_contracts'])
+        self.assertCountEqual(provided, net['apic:extra_provided_contracts'])
+        self.assertCountEqual(consumed, net['apic:extra_consumed_contracts'])
 
         # Test delete.
         self._delete('networks', net_id)
@@ -7792,16 +7796,16 @@ class TestExtensionAttributes(ApicAimTestCase):
             self.fmt, 'net1', True, arg_list=tuple(kwargs.keys()),
             **kwargs)['network']
         net_id = net['id']
-        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+        self.assertCountEqual(masters, net['apic:epg_contract_masters'])
 
         # Test show.
         net = self._show('networks', net_id)['network']
-        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+        self.assertCountEqual(masters, net['apic:epg_contract_masters'])
 
         # Test list.
         net = self._list(
             'networks', query_params=('id=%s' % net_id))['networks'][0]
-        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+        self.assertCountEqual(masters, net['apic:epg_contract_masters'])
 
         # Test update with EPG contract masters
         masters = [{'name': 'epg3',
@@ -7812,11 +7816,11 @@ class TestExtensionAttributes(ApicAimTestCase):
             'networks', net_id,
             {'network':
              {'apic:epg_contract_masters': masters}})['network']
-        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+        self.assertCountEqual(masters, net['apic:epg_contract_masters'])
 
         # Test show after update.
         net = self._show('networks', net_id)['network']
-        self.assertItemsEqual(masters, net['apic:epg_contract_masters'])
+        self.assertCountEqual(masters, net['apic:epg_contract_masters'])
 
         # Test delete.
         self._delete('networks', net_id)
@@ -7835,18 +7839,18 @@ class TestExtensionAttributes(ApicAimTestCase):
         net = self._make_network(
             self.fmt, 'net1', True)['network']
         net_id = net['id']
-        self.assertItemsEqual('unenforced',
+        self.assertCountEqual('unenforced',
             net['apic:policy_enforcement_pref'])
 
         # Test show.
         net = self._show('networks', net_id)['network']
-        self.assertItemsEqual('unenforced',
+        self.assertCountEqual('unenforced',
             net['apic:policy_enforcement_pref'])
 
         # Test list.
         net = self._list(
             'networks', query_params=('id=%s' % net_id))['networks'][0]
-        self.assertItemsEqual('unenforced',
+        self.assertCountEqual('unenforced',
             net['apic:policy_enforcement_pref'])
 
         # Test update with Policy Enforcement Pref
@@ -7854,12 +7858,12 @@ class TestExtensionAttributes(ApicAimTestCase):
             'networks', net_id,
             {'network':
              {'apic:policy_enforcement_pref': 'enforced'}})['network']
-        self.assertItemsEqual('enforced',
+        self.assertCountEqual('enforced',
             net['apic:policy_enforcement_pref'])
 
         # Test show after update.
         net = self._show('networks', net_id)['network']
-        self.assertItemsEqual('enforced',
+        self.assertCountEqual('enforced',
             net['apic:policy_enforcement_pref'])
 
         # Test delete.
@@ -7879,18 +7883,18 @@ class TestExtensionAttributes(ApicAimTestCase):
         net = self._make_network(
             self.fmt, 'net1', True)['network']
         net_id = net['id']
-        self.assertItemsEqual([],
+        self.assertCountEqual([],
             net['apic:no_nat_cidrs'])
 
         # Test show.
         net = self._show('networks', net_id)['network']
-        self.assertItemsEqual([],
+        self.assertCountEqual([],
             net['apic:no_nat_cidrs'])
 
         # Test list.
         net = self._list(
             'networks', query_params=('id=%s' % net_id))['networks'][0]
-        self.assertItemsEqual([],
+        self.assertCountEqual([],
             net['apic:no_nat_cidrs'])
 
         # Test update with no nat cidrs extension
@@ -7898,12 +7902,12 @@ class TestExtensionAttributes(ApicAimTestCase):
             'networks', net_id,
             {'network':
              {'apic:no_nat_cidrs': ['10.10.10.0/24']}})['network']
-        self.assertItemsEqual(['10.10.10.0/24'],
+        self.assertCountEqual(['10.10.10.0/24'],
             net['apic:no_nat_cidrs'])
 
         # Test show after update.
         net = self._show('networks', net_id)['network']
-        self.assertItemsEqual(['10.10.10.0/24'],
+        self.assertCountEqual(['10.10.10.0/24'],
             net['apic:no_nat_cidrs'])
 
         # Test delete.
@@ -9426,7 +9430,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         # Create a service network owned by 'tenant_2'
         svc_net = self._make_network(
             self.fmt, 'svc-cross-project', True, as_admin=True,
-            tenant_id='tenant_2',
+            project_id='tenant_2',
             arg_list=self.extension_attributes + (
                 'provider:physical_network',),
             **{'router:external': True,
@@ -9434,7 +9438,7 @@ class TestExtensionAttributes(ApicAimTestCase):
                'provider:physical_network': 'physnet1',
                SERVICE_NETWORK_ENABLE: True})['network']
         self._make_subnet(self.fmt, {'network': svc_net}, '10.0.1.1',
-                          '10.0.1.0/24', tenant_id='tenant_2')
+                          '10.0.1.0/24', project_id='tenant_2')
 
         ext_net = self._make_ext_network('ext-cross-project',
                                          dn=self.dn_t1_l1_n1)
@@ -10319,7 +10323,7 @@ class TestExtensionAttributes(ApicAimTestCase):
                            'flow_id': 1023}]}
         p2 = self._make_port(self.fmt, net['network']['id'],
                              device_owner='compute:',
-                             tenant_id='tenant2',
+                             project_id='tenant2',
                              arg_list=('apic:erspan_config',),
                              **erspan_config, as_admin=True)['port']
         self.assertEqual(erspan_config.get('apic:erspan_config'),
@@ -10693,13 +10697,13 @@ class TestExternalConnectivityBase(object):
             addr_scope = None
             if use_addr_scope:
                 addr_scope = self._make_address_scope(
-                    self.fmt, 4, name='as1', tenant_id=t)['address_scope']
+                    self.fmt, 4, name='as1', project_id=t)['address_scope']
                 subnetpool = self._make_subnetpool(
-                    self.fmt, ['10.0.0.0/8'], name='spool1', tenant_id=t,
+                    self.fmt, ['10.0.0.0/8'], name='spool1', project_id=t,
                     address_scope_id=addr_scope['id'])['subnetpool']
             for ni in range(0, 2):
                 net = self._make_network(self.fmt, 'pvt-net%d' % ni, True,
-                                         tenant_id=t)['network']
+                                         project_id=t)['network']
                 sp_id = subnetpool['id'] if use_addr_scope else None
                 sub1 = self._make_subnet(
                     self.fmt, {'network': net}, '10.%d.1.1' % (10 + ni),
@@ -10879,17 +10883,17 @@ class TestExternalConnectivityBase(object):
 
         objs = []
         net = self._make_network(self.fmt, 'pvt-net1', True,
-                                 tenant_id=self.tenant_1)['network']
+                                 project_id=self.tenant_1)['network']
         subnetpool = None
         addr_scope = None
         if use_addr_scope:
             addr_scope = self._make_address_scope(
                 self.fmt, 4, name='as1',
-                tenant_id=net['tenant_id'])['address_scope']
+                project_id=net['project_id'])['address_scope']
             subnetpool = self._make_subnetpool(
                 self.fmt, ['10.10.0.0/16'],
                 name='spool1', address_scope_id=addr_scope['id'],
-                tenant_id=net['tenant_id'])['subnetpool']
+                project_id=net['project_id'])['subnetpool']
         sub1 = self._make_subnet(
             self.fmt, {'network': net}, '10.10.1.1',
             '10.10.1.0/24',
@@ -11056,23 +11060,23 @@ class TestExternalConnectivityBase(object):
         dv = self.mock_ns.disconnect_vrf
 
         net = self._make_network(self.fmt, 'pvt-net1', True,
-                                 tenant_id=self.tenant_1)['network']
+                                 project_id=self.tenant_1)['network']
         subnetpool = None
         addr_scope = None
         if use_addr_scope:
             addr_scope = self._make_address_scope(
                 self.fmt, 4, name='as1',
-                tenant_id=net['tenant_id'])['address_scope']
+                project_id=net['project_id'])['address_scope']
             subnetpool = self._make_subnetpool(
                 self.fmt, ['10.10.0.0/16'],
                 name='spool1', address_scope_id=addr_scope['id'],
-                tenant_id=net['tenant_id'])['subnetpool']
+                project_id=net['project_id'])['subnetpool']
         sub1 = self._make_subnet(
             self.fmt, {'network': net}, '10.10.1.1',
             '10.10.1.0/24',
             subnetpool_id=subnetpool['id'] if addr_scope else None)['subnet']
         tenant_aname = self.name_mapper.project(
-            None, net['tenant_id'])  # REVISIT
+            None, net['project_id'])  # REVISIT
         a_vrf = aim_resource.VRF(tenant_name=tenant_aname,
                                  name='DefaultVRF')
         if use_addr_scope:
@@ -11300,7 +11304,7 @@ class TestExternalConnectivityBase(object):
             '100.100.100.0/24')
 
         net = self._make_network(self.fmt, 'pvt-net1', True,
-                                 tenant_id=self.tenant_1)['network']
+                                 project_id=self.tenant_1)['network']
         sub = self._make_subnet(
             self.fmt, {'network': net}, '10.10.1.1', '10.10.1.0/24')['subnet']
         port_calls = []
@@ -11312,7 +11316,7 @@ class TestExternalConnectivityBase(object):
                 port_calls.append(mock.call(mock.ANY, p))
 
         router = self._make_router(
-            self.fmt, net['tenant_id'], 'router1')['router']
+            self.fmt, net['project_id'], 'router1')['router']
 
         # set external gateway - expect no notifications
         self._update('routers', router['id'],
@@ -11346,7 +11350,7 @@ class TestExternalConnectivityBase(object):
             '100.100.100.0/24')
 
         net = self._make_network(self.fmt, 'pvt-net1', True,
-                                 tenant_id=self.tenant_1)['network']
+                                 project_id=self.tenant_1)['network']
         port_calls = []
         subnets = []
         for x in range(0, 2):
@@ -11469,7 +11473,7 @@ class TestExternalConnectivityBase(object):
         # 1. Create unshared network net1 in tenant tenant_1, then connect
         #    it to router r1
         net1 = self._make_network(self.fmt, 'net1', True,
-                                 tenant_id='tenant_1')['network']
+                                 project_id='tenant_1')['network']
         sub1 = self._make_subnet(self.fmt, {'network': net1},
                                  '10.10.10.1', '10.10.10.0/24')['subnet']
         self._router_interface_action('add', router['id'], sub1['id'],
@@ -11486,7 +11490,7 @@ class TestExternalConnectivityBase(object):
         #    it to router r1
         self.mock_ns.reset_mock()
         net2 = self._make_network(self.fmt, 'net2', True,
-                                 tenant_id='tenant_2', shared=True,
+                                 project_id='tenant_2', shared=True,
                                  as_admin=True)['network']
         sub2 = self._make_subnet(self.fmt, {'network': net2},
                                  '20.20.20.1', '20.20.20.0/24')['subnet']
@@ -11505,7 +11509,7 @@ class TestExternalConnectivityBase(object):
         #    it to router r1
         self.mock_ns.reset_mock()
         net3 = self._make_network(self.fmt, 'net3', True,
-                                 tenant_id='test-tenant')['network']
+                                  project_id='test-tenant')['network']
         sub3 = self._make_subnet(self.fmt, {'network': net3},
                                  '30.30.30.1', '30.30.30.0/24')['subnet']
         self._router_interface_action('add', router['id'], sub3['id'],
@@ -11558,7 +11562,7 @@ class TestExternalConnectivityBase(object):
 
         pool = self._make_subnetpool(
             self.fmt, ['10.0.0.0/8'], name='sp', address_scope_id=scope['id'],
-            tenant_id=scope['tenant_id'], default_prefixlen=24)['subnetpool']
+            project_id=scope['project_id'], default_prefixlen=24)['subnetpool']
 
         # create external stuff
         ext_net1 = self._make_ext_network('ext-net1',
@@ -12045,8 +12049,8 @@ class TestPortVlanNetwork(ApicAimTestCase):
     def setUp(self, **kwargs):
         if kwargs.get('mechanism_drivers') is None:
             kwargs['mechanism_drivers'] = ['logger', 'openvswitch', 'apic_aim']
-        if kwargs.get('tenant_network_types') is None:
-            kwargs['tenant_network_types'] = ['vlan']
+        if kwargs.get('project_network_types') is None:
+            kwargs['project_network_types'] = ['vlan']
         super(TestPortVlanNetwork, self).setUp(**kwargs)
 
         with db_api.CONTEXT_READER.using(self.db_session):
@@ -12794,7 +12798,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
         self.aim_mgr.create(aim_ctx, hlink_net_lable2)
         self.aim_mgr.create(aim_ctx, hlink_net_lable3)
 
-        net_type = cfg.CONF.ml2.tenant_network_types[0]
+        net_type = cfg.CONF.ml2.project_network_types[0]
         if not is_svi:
             net1 = self._make_network(
                 self.fmt, 'net1', True, as_admin=True,
@@ -13610,7 +13614,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
     def setUp(self, mechanism_drivers=None):
         super(TestPortOnPhysicalNode, self).setUp(
             mechanism_drivers=mechanism_drivers,
-            tenant_network_types=['opflex'])
+            project_network_types=['opflex'])
         self.expected_binding_info = [('apic_aim', 'opflex'),
                                       ('openvswitch', 'vlan')]
 
@@ -13992,28 +13996,28 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         extn = extn_db.ExtensionDbMixin()
         # Create network.
         net_resp = self._make_network(
-            self.fmt, 'net1', True, tenant_id='tenant_1')
+            self.fmt, 'net1', True, project_id='tenant_1')
         net = net_resp['network']
 
         # Create subnet
         subnet = self._make_subnet(self.fmt, net_resp, '10.0.1.1',
-                               '10.0.1.0/24', tenant_id='tenant_1')['subnet']
+                               '10.0.1.0/24', project_id='tenant_1')['subnet']
         subnet_id = subnet['id']
 
         # Create port on subnet
         fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.100'}]
         port = self._make_port(self.fmt, net['id'], fixed_ips=fixed_ips,
-                               tenant_id='tenant_1')['port']
+                               project_id='tenant_1')['port']
         default_sg_id = port['security_groups'][0]
         default_sg = self._show('security-groups', default_sg_id,
-                                tenant_id='tenant_1')['security_group']
-        tenant_aname = self.name_mapper.project(None, default_sg['tenant_id'])
+                                project_id='tenant_1')['security_group']
+        tenant_aname = self.name_mapper.project(None, default_sg['project_id'])
 
         if not default_sg.get('security_group_rules'):
             self._test_create_default_sg_from_template(
                             default_sg, default_sg_id)
             default_sg = self._show('security-groups', default_sg_id,
-                            tenant_id='tenant_1')['security_group']
+                            project_id='tenant_1')['security_group']
 
         for sg_rule in default_sg['security_group_rules']:
             if sg_rule['remote_group_id'] and sg_rule['ethertype'] == 'IPv4':
@@ -14042,7 +14046,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
             remote_group_id=default_sg_id, ethertype=n_constants.IPv4)
         rules = {'security_group_rules': [rule1['security_group_rule']]}
         sg_rule1 = self._make_security_group_rule(
-            self.fmt, rules, tenant_id='tenant_2',
+            self.fmt, rules, project_id='tenant_2',
             as_admin=True)['security_group_rules'][0]
         aim_sg_rule1 = self._get_sg_rule(
             sg_rule1['id'], 'default', default_sg_id, tenant_aname)
@@ -14065,7 +14069,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
         # Add another port on subnet
         fixed_ips = [{'subnet_id': subnet_id, 'ip_address': '10.0.1.200'}]
         port = self._make_port(self.fmt, net['id'], fixed_ips=fixed_ips,
-                               tenant_id='tenant_1')['port']
+                               project_id='tenant_1')['port']
         aim_sg_rule1 = self._get_sg_rule(
             sg_rule1['id'], 'default', default_sg_id, tenant_aname)
         if extn.get_hpp_normalized(session):
@@ -16068,7 +16072,7 @@ class TestExtensionNoNatCidrsScenarios(TestOpflexRpc, ApicAimTestCase):
                 'networks', net_id,
                 {'network':
                  {'apic:no_nat_cidrs': ['20.20.20.0/24']}})['network']
-            self.assertItemsEqual(['20.20.20.0/24'],
+            self.assertCountEqual(['20.20.20.0/24'],
                 net['apic:no_nat_cidrs'])
 
             # The mechanism driver adds the bound drivers when
@@ -16317,7 +16321,7 @@ class TestExtensionNoNatCidrsScenarios(TestOpflexRpc, ApicAimTestCase):
 
         # Create subnet pool.
         pool = self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
-                                     tenant_id=self._tenant_id,
+                                     project_id=self._tenant_id,
                                      address_scope_id=scope_id,
                                      default_prefixlen=24)['subnetpool']
         pool_id = pool['id']

@@ -38,10 +38,10 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         self._ctxt = context.get_admin_context()
 
     def _verify_subnetpool_create(self, code, exc_reason):
-        tenant_id = str(uuid.uuid4())
+        project_id = str(uuid.uuid4())
         data = {'subnetpool': {'prefixes': ['10.0.0.0/8'],
                                'name': 'sp1',
-                               'tenant_id': tenant_id}}
+                               'project_id': project_id}}
         req = self.new_create_request('subnetpools', data, as_admin=True)
         res = req.get_response(self.api)
         self.assertEqual(code, res.status_int)
@@ -51,7 +51,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             self.assertEqual(exc_reason,
                              subnetpool['NeutronError']['type'])
 
-        return (subnetpool, tenant_id)
+        return (subnetpool, project_id)
 
     def _verify_subnetpool_update(self, subnetpool, code, exc_reason):
         sp_id = subnetpool['subnetpool']['id']
@@ -69,10 +69,10 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         with mock.patch.object(ext_test.TestExtensionDriver,
                                'process_create_subnetpool',
                                side_effect=TypeError):
-            subnetpool, tenant_id = self._verify_subnetpool_create(
+            subnetpool, project_id = self._verify_subnetpool_create(
                 500, 'HTTPInternalServerError')
             # Verify the operation is rolled back
-            query_params = "tenant_id=%s" % tenant_id
+            query_params = "project_id=%s" % project_id
             subnetpools = self._list('subnetpools', query_params=query_params)
             self.assertFalse(subnetpools['subnetpools'])
 
@@ -94,7 +94,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
 
     def test_subnetpool_attr(self):
         with self.subnetpool(['10.0.0.0/8'], name='sp1',
-                             tenant_id='t1') as subnetpool:
+                             project_id='t1') as subnetpool:
             # Test create subnetpool
             ent = subnetpool['subnetpool'].get('subnetpool_extension')
             self.assertIsNotNone(ent)
@@ -120,7 +120,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                     ext_test.TestExtensionDriver,
                     'extend_subnetpool_dict') as esd, self.subnetpool(
                         ['10.0.0.0/8'], name='sp1',
-                        tenant_id='t1') as subnetpool:
+                        project_id='t1') as subnetpool:
             subnetpool_id = subnetpool['subnetpool']['id']
             subnetpool_data = {'subnetpool': {'id': subnetpool_id}}
             self._plugin.update_subnetpool(self._ctxt, subnetpool_id,
@@ -129,10 +129,10 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             self.assertTrue(esd.called)
 
     def _verify_address_scope_create(self, code, exc_reason):
-        tenant_id = str(uuid.uuid4())
+        project_id = str(uuid.uuid4())
         data = {'address_scope': {'ip_version': 4,
                                   'name': 'as1',
-                                  'tenant_id': tenant_id}}
+                                  'project_id': project_id}}
         req = self.new_create_request('address-scopes', data, as_admin=True)
         res = req.get_response(self.ext_api)
         self.assertEqual(code, res.status_int)
@@ -142,7 +142,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
             self.assertEqual(exc_reason,
                              address_scope['NeutronError']['type'])
 
-        return (address_scope, tenant_id)
+        return (address_scope, project_id)
 
     def _verify_address_scope_update(self, address_scope, code, exc_reason):
         as_id = address_scope['address_scope']['id']
@@ -160,10 +160,10 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         with mock.patch.object(ext_test.TestExtensionDriver,
                                'process_create_address_scope',
                                side_effect=TypeError):
-            address_scope, tenant_id = self._verify_address_scope_create(
+            address_scope, project_id = self._verify_address_scope_create(
                 500, 'HTTPInternalServerError')
             # Verify the operation is rolled back
-            query_params = "project_id=%s" % tenant_id
+            query_params = "project_id=%s" % project_id
             address_scopes = self._list('address-scopes',
                                         query_params=query_params)
             self.assertFalse(address_scopes['address_scopes'])
@@ -186,7 +186,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
 
     def test_address_scope_attr(self):
         with self.address_scope(4, name='as1',
-                                tenant_id='t1') as address_scope:
+                                project_id='t1') as address_scope:
             # Test create address_scope
             ent = address_scope['address_scope'].get('address_scope_extension')
             self.assertIsNotNone(ent)
@@ -212,7 +212,7 @@ class ExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
                 'process_update_address_scope') as puas, mock.patch.object(
                     ext_test.TestExtensionDriver,
                     'extend_address_scope_dict') as easd, self.address_scope(
-                        4, name='as1', tenant_id='t1') as address_scope:
+                        4, name='as1', project_id='t1') as address_scope:
             address_scope_id = address_scope['address_scope']['id']
             address_scope_data = {'address_scope': {'id': address_scope_id}}
             self._plugin.update_address_scope(self._ctxt, address_scope_id,
@@ -233,7 +233,7 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
 
     def test_subnetpool_attr(self):
         with self.subnetpool(['10.0.0.0/8'], name='sp1',
-                             tenant_id='t1') as subnetpool:
+                             project_id='t1') as subnetpool:
             # Test create with default value.
             sp_id = subnetpool['subnetpool']['id']
             val = subnetpool['subnetpool']['subnetpool_extension']
@@ -251,7 +251,7 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         data = {'subnetpool':
                 {'prefixes': ['10.0.0.0/8'],
                  'name': 'sp2',
-                 'tenant_id': 't1',
+                 'project_id': 't1',
                  'subnetpool_extension': 'abc'}}
         req = self.new_create_request('subnetpools', data, self.fmt,
                                       as_admin=True)
@@ -275,7 +275,7 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
 
     def test_address_scope_attr(self):
         with self.address_scope(4, name='as1',
-                                tenant_id='t1') as address_scope:
+                                project_id='t1') as address_scope:
             # Test create with default value.
             as_id = address_scope['address_scope']['id']
             val = address_scope['address_scope']['address_scope_extension']
@@ -293,7 +293,7 @@ class DBExtensionDriverTestCase(test_plugin.Ml2PlusPluginV2TestCase):
         data = {'address_scope':
                 {'ip_version': 4,
                  'name': 'as2',
-                 'tenant_id': 't1',
+                 'project_id': 't1',
                  'address_scope_extension': 'abc'}}
         req = self.new_create_request('address-scopes', data, self.fmt,
                                       as_admin=True)

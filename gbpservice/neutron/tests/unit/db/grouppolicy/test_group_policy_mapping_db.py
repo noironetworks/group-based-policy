@@ -55,6 +55,7 @@ class GroupPolicyMappingDbTestCase(tgpdb.GroupPolicyDbTestCase,
             core_plugin=core_plugin, gp_plugin=gp_plugin,
             service_plugins=service_plugins
         )
+        self._tenant_id = self._project_id
 
 
 class TestMappedGroupResources(GroupPolicyMappingDbTestCase,

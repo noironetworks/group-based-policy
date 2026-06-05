@@ -227,7 +227,11 @@ class ApicL3Plugin(extraroute_db.ExtraRoute_db_mixin,
         LOG.debug("APIC AIM L3 Plugin creating router: %s", router)
         # REVISIT: Do this in MD by registering for
         # ROUTER.BEFORE_CREATE event.
-        self._md.ensure_tenant(context, router['router']['tenant_id'])
+        project_id = (router['router'].get('project_id') or
+                      router['router'].get('tenant_id'))
+        if project_id:
+            router['router']['project_id'] = project_id
+        self._md.ensure_tenant(context, project_id)
 
         current = router['router']
         gw_info = (current[EXTERNAL_GW_INFO] if EXTERNAL_GW_INFO in current
@@ -338,7 +342,10 @@ class ApicL3Plugin(extraroute_db.ExtraRoute_db_mixin,
         # FIPs don't map directly to any AIM resources. If it is
         # needed, it could me moved to the FLOATING_IP.BEFORE_CREATE
         # callback in rocky and newer.
-        self._md.ensure_tenant(context, fip['tenant_id'])
+        project_id = fip.get('project_id') or fip.get('tenant_id')
+        if project_id:
+            fip['project_id'] = project_id
+        self._md.ensure_tenant(context, project_id)
         with db_api.CONTEXT_READER.using(context):
             # Verify that subnet is not a SNAT host-pool. This could
             # be done from a FLOATING_IP.PRECOMMIT_CREATE callback,

@@ -31,6 +31,15 @@ LOG = logging.getLogger(__name__)
 class LocalAPI(object):
     """API for interacting with the neutron Plugins directly."""
 
+    @staticmethod
+    def _normalize_project_scope(attrs):
+        if ('project_id' not in attrs and
+                attrs.get('tenant_id') is not None):
+            attrs['project_id'] = attrs['tenant_id']
+        elif ('tenant_id' not in attrs and
+              attrs.get('project_id') is not None):
+            attrs['tenant_id'] = attrs['project_id']
+
     @property
     def _nova_notifier(self):
         return nova.Notifier()
@@ -82,6 +91,7 @@ class LocalAPI(object):
                          do_notify=True):
         # REVISIT(rkukura): Do create.start notification?
         # REVISIT(rkukura): Check authorization?
+        self._normalize_project_scope(attrs)
         reservation = None
         if plugin in [self._group_policy_plugin]:
             reservation = quota.QUOTAS.make_reservation(
@@ -123,6 +133,7 @@ class LocalAPI(object):
     def _update_resource(self, plugin, context, resource, resource_id, attrs,
                          do_notify=True):
         # REVISIT(rkukura): Check authorization?
+        self._normalize_project_scope(attrs)
         action = 'update_' + resource
         obj_updater = getattr(plugin, action)
         obj = obj_updater(context, resource_id, {resource: attrs})

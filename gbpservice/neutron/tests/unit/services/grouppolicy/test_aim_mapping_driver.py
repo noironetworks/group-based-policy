@@ -149,7 +149,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                                                          'port_security',
                                                          'dns'],
                                    'type_drivers': ['opflex', 'local', 'vlan'],
-                                   'tenant_network_types': ['opflex']}
+                                   'project_network_types': ['opflex']}
         self._default_es_name = 'default'
 
         # Prevent FixedIntervalLoopingCall that invokes Nova RPCs from
@@ -178,11 +178,12 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         self.saved_keystone_client = ksc_client.Client
         ksc_client.Client = test_aim_md.FakeKeystoneClient
 
-        self.first_tenant_id = test_plugin.TEST_TENANT_ID
+        self.first_tenant_id = test_plugin.TEST_PROJECT_ID
         self._tenant_id = self.first_tenant_id
         self._neutron_context = nctx.Context(
             '', kwargs.get('tenant_id', self._tenant_id),
             is_admin=False)
+        self._neutron_context.project_id = self._tenant_id
         self._neutron_context._session = self.db_session
         self._neutron_admin_context = nctx.get_admin_context()
 
@@ -257,11 +258,13 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         if vrf_dn:
             attrs[DN] = {'VRF': vrf_dn}
         attrs.update(kwargs)
+        project_id = kwargs.get('project_id', kwargs.get('tenant_id',
+                                                         self._tenant_id))
 
         req = self.new_create_request('address-scopes',
                                       {'address_scope': attrs}, self.fmt,
-                                      tenant_id=kwargs.get('tenant_id',
-                                      self._tenant_id), as_admin=admin)
+                                      project_id=project_id,
+                                      as_admin=admin)
 
         res = req.get_response(self.ext_api)
         if expected_status:
@@ -489,7 +492,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 {k: unicode(entry[k]) for k in entry if k not in [
                     'name', 'display_name', 'filter_name', 'tenant_name',
                     'monitored']})
-        self.assertItemsEqual(expected_entries_attrs, observed_entries_attrs)
+        self.assertCountEqual(expected_entries_attrs, observed_entries_attrs)
 
     def _validate_implicit_contracts_exist(self, l3p_id):
         self._validate_implicit_contracts_created(l3p_id)
@@ -570,7 +573,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         if subnetpool_prefixes:
             for version in subnetpools_versions:
                 self._extend_subnet_prefixes(prefixes_list, l3p, version)
-            self.assertItemsEqual(subnetpool_prefixes, prefixes_list)
+            self.assertCountEqual(subnetpool_prefixes, prefixes_list)
 
         params = '&'.join('id=' + id for id in ascp_ids)
         req = self.new_list_request('address-scopes',
@@ -679,7 +682,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         if shared_net:
             kwargs['shared'] = True
         if tenant_id:
-            kwargs['tenant_id'] = tenant_id
+            kwargs['project_id'] = tenant_id
 
         net = self._make_network(self.fmt, network_name, True, as_admin=True,
                                  arg_list=self.extension_attributes,
@@ -688,7 +691,8 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
         subnet = self._make_subnet(
             self.fmt, {'network': net}, gw, cidr,
             enable_dhcp=enable_dhcp,
-            tenant_id=(kwargs.get('tenant_id') or self._tenant_id))['subnet']
+            project_id=(kwargs.get('project_id') or self._tenant_id))[
+                'subnet']
         return subnet
 
     def _router_gw(self, router):
@@ -737,7 +741,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 self._neutron_context.session, prs_lists['provided']['id']))
             expected_prov_contract_names.append(aim_prov_contract_name)
 
-        self.assertItemsEqual(expected_prov_contract_names,
+        self.assertCountEqual(expected_prov_contract_names,
                               aim_epg.provided_contract_names)
 
         if prs_lists['consumed']:
@@ -745,7 +749,7 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                 self._neutron_context.session, prs_lists['consumed']['id']))
             expected_cons_contract_names.append(aim_cons_contract_name)
 
-        self.assertItemsEqual(expected_cons_contract_names,
+        self.assertCountEqual(expected_cons_contract_names,
                               aim_epg.consumed_contract_names)
 
     def _validate_router_interface_created(self, num_address_families=1):
@@ -882,9 +886,9 @@ class AIMBaseTestCase(test_nr_base.CommonNeutronBaseTestCase,
                     expected_in_filters.append(rev_filter)
                     expected_out_filters.append(rev_filter)
 
-        self.assertItemsEqual(expected_in_filters,
+        self.assertCountEqual(expected_in_filters,
                               contract_subject.in_filters)
-        self.assertItemsEqual(expected_out_filters,
+        self.assertCountEqual(expected_out_filters,
                               contract_subject.out_filters)
 
     def _validate_merged_status(self, contract, contract_subject, prs):
@@ -1071,13 +1075,13 @@ class TestL3Policy(AIMBaseTestCase):
         for prefix in prefixlist:
             self.assertIn(prefix, prefixes + implicitlist)
         self.assertEqual(l3p['subnet_prefix_length'], subnet_prefix_length)
-        self.assertItemsEqual(new_subnetpools, l3p[subnetpools_version])
+        self.assertCountEqual(new_subnetpools, l3p[subnetpools_version])
         attrs = {'id': l3p['id'], subnetpools_version: implicit_subpool}
         l3p = self.update_l3_policy(**attrs)['l3_policy']
         self.assertEqual(implicit_ip_pool, l3p['ip_pool'])
         self.assertEqual(implicit_subnet_prefix_length,
                          l3p['subnet_prefix_length'])
-        self.assertItemsEqual(implicit_subpool, l3p[subnetpools_version])
+        self.assertCountEqual(implicit_subpool, l3p[subnetpools_version])
         req = self.new_delete_request('subnetpools', sp2['id'])
         res = req.get_response(self.api)
         self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
@@ -1698,7 +1702,8 @@ class TestL2PolicyBase(test_nr_base.TestL2Policy, AIMBaseTestCase):
     def _validate_bd_tenant(self, l2p, expected_tenant):
         network_id = l2p['network_id']
         self.assertIsNotNone(network_id)
-        req = self.new_show_request('networks', network_id, fmt=self.fmt)
+        req = self.new_show_request('networks', network_id, fmt=self.fmt,
+                                    as_admin=True)
         net = self.deserialize(self.fmt, req.get_response(self.api))['network']
         self.assertIsNotNone(net['id'])
         self.assertEqual(l2p['shared'], net['shared'])
@@ -2116,10 +2121,10 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
         self._validate_epg_tenant(ptg, l3p['tenant_id'])
 
         subnet_id = ptg['subnets'][0]
-        req = self.new_show_request('subnets', subnet_id)
+        req = self.new_show_request('subnets', subnet_id, as_admin=True)
         subnet = self.deserialize(self.fmt, req.get_response(self.api))
 
-        with self.port(subnet=subnet) as port:
+        with self.port(subnet=subnet, is_admin=True) as port:
             port_id = port['port']['id']
             self._bind_port_to_host(port_id, 'h1')
             mapping = self.mech_driver.get_gbp_details(
@@ -2132,7 +2137,7 @@ class TestL2PolicyWithAutoPTG(TestL2PolicyBase):
                 self.name_mapper.project(None, l3p['tenant_id']),
                 mapping['ptg_tenant'])
             self.assertNotEqual(ptg['tenant_id'], mapping['ptg_tenant'])
-            req = self.new_delete_request('ports', port_id)
+            req = self.new_delete_request('ports', port_id, as_admin=True)
             res = req.get_response(self.api)
             self.assertEqual(webob.exc.HTTPNoContent.code, res.status_int)
 
@@ -2764,7 +2769,7 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
             'es1', dn='uni/tn-t1/out-l1/instP-n1')
         ext_net1_sub2 = self._make_subnet(
             self.fmt, {'network': {'id': ext_net1_sub1['network_id'],
-                                   'tenant_id': ext_net1_sub1['tenant_id']}},
+                                   'project_id': ext_net1_sub1['project_id']}},
             '150.150.0.1', '150.150.0.0/16')['subnet']
         self._update('subnets', ext_net1_sub2['id'],
                      {'subnet': {SNAT_HOST_POOL: True}})
@@ -2772,11 +2777,10 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
             'es2', dn='uni/tn-t1/out-l2/instP-n2')
         ext_net2_sub2 = self._make_subnet(
             self.fmt, {'network': {'id': ext_net2_sub1['network_id'],
-                                   'tenant_id': ext_net2_sub1['tenant_id']}},
+                                   'project_id': ext_net2_sub1['project_id']}},
             '200.200.0.1', '200.200.0.0/16')['subnet']
         self._update('subnets', ext_net2_sub2['id'],
                      {'subnet': {SNAT_HOST_POOL: True}})
-
         if pre_vrf:
             as_id = self._make_address_scope_for_vrf(
                 pre_vrf.dn, name='as1')['address_scope']['id']
@@ -2786,7 +2790,7 @@ class TestGbpDetailsForML2(AIMBaseTestCase,
             as_id = scope['id']
 
         pool = self._make_subnetpool(self.fmt, ['10.0.0.0/8'], name='sp1',
-                                     tenant_id=self._tenant_id,
+                                     project_id=self._tenant_id,
                                      address_scope_id=as_id,
                                      default_prefixlen=24)['subnetpool']
         pool_id = pool['id']
@@ -3008,13 +3012,13 @@ class TestPolicyTarget(AIMBaseTestCase,
             name="ptg1")['policy_target_group']
         pt = self.create_policy_target(
             policy_target_group_id=ptg['id'])['policy_target']
-        self.assertItemsEqual([], pt['segmentation_labels'])
+        self.assertCountEqual([], pt['segmentation_labels'])
         segmentation_labels = ['a=b', 'c=d']
         self._bind_port_to_host(pt['port_id'], 'h1')
         pt = self.update_policy_target(
             pt['id'], expected_res_status=200,
             segmentation_labels=segmentation_labels)['policy_target']
-        self.assertItemsEqual(segmentation_labels, pt['segmentation_labels'])
+        self.assertCountEqual(segmentation_labels, pt['segmentation_labels'])
         port = self._plugin.get_port(self._context, pt['port_id'])
         if 'standard_attr_id' in port:
             del port['standard_attr_id']
@@ -3023,7 +3027,7 @@ class TestPolicyTarget(AIMBaseTestCase,
         pt = self.update_policy_target(
             pt['id'], name='updated-pt',
             expected_res_status=200)['policy_target']
-        self.assertItemsEqual(segmentation_labels, pt['segmentation_labels'])
+        self.assertCountEqual(segmentation_labels, pt['segmentation_labels'])
         mock_notif.assert_not_called()
 
     def test_policy_target_with_default_domains(self):
@@ -3363,7 +3367,7 @@ class TestPolicyTarget(AIMBaseTestCase,
             'es2', dn='uni/tn-t1/out-l2/instP-n2')
         es2_sub2 = self._make_subnet(
             self.fmt, {'network': {'id': es2_sub1['network_id'],
-                                   'tenant_id': es2_sub1['tenant_id']}},
+                                   'project_id': es2_sub1['project_id']}},
             '200.200.0.1', '200.200.0.0/16')['subnet']
         self._update('subnets', es2_sub2['id'],
                      {'subnet': {SNAT_HOST_POOL: True}})
@@ -3391,7 +3395,7 @@ class TestPolicyTarget(AIMBaseTestCase,
             self._neutron_admin_context, device='tap%s' % pt1['port_id'],
             host='h1')
         if 'apic_segmentation_label' in self._extension_drivers:
-            self.assertItemsEqual(segmentation_labels,
+            self.assertCountEqual(segmentation_labels,
                                   mapping['segmentation_labels'])
         req_mapping = self.mech_driver.request_endpoint_details(
             nctx.get_admin_context(),
@@ -3983,7 +3987,7 @@ class TestPolicyTargetRollback(AIMBaseTestCase):
         self.assertEqual([],
                          self._gbp_plugin.get_policy_targets(self._context))
         new_ports = self._plugin.get_ports(self._context)
-        self.assertItemsEqual(ports, new_ports)
+        self.assertCountEqual(ports, new_ports)
         # restore mock
         self.dummy.create_policy_target_precommit = orig_func
 
@@ -4047,7 +4051,7 @@ class TestPolicyRuleBase(AIMBaseTestCase):
             alib.map_to_aim_filter_entry(
                 list(list(expected_entries.items())[0][1].items())[0][1]))
 
-        self.assertItemsEqual(
+        self.assertCountEqual(
             aim_object_to_dict(expected_filter_entry),
             # special processing to convert unicode to str
             dict((str(k), str(v)) for k, v in list(aim_object_to_dict(
@@ -4066,7 +4070,7 @@ class TestPolicyRuleBase(AIMBaseTestCase):
             filter_entry = next(
                 entry for entry in filter_entries if entry.name == e_name
                            )
-            self.assertItemsEqual(
+            self.assertCountEqual(
                     aim_object_to_dict(expected_filter_entry),
                     # special processing to convert unicode to str
                     dict((str(k), str(v)) for k, v in list(aim_object_to_dict(
@@ -5467,7 +5471,7 @@ class TestNestedDomain(AIMBaseTestCase):
         self.assertEqual(4093, details['nested_domain_infra_vlan'])
         self.assertEqual(1000, details['nested_domain_service_vlan'])
         self.assertEqual(1001, details['nested_domain_node_network_vlan'])
-        self.assertItemsEqual(expt_vlans,
+        self.assertCountEqual(expt_vlans,
                 details['nested_domain_allowed_vlans'])
         self.assertEqual(4094, details['nested_host_vlan'])
 
@@ -5499,7 +5503,7 @@ class TestNestedDomain(AIMBaseTestCase):
         self.assertIsNone(details['nested_domain_infra_vlan'])
         self.assertIsNone(details['nested_domain_service_vlan'])
         self.assertIsNone(details['nested_domain_node_network_vlan'])
-        self.assertItemsEqual([], details['nested_domain_allowed_vlans'])
+        self.assertCountEqual([], details['nested_domain_allowed_vlans'])
         self.assertIsNone(details['nested_host_vlan'])
 
 
@@ -5660,11 +5664,11 @@ class TestNeutronPortOperation(AIMBaseTestCase):
         # tenant. Similar t2* resources, with the same addresses as
         # those in the primary tenant, will be setup througout this
         # test, to ensure they don't interfere.
-        t2net = self._make_network(self.fmt, 't2net1', True, tenant_id='t2')
+        t2net = self._make_network(self.fmt, 't2net1', True, project_id='t2')
         t2sub1 = self._make_subnet(self.fmt, t2net, '10.0.0.1', '10.0.0.0/24',
-                                   tenant_id='t2')['subnet']
+                                   project_id='t2')['subnet']
         t2sub2 = self._make_subnet(self.fmt, t2net, '1.2.3.1', '1.2.3.0/24',
-                                   tenant_id='t2')['subnet']
+                                   project_id='t2')['subnet']
 
         # The same aap however can be assigned to a port (but from a different
         # network) whose subnets belong to a different active_acitve_aap mode.
@@ -5805,7 +5809,7 @@ class TestNeutronPortOperation(AIMBaseTestCase):
             'l1', dn='uni/tn-t1/out-l1/instP-n1')
         ext_net1_sub2 = self._make_subnet(
             self.fmt, {'network': {'id': ext_net1_sub1['network_id'],
-                                   'tenant_id': ext_net1_sub1['tenant_id']}},
+                                   'project_id': ext_net1_sub1['project_id']}},
             '150.150.0.1', '150.150.0.0/16')['subnet']
         self._update('subnets', ext_net1_sub2['id'],
                      {'subnet': {SNAT_HOST_POOL: True}})

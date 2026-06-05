@@ -34,47 +34,47 @@ class ExtensionDriverTestCaseMixin(object):
         pt = self.create_policy_target(
             policy_target_group_id=ptg['id'],
             segmentation_labels=labels)['policy_target']
-        self.assertItemsEqual(labels, pt['segmentation_labels'])
+        self.assertCountEqual(labels, pt['segmentation_labels'])
         pt = self.show_policy_target(
             pt['id'], expected_res_status=200)['policy_target']
-        self.assertItemsEqual([], pt['segmentation_labels'])
+        self.assertCountEqual([], pt['segmentation_labels'])
         self.delete_policy_target(pt['id'], expected_res_status=204)
 
         labels = ['red', 'blue']
         pt = self.create_policy_target(
             policy_target_group_id=ptg['id'],
             segmentation_labels=labels)['policy_target']
-        self.assertItemsEqual(labels, pt['segmentation_labels'])
+        self.assertCountEqual(labels, pt['segmentation_labels'])
         pt = self.show_policy_target(
             pt['id'], expected_res_status=200)['policy_target']
-        self.assertItemsEqual(labels, pt['segmentation_labels'])
+        self.assertCountEqual(labels, pt['segmentation_labels'])
 
         labels = ['green', 'black', 'red']
         pt = self.update_policy_target(
             pt['id'], segmentation_labels=labels,
             expected_res_status=200)['policy_target']
-        self.assertItemsEqual(labels, pt['segmentation_labels'])
+        self.assertCountEqual(labels, pt['segmentation_labels'])
         pt = self.show_policy_target(
             pt['id'], expected_res_status=200)['policy_target']
-        self.assertItemsEqual(labels, pt['segmentation_labels'])
+        self.assertCountEqual(labels, pt['segmentation_labels'])
 
         labels = []
         pt = self.update_policy_target(
             pt['id'], segmentation_labels=labels,
             expected_res_status=200)['policy_target']
-        self.assertItemsEqual(labels, pt['segmentation_labels'])
+        self.assertCountEqual(labels, pt['segmentation_labels'])
         pt = self.show_policy_target(
             pt['id'], expected_res_status=200)['policy_target']
-        self.assertItemsEqual(labels, pt['segmentation_labels'])
+        self.assertCountEqual(labels, pt['segmentation_labels'])
 
         labels = ['black']
         pt = self.update_policy_target(
             pt['id'], segmentation_labels=labels,
             expected_res_status=200)['policy_target']
-        self.assertItemsEqual(labels, pt['segmentation_labels'])
+        self.assertCountEqual(labels, pt['segmentation_labels'])
         pt = self.show_policy_target(
             pt['id'], expected_res_status=200)['policy_target']
-        self.assertItemsEqual(labels, pt['segmentation_labels'])
+        self.assertCountEqual(labels, pt['segmentation_labels'])
 
         self.delete_policy_target(pt['id'], expected_res_status=204)
         session = db_api.get_reader_session()

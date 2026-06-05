@@ -48,7 +48,7 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
             if item:
                 model = self.handler_mock.call_args_list[call_idx][0][-1]
                 self.assertEqual(model['id'], item['id'])
-                self.assertEqual(model['tenant_id'], item['tenant_id'])
+                self.assertEqual(model['project_id'], item['project_id'])
             call_idx = call_idx - 1
 
     def setUp(self):
@@ -66,25 +66,24 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
         get_sec_group_port_patch.start()
 
         # Set up L2 objects for L3 test
-        attr = {'tenant_id': TENANT}
+        attr = {'project_id': TENANT}
         resp = self._create_network(self.fmt, NETWORK, True, **attr)
         self.network = self.deserialize(self.fmt, resp)['network']
         attr.update({'network_id': self.network['id']})
         resp = self._create_subnet(self.fmt, self.network['id'], CIDR, **attr)
         self.subnet = self.deserialize(self.fmt, resp)['subnet']
         resp = self._create_port(self.fmt, self.network['id'],
-                                 tenant_id=TENANT)
+                                 project_id=TENANT)
         self.port = self.deserialize(self.fmt, resp)['port']
         self.interface_info = {'subnet': {'subnet_id': self.subnet['id']},
                                'port': {'port_id': self.port['id']}}
         self.context = context.get_admin_context()
-        self.context.tenant_id = TENANT
-
+        self.context.project_id = TENANT
         self.plugin = l3_plugin.ApicL3Plugin()
 
     def _test_add_router_interface(self, interface_info):
 
-        attr = {'router': {'tenant_id': TENANT,
+        attr = {'router': {'project_id': TENANT,
                            'admin_state_up': True,
                            'name': ROUTER}}
         router = self.plugin.create_router(self.context, attr)
@@ -94,7 +93,7 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
                                                     router['id'],
                                                     interface_info)
             self.assertEqual(info['id'], router['id'])
-            self.assertEqual(info['tenant_id'], TENANT)
+            self.assertEqual(info['project_id'], TENANT)
             if interface_info.get('port_id'):
                 self.assertEqual(info['port_id'], self.port['id'])
             else:
@@ -126,7 +125,7 @@ class TestCiscoApicAimL3Plugin(test_aim_mapping_driver.AIMBaseTestCase):
         subnet = self._make_subnet('json', net, '14.0.0.1',
                                    '14.0.0.0/24')['subnet']
         self._set_net_external(subnet['network_id'])
-        kwargs = {'floatingip': {'tenant_id': TENANT,
+        kwargs = {'floatingip': {'project_id': TENANT,
                                  'subnet_id': subnet['id'],
                                  'floating_network_id': subnet['network_id']}}
         self.handler_mock.reset_mock()

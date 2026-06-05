@@ -62,12 +62,12 @@ class TestAIMServiceFunctionChainingBase(test_aim_base.AIMBaseTestCase):
                                       group='flowclassifier')
         config.cfg.CONF.set_override(
             'network_vlan_ranges', ['physnet1:100:200'], group='ml2_type_vlan')
-        net_type = kwargs.pop('tenant_network_types', None) or ['vlan']
+        net_type = kwargs.pop('project_network_types', None) or ['vlan']
         ml2_options = {'mechanism_drivers': ['apic_aim', 'openvswitch'],
                        'extension_drivers': ['apic_aim', 'port_security',
                                              'dns'],
                        'type_drivers': ['opflex', 'local', 'vlan'],
-                       'tenant_network_types': net_type}
+                       'project_network_types': net_type}
         # NOTE(ivar): the SFC and FLC driver managers load the driver names in
         # the default parameters of their INIT functions. In Python, default
         # params are evaluated only once when the module is loaded hence
@@ -734,7 +734,7 @@ class TestPortPair(TestAIMServiceFunctionChainingBase):
 class TestPortPairOpflexAgent(TestAIMServiceFunctionChainingBase):
 
     def setUp(self):
-        kwargs = {'tenant_network_types': ['opflex']}
+        kwargs = {'project_network_types': ['opflex']}
         super(TestPortPairOpflexAgent, self).setUp(**kwargs)
 
     def _register_agent(self, host, agent_conf):

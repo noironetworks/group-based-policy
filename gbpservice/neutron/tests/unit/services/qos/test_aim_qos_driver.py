@@ -34,12 +34,12 @@ LOG = logging.getLogger(__name__)
 class TestAIMQosBase(test_aim_base.AIMBaseTestCase):
 
     def setUp(self, *args, **kwargs):
-        net_type = kwargs.pop('tenant_network_types', None) or ['vlan']
+        net_type = kwargs.pop('project_network_types', None) or ['vlan']
         ml2_options = {'mechanism_drivers': ['apic_aim', 'openvswitch'],
                        'extension_drivers': ['apic_aim', 'port_security',
                                              'dns', 'qos'],
                        'type_drivers': ['opflex', 'local', 'vlan'],
-                       'tenant_network_types': net_type}
+                       'project_network_types': net_type}
         config.cfg.CONF.set_override(
             'network_vlan_ranges', ['physnet1:100:200'], group='ml2_type_vlan')
         self._aim_mech_driver = None
