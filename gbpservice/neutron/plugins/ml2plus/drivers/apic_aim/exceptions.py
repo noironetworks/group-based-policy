@@ -183,6 +183,13 @@ class ServiceNetworkReferenceInvalid(exceptions.BadRequest):
     message = _("Network %(network_id)s is not a valid service network.")
 
 
+class ServiceNetworkMismatchOnExternalNetwork(exceptions.BadRequest):
+    message = _(
+        "All distributed SNAT subnets on external network %(network_id)s "
+        "must reference the same service network. Existing service network: "
+        "%(existing_service_network_id)s.")
+
+
 class DirectSnatModeTransitionNotSupported(exceptions.BadRequest):
     message = _("Cannot directly transition subnet %(subnet_id)s between "
                 "host-pool SNAT and distributed SNAT. Disable one mode "
