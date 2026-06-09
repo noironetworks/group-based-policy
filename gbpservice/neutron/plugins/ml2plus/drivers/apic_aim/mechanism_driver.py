@@ -1534,6 +1534,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_id = current['network_id']
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
+
+        self._validate_dist_snat_port_config(current)
+
         self._validate_subnet_snat_mode(
             context._plugin_context, current,
             snat_pool=current.get(cisco_apic.SNAT_HOST_POOL, False),
@@ -1655,6 +1658,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_id = current['network_id']
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
+
+        self._validate_dist_snat_port_config(current)
+
         self._validate_subnet_snat_mode(
             context._plugin_context, current,
             snat_pool=current.get(cisco_apic.SNAT_HOST_POOL, False),
@@ -6794,6 +6800,49 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             models_v2.IPAllocation.subnet_id == sa.bindparam('subnet_id'),
             models_v2.Port.device_owner == n_constants.DEVICE_OWNER_ROUTER_GW)
         return query(session).params(subnet_id=subnet_id).first()
+
+    def _validate_dist_snat_port_config(self, subnet):
+        if not subnet.get(cisco_apic.SERVICE_NETWORK):
+            return
+        start = subnet.get(cisco_apic.DIST_SNAT_START_PORT)
+        end = subnet.get(cisco_apic.DIST_SNAT_END_PORT)
+        alloc = subnet.get(cisco_apic.DIST_SNAT_ALLOC_SIZE)
+
+        if start is None or end is None:
+            return
+
+        try:
+            start = int(start)
+            end = int(end)
+            alloc = int(alloc) if alloc is not None else None
+        except (TypeError, ValueError):
+            raise n_exceptions.InvalidInput(
+                error_message="Distributed SNAT port values must be integers")
+
+        if start < 1 or start > 65535:
+            raise n_exceptions.InvalidInput(
+                error_message="Distributed SNAT start port must be 1-65535")
+
+        if end < 1 or end > 65535:
+            raise n_exceptions.InvalidInput(
+                error_message="Distributed SNAT end port must be 1-65535")
+
+        if start >= end:
+            raise n_exceptions.InvalidInput(
+                error_message=(
+                    "Distributed SNAT start_port must be less than end_port"))
+
+        if alloc is not None and alloc <= 0:
+            raise n_exceptions.InvalidInput(
+                error_message=(
+                    "Distributed SNAT allocation size must "
+                    "be greater than zero"))
+
+        if alloc is not None and alloc > (end - start + 1):
+            raise n_exceptions.InvalidInput(
+                    error_message=(
+                        "Distributed SNAT allocation size "
+                        "exceeds available port range"))
 
     def _validate_subnet_snat_mode(self, plugin_context, subnet,
                                    snat_pool, service_network,
