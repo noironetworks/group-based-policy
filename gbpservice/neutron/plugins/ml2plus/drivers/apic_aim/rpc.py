@@ -1128,6 +1128,8 @@ class ApicRpcHandlerMixin(object):
                    details['allowed_address_pairs'] if aap.get('active',
                                                                False)]
         total_ips = sorted(ips + ips_aap)
+        routed_subnet_ids = set([ip.subnet_id for ip in info['ip_info']
+                                 if ip.subnet_id])
 
         host_snat_ips = []
         for ext_net in list(info['ext_net_info'].values()):
@@ -1139,19 +1141,24 @@ class ApicRpcHandlerMixin(object):
             if need_snat is False:
                 continue
 
-            snat = snat_info.get(ext_net.network_id)
-            if snat:
-                snat_ip = {'host_snat_ip': snat.ip_address,
-                           'host_snat_mac': snat.mac_address,
-                           'gateway_ip': snat.gateway_ip,
-                           'prefixlen': int(snat.cidr.split('/')[1])}
-            else:
-                # No existing SNAT IP for this external network on
-                # this host, so allocate one.
-                ctx = n_context.get_admin_context()
-                snat_ip = self.get_or_allocate_snat_ip(
-                    ctx, host, {'id': ext_net.network_id,
-                                'tenant_id': ext_net.project_id})
+            ctx = n_context.get_admin_context()
+            snat_ip = self.get_or_allocate_distributed_snat_ip(
+                ctx, host, {'id': ext_net.network_id,
+                            'tenant_id': ext_net.project_id},
+                routed_subnet_ids)
+            if snat_ip is None:
+                snat = snat_info.get(ext_net.network_id)
+                if snat:
+                    snat_ip = {'host_snat_ip': snat.ip_address,
+                               'host_snat_mac': snat.mac_address,
+                               'gateway_ip': snat.gateway_ip,
+                               'prefixlen': int(snat.cidr.split('/')[1])}
+                else:
+                    # No existing SNAT IP for this external network on
+                    # this host, so allocate one.
+                    snat_ip = self.get_or_allocate_snat_ip(
+                        ctx, host, {'id': ext_net.network_id,
+                                    'tenant_id': ext_net.project_id})
             if snat_ip:
                 snat_ip['ext_net_id'] = ext_net.network_id
                 snat_ip['external_segment_name'] = (
