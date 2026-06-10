@@ -19,6 +19,7 @@ GBP_NETWORK_EPG = 'gbp_network_epg'
 GBP_NETWORK_LINK = 'gbp_network_link'
 
 DEVICE_OWNER_SNAT_PORT = 'apic:snat-pool'
+DEVICE_OWNER_DIST_SNAT_PORT = 'apic:dist-snat'
 DEVICE_OWNER_SVI_PORT = 'apic:svi'
 
 IPV4_ANY_CIDR = '0.0.0.0/0'
