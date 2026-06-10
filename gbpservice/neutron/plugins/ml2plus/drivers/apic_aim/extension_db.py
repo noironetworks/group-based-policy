@@ -17,6 +17,7 @@ from collections import defaultdict
 
 from neutron.db import models_v2
 from neutron_lib.db import model_base
+from oslo_db import exception as db_exc
 from oslo_log import log
 import sqlalchemy as sa
 from sqlalchemy.ext import baked
@@ -187,10 +188,11 @@ class DistSnatMappingDb(model_base.BASEV2):
     __tablename__ = 'apic_aim_dist_snat_mappings'
 
     snat_ip = sa.Column(sa.String(64), primary_key=True)
-    host_name = sa.Column(sa.String(255), primary_key=True)
+    subnet_id = sa.Column(
+        sa.String(36), sa.ForeignKey('subnets.id'), primary_key=True)
     start_port = sa.Column(sa.Integer, primary_key=True)
+    host_name = sa.Column(sa.String(255), nullable=False)
     end_port = sa.Column(sa.Integer, nullable=False)
-    subnet_id = sa.Column(sa.String(36))
     service_port_id = sa.Column(sa.String(36))
 
 
@@ -674,12 +676,15 @@ class ExtensionDbMixin(object):
     def set_dist_snat_mapping(self, session, snat_ip, host_name, start_port,
                               end_port, subnet_id=None, service_port_id=None):
         db_obj = session.query(DistSnatMappingDb).filter_by(
-            snat_ip=snat_ip, host_name=host_name,
+            snat_ip=snat_ip, subnet_id=subnet_id,
             start_port=start_port).first()
+        if db_obj and db_obj.host_name != host_name:
+            raise db_exc.DBDuplicateEntry(
+                columns=['snat_ip', 'subnet_id', 'start_port'])
         db_obj = db_obj or DistSnatMappingDb(
-            snat_ip=snat_ip, host_name=host_name, start_port=start_port)
+            snat_ip=snat_ip, subnet_id=subnet_id, start_port=start_port)
+        db_obj['host_name'] = host_name
         db_obj['end_port'] = end_port
-        db_obj['subnet_id'] = subnet_id
         db_obj['service_port_id'] = service_port_id
         session.add(db_obj)
         return db_obj
