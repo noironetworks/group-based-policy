@@ -50,9 +50,10 @@ def upgrade():
         sa.Column('host_name', sa.String(255), nullable=False),
         sa.Column('start_port', sa.Integer, nullable=False),
         sa.Column('end_port', sa.Integer, nullable=False),
-        sa.Column('subnet_id', sa.String(36)),
+        sa.Column('subnet_id', sa.String(36), nullable=False),
         sa.Column('service_port_id', sa.String(36)),
-        sa.PrimaryKeyConstraint('snat_ip', 'host_name', 'start_port'))
+        sa.ForeignKeyConstraint(['subnet_id'], ['subnets.id']),
+        sa.PrimaryKeyConstraint('snat_ip', 'subnet_id', 'start_port'))
     pass
 
 
