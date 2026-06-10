@@ -3624,6 +3624,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         port = context.current
         session = context._plugin_context.session
         aim_ctx = aim_context.AimContext(session)
+        if port.get('device_owner') == aim_cst.DEVICE_OWNER_DIST_SNAT_PORT:
+            self.delete_dist_snat_mappings(
+                session, service_port_id=port['id'])
         if self._is_port_bound(port):
             # On last VM removal from a host, clean up dist-SNAT device cluster
             if port['device_owner'].startswith('compute:'):
@@ -5699,6 +5702,280 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if vrfs:
             self._notify_vrf_update(plugin_context, vrfs)
             plugin_context._vrfs_to_notify = set()
+
+    def get_or_allocate_distributed_snat_ip(self, plugin_context, host,
+                                            ext_network,
+                                            routed_subnet_ids):
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            gw_info = self._query_dist_snat_gateway_info(
+                session, ext_network['id'], routed_subnet_ids)
+        if not gw_info:
+            return
+
+        service_port = self._get_or_create_dist_snat_service_port(
+            plugin_context, host, gw_info['service_network_id'],
+            ext_network['tenant_id'])
+        if not service_port:
+            LOG.warning(
+                "Failed to allocate distributed SNAT service port on "
+                "service network %s for host %s",
+                gw_info['service_network_id'], host)
+            return {}
+
+        mapping = self._get_or_allocate_dist_snat_port_range(
+            plugin_context, gw_info, host, service_port['id'])
+        if not mapping:
+            if service_port['created']:
+                self._delete_dist_snat_service_port(
+                    plugin_context, service_port['id'])
+            return {}
+
+        service_nodes = self._query_dist_snat_service_nodes(
+            plugin_context, gw_info['snat_ip'], gw_info['snat_subnet_id'],
+            host)
+
+        return {'host_snat_ip': gw_info['snat_ip'],
+                'host_snat_mac': gw_info['host_snat_mac'],
+                'gateway_ip': gw_info['gateway_ip'],
+                'prefixlen': gw_info['prefixlen'],
+                'start_port': mapping.start_port,
+                'end_port': mapping.end_port,
+                'service_vrf': gw_info['service_vrf'],
+                'service_ip': service_port['ip_address'],
+                'service_mac': service_port['mac_address'],
+                'dest_prefix': '0.0.0.0/0',
+                'service_nodes': service_nodes,
+                'snat_subnet_id': gw_info['snat_subnet_id'],
+                'snat_uuid': gw_info['snat_subnet_id']}
+
+    def _query_dist_snat_gateway_info(self, session, ext_network_id,
+                                      routed_subnet_ids):
+        gw_alloc = orm.aliased(models_v2.IPAllocation)
+        intf_alloc = orm.aliased(models_v2.IPAllocation)
+        extn_db_sn = extension_db.SubnetExtensionDb
+
+        query = session.query(
+            gw_alloc.ip_address,
+            models_v2.Port.mac_address,
+            models_v2.Subnet.gateway_ip,
+            models_v2.Subnet.cidr,
+            models_v2.Subnet.id,
+            extn_db_sn.service_network_id,
+            extn_db_sn.dist_snat_start_port,
+            extn_db_sn.dist_snat_end_port,
+            extn_db_sn.dist_snat_alloc_size,
+            db.NetworkMapping.vrf_name)
+        query = query.join(
+            models_v2.Port,
+            models_v2.Port.id == gw_alloc.port_id)
+        query = query.join(
+            models_v2.Subnet,
+            models_v2.Subnet.id == gw_alloc.subnet_id)
+        query = query.join(
+            extn_db_sn,
+            extn_db_sn.subnet_id == models_v2.Subnet.id)
+        query = query.join(
+            l3_db.Router,
+            l3_db.Router.gw_port_id == models_v2.Port.id)
+        query = query.join(
+            l3_db.RouterPort,
+            l3_db.RouterPort.router_id == l3_db.Router.id)
+        query = query.join(
+            intf_alloc,
+            intf_alloc.port_id == l3_db.RouterPort.port_id)
+        query = query.outerjoin(
+            db.NetworkMapping,
+            db.NetworkMapping.network_id == extn_db_sn.service_network_id)
+        query = query.filter(
+            models_v2.Port.network_id == ext_network_id,
+            models_v2.Port.device_owner ==
+            n_constants.DEVICE_OWNER_ROUTER_GW,
+            l3_db.RouterPort.port_type ==
+            n_constants.DEVICE_OWNER_ROUTER_INTF,
+            intf_alloc.subnet_id.in_(routed_subnet_ids),
+            extn_db_sn.service_network_id.isnot(None),
+            extn_db_sn.service_network_id != '')
+        row = query.order_by(models_v2.Subnet.id).first()
+        if not row:
+            return
+
+        return {'snat_ip': row[0],
+                'host_snat_mac': row[1],
+                'gateway_ip': row[2],
+                'prefixlen': int(row[3].split('/')[1]),
+                'snat_subnet_id': row[4],
+                'service_network_id': row[5],
+                'start_port': row[6],
+                'end_port': row[7],
+                'alloc_size': row[8],
+                'service_vrf': row[9]}
+
+    def _get_or_create_dist_snat_service_port(self, plugin_context, host,
+                                              service_network_id,
+                                              project_id):
+        name = 'service-net-port:%s' % host
+        service_port = self._query_dist_snat_service_port(
+            plugin_context, host, service_network_id, name)
+        if service_port:
+            return service_port
+
+        attrs = {'device_id': host,
+                 'device_owner': aim_cst.DEVICE_OWNER_DIST_SNAT_PORT,
+                 'tenant_id': project_id,
+                 'name': name,
+                 'network_id': service_network_id,
+                 'mac_address': n_constants.ATTR_NOT_SPECIFIED,
+                 'fixed_ips': n_constants.ATTR_NOT_SPECIFIED,
+                 'status': "ACTIVE",
+                 'admin_state_up': True}
+        try:
+            port = self.plugin.create_port(plugin_context, {'port': attrs})
+        except n_exceptions.IpAddressGenerationFailure:
+            LOG.info(
+                'No more addresses available in service network %s for '
+                'distributed SNAT service port allocation',
+                service_network_id)
+            return
+
+        return {'id': port['id'],
+                'mac_address': port['mac_address'],
+                'ip_address': port['fixed_ips'][0]['ip_address'],
+                'created': True}
+
+    def _delete_dist_snat_service_port(self, plugin_context, service_port_id):
+        try:
+            self.plugin.delete_port(
+                plugin_context.elevated(), service_port_id)
+        except n_exceptions.PortNotFound:
+            pass
+        except n_exceptions.NeutronException as ne:
+            LOG.warning(
+                "Failed to delete distributed SNAT service port %(port)s "
+                "after port-range allocation failure: %(ex)s",
+                {'port': service_port_id, 'ex': ne})
+
+    def _query_dist_snat_service_port(self, plugin_context, host,
+                                      service_network_id, name):
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            query = session.query(
+                models_v2.Port.id,
+                models_v2.Port.mac_address,
+                models_v2.IPAllocation.ip_address)
+            query = query.join(
+                models_v2.IPAllocation,
+                models_v2.IPAllocation.port_id == models_v2.Port.id)
+            query = query.filter(
+                models_v2.Port.network_id == service_network_id,
+                models_v2.Port.device_id == host,
+                models_v2.Port.device_owner ==
+                aim_cst.DEVICE_OWNER_DIST_SNAT_PORT,
+                models_v2.Port.name == name)
+            row = query.first()
+            if not row:
+                return
+            return {'id': row[0],
+                    'mac_address': row[1],
+                    'ip_address': row[2],
+                    'created': False}
+
+    def _get_or_allocate_dist_snat_port_range(self, plugin_context, gw_info,
+                                              host, service_port_id):
+        attempts = self._dist_snat_port_range_count(gw_info)
+        for _attempt in range(attempts):
+            try:
+                mapping = self._reserve_dist_snat_port_range(
+                    plugin_context, gw_info, host, service_port_id)
+            except db_exc.DBDuplicateEntry:
+                LOG.debug(
+                    "Concurrent distributed SNAT port range allocation "
+                    "collision for SNAT IP %s on host %s; retrying",
+                    gw_info['snat_ip'], host)
+                continue
+            if mapping:
+                return mapping
+            break
+
+        LOG.error(
+            "No distributed SNAT port range available for SNAT IP %s "
+            "on host %s", gw_info['snat_ip'], host)
+
+    def _dist_snat_port_range_count(self, gw_info):
+        port_count = gw_info['end_port'] - gw_info['start_port'] + 1
+        return port_count // gw_info['alloc_size']
+
+    def _reserve_dist_snat_port_range(self, plugin_context, gw_info, host,
+                                      service_port_id):
+        with db_api.CONTEXT_WRITER.using(plugin_context) as session:
+            existing = self.get_dist_snat_mappings(
+                session, snat_ip=gw_info['snat_ip'], host_name=host,
+                subnet_id=gw_info['snat_subnet_id'],
+                service_port_id=service_port_id)
+            if existing:
+                return sorted(existing, key=lambda x: x.start_port)[0]
+
+            used = self.get_dist_snat_mappings(
+                session, snat_ip=gw_info['snat_ip'],
+                subnet_id=gw_info['snat_subnet_id'])
+            start_port = gw_info['start_port']
+            end_port = gw_info['end_port']
+            alloc_size = gw_info['alloc_size']
+            candidate = start_port
+            while candidate + alloc_size - 1 <= end_port:
+                candidate_end = candidate + alloc_size - 1
+                overlap = False
+                for mapping in used:
+                    if (candidate <= mapping.end_port and
+                            candidate_end >= mapping.start_port):
+                        overlap = True
+                        break
+                if not overlap:
+                    mapping = self.set_dist_snat_mapping(
+                        session, gw_info['snat_ip'], host, candidate,
+                        candidate_end,
+                        subnet_id=gw_info['snat_subnet_id'],
+                        service_port_id=service_port_id)
+                    session.flush()
+                    return mapping
+                candidate += alloc_size
+
+    def _query_dist_snat_service_nodes(self, plugin_context, snat_ip,
+                                       snat_subnet_id, local_host):
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            mapping_db = extension_db.DistSnatMappingDb
+            query = session.query(
+                mapping_db.host_name,
+                mapping_db.start_port,
+                mapping_db.end_port,
+                models_v2.Port.mac_address,
+                models_v2.IPAllocation.ip_address)
+            query = query.join(
+                models_v2.Port,
+                models_v2.Port.id == mapping_db.service_port_id)
+            query = query.join(
+                models_v2.IPAllocation,
+                models_v2.IPAllocation.port_id == models_v2.Port.id)
+            query = query.filter(
+                mapping_db.snat_ip == snat_ip,
+                mapping_db.subnet_id == snat_subnet_id,
+                mapping_db.host_name != local_host,
+                mapping_db.service_port_id.isnot(None))
+            query = query.order_by(mapping_db.start_port)
+
+            service_nodes = []
+            seen = set()
+            for row in query.all():
+                key = (row[0], row[1], row[2])
+                if key in seen:
+                    continue
+                seen.add(key)
+                service_nodes.append({
+                    'host': row[0],
+                    'service_ip': row[4],
+                    'service_mac': row[3],
+                    'mac': row[3],
+                    'start_port': row[1],
+                    'end_port': row[2]})
+            return service_nodes
 
     def get_or_allocate_snat_ip(self, plugin_context, host_or_vrf,
                                 ext_network):
