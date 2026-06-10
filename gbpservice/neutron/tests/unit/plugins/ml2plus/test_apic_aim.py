@@ -8300,20 +8300,25 @@ class TestExtensionAttributes(ApicAimTestCase):
         ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
 
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.0.1',
+            '10.0.0.0/24')['subnet']
+
         with db_api.CONTEXT_WRITER.using(ctx):
             extn.set_dist_snat_mapping(
                 ctx.session, '66.66.66.7', 'host-a', 5000, 5499,
-                subnet_id='subnet-1', service_port_id='port-1')
+                subnet_id=subnet['id'], service_port_id='port-1')
             extn.set_dist_snat_mapping(
                 ctx.session, '66.66.66.7', 'host-b', 5500, 5999,
-                subnet_id='subnet-1', service_port_id='port-2')
+                subnet_id=subnet['id'], service_port_id='port-2')
 
         with db_api.CONTEXT_READER.using(ctx):
             mappings = extn.get_dist_snat_mappings(
                 ctx.session, snat_ip='66.66.66.7')
             self.assertEqual(
-                [('host-a', 5000, 5499, 'subnet-1', 'port-1'),
-                 ('host-b', 5500, 5999, 'subnet-1', 'port-2')],
+                [('host-a', 5000, 5499, subnet['id'], 'port-1'),
+                 ('host-b', 5500, 5999, subnet['id'], 'port-2')],
                 sorted((m.host_name, m.start_port, m.end_port,
                         m.subnet_id, m.service_port_id)
                        for m in mappings))
@@ -8326,6 +8331,76 @@ class TestExtensionAttributes(ApicAimTestCase):
             mappings = extn.get_dist_snat_mappings(
                 ctx.session, snat_ip='66.66.66.7')
             self.assertEqual(['host-b'], [m.host_name for m in mappings])
+
+    def test_dist_snat_mapping_db_prevents_duplicate_range_slot(self):
+        ctx = n_context.get_admin_context()
+        extn = extn_db.ExtensionDbMixin()
+
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.0.1',
+            '10.0.0.0/24')['subnet']
+
+        with testtools.ExpectedException(exc.DBDuplicateEntry):
+            with db_api.CONTEXT_WRITER.using(ctx):
+                extn.set_dist_snat_mapping(
+                    ctx.session, '66.66.66.7', 'host-a', 5000, 5499,
+                    subnet_id=subnet['id'], service_port_id='port-1')
+                extn.set_dist_snat_mapping(
+                    ctx.session, '66.66.66.7', 'host-b', 5000, 5499,
+                    subnet_id=subnet['id'], service_port_id='port-2')
+
+    def test_dist_snat_existing_mapping_reuses_service_port(self):
+        ctx = n_context.get_admin_context()
+        extn = extn_db.ExtensionDbMixin()
+
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.0.1',
+            '10.0.0.0/24')['subnet']
+
+        with db_api.CONTEXT_WRITER.using(ctx):
+            extn.set_dist_snat_mapping(
+                ctx.session, '66.66.66.7', 'host-a', 5000, 5499,
+                subnet_id=subnet['id'], service_port_id='port-1')
+
+        gw_info = {'snat_ip': '66.66.66.7',
+                   'snat_subnet_id': subnet['id'],
+                   'start_port': 5000,
+                   'end_port': 5999,
+                   'alloc_size': 500}
+        mapping = self.driver._get_or_allocate_dist_snat_port_range(
+            ctx, gw_info, 'host-a', 'port-1')
+
+        self.assertEqual(5000, mapping.start_port)
+        self.assertEqual(5499, mapping.end_port)
+        self.assertEqual('port-1', mapping.service_port_id)
+
+    def test_dist_snat_service_port_delete_releases_mapping(self):
+        ctx = n_context.get_admin_context()
+        extn = extn_db.ExtensionDbMixin()
+
+        net = self._make_network(self.fmt, 'net1', True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.0.0.1',
+            '10.0.0.0/24')['subnet']
+        service_port = self._make_port(
+            self.fmt, net['id'], as_admin=True,
+            device_owner='apic:dist-snat',
+            device_id='host-a',
+            name='service-net-port:host-a',
+            fixed_ips=[{'subnet_id': subnet['id']}])['port']
+
+        with db_api.CONTEXT_WRITER.using(ctx):
+            extn.set_dist_snat_mapping(
+                ctx.session, '66.66.66.7', 'host-a', 5000, 5499,
+                subnet_id=subnet['id'], service_port_id=service_port['id'])
+
+        self._delete('ports', service_port['id'], as_admin=True)
+
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertEqual([], extn.get_dist_snat_mappings(
+                ctx.session, service_port_id=service_port['id']))
 
     def _make_service_network(self, name='svc-valid'):
         return self._make_network(
@@ -14147,6 +14222,16 @@ class TestOpflexRpc(ApicAimTestCase):
     def setUp(self, *args, **kwargs):
         super(TestOpflexRpc, self).setUp(*args, **kwargs)
 
+    def _make_dist_snat_service_network(self, name='svc-dist-snat'):
+        return self._make_network(
+            self.fmt, name, True, as_admin=True,
+            arg_list=self.extension_attributes + (
+                'provider:physical_network',),
+            **{'router:external': True,
+               'provider:network_type': 'vlan',
+               'provider:physical_network': 'physnet1',
+               SERVICE_NETWORK_ENABLE: True})['network']
+
     def _check_response(self, request, response, port, net, subnets,
                         network_type='opflex', vm_name='someid',
                         active_active_aap=False):
@@ -14499,6 +14584,152 @@ class TestOpflexRpc(ApicAimTestCase):
 
     def test_endpoint_details_bound_trunk_no_subport_svi(self):
         self._test_endpoint_details_bound_trunk_no_subport(apic_svi=True)
+
+    def test_endpoint_details_distributed_snat_payload(self):
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+        self._register_agent('h2', AGENT_CONF_OPFLEX)
+
+        svc_net = self._make_dist_snat_service_network()
+        svc_subnet = self._make_subnet(
+            self.fmt, {'network': svc_net}, '169.254.100.1',
+            '169.254.100.0/24')['subnet']
+
+        ext_net = self._make_ext_network(
+            'ext-dist-snat', dn=self.dn_t1_l1_n1,
+            nat_type='distributed')
+        snat_subnet = self._create_subnet_with_extension(
+            self.fmt, ext_net, '172.28.0.1', '172.28.0.0/24',
+            **{SERVICE_NETWORK: svc_net['id'],
+               DIST_SNAT_START_PORT: 10000,
+               DIST_SNAT_END_PORT: 11999,
+               DIST_SNAT_ALLOC_SIZE: 1000})['subnet']
+
+        net = self._make_network(self.fmt, 'net-dist-snat', True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.10.0.1',
+            '10.10.0.0/24')['subnet']
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router-dist-snat',
+            external_gateway_info={
+                'network_id': ext_net['id'],
+                'external_fixed_ips': [{'subnet_id': snat_subnet['id']}],
+            }, as_admin=True)['router']
+        self._router_interface_action('add', router['id'], subnet['id'],
+                                      None)
+        snat_ip = router['external_gateway_info']['external_fixed_ips'][
+            0]['ip_address']
+
+        p2 = self._make_port(
+            self.fmt, net['id'],
+            fixed_ips=[{'subnet_id': subnet['id'],
+                        'ip_address': '10.10.0.12'}])['port']
+        p2 = self._bind_port_to_host(p2['id'], 'h2')['port']
+        request = {'device': 'tap' + p2['id'],
+                   'timestamp': 12345,
+                   'request_id': 'h2_request'}
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='h2')
+        h2_snat = response['gbp_details']['host_snat_ips'][0]
+        self.assertEqual(10000, h2_snat['start_port'])
+        self.assertEqual(10999, h2_snat['end_port'])
+
+        p1 = self._make_port(
+            self.fmt, net['id'],
+            fixed_ips=[{'subnet_id': subnet['id'],
+                        'ip_address': '10.10.0.11'}])['port']
+        p1 = self._bind_port_to_host(p1['id'], 'h1')['port']
+        request = {'device': 'tap' + p1['id'],
+                   'timestamp': 12345,
+                   'request_id': 'h1_request'}
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='h1')
+        snat = response['gbp_details']['host_snat_ips'][0]
+
+        self.assertEqual(snat_ip, snat['host_snat_ip'])
+        self.assertEqual(ext_net['id'], snat['ext_net_id'])
+        self.assertEqual(self.dn_t1_l1_n1.replace('/', ':'),
+                         snat['external_segment_name'])
+        self.assertEqual(11000, snat['start_port'])
+        self.assertEqual(11999, snat['end_port'])
+        self.assertEqual('0.0.0.0/0', snat['dest_prefix'])
+        self.assertEqual(snat_subnet['id'], snat['snat_subnet_id'])
+        self.assertEqual(snat_subnet['id'], snat['snat_uuid'])
+        self._check_ip_in_cidr(snat['service_ip'], svc_subnet['cidr'])
+        self.assertIsNotNone(snat['service_mac'])
+
+        self.assertEqual(1, len(snat['service_nodes']))
+        node = snat['service_nodes'][0]
+        self.assertEqual('h2', node['host'])
+        self.assertEqual(10000, node['start_port'])
+        self.assertEqual(10999, node['end_port'])
+        self.assertEqual(node['service_mac'], node['mac'])
+        self._check_ip_in_cidr(node['service_ip'], svc_subnet['cidr'])
+
+    def test_endpoint_details_dist_snat_exhaustion_has_no_mapping(self):
+        self._register_agent('h1', AGENT_CONF_OPFLEX)
+        self._register_agent('h2', AGENT_CONF_OPFLEX)
+
+        svc_net = self._make_dist_snat_service_network()
+        self._make_subnet(
+            self.fmt, {'network': svc_net}, '169.254.100.1',
+            '169.254.100.0/24')['subnet']
+
+        ext_net = self._make_ext_network(
+            'ext-dist-snat', dn=self.dn_t1_l1_n1,
+            nat_type='distributed')
+        snat_subnet = self._create_subnet_with_extension(
+            self.fmt, ext_net, '172.28.0.1', '172.28.0.0/24',
+            **{SERVICE_NETWORK: svc_net['id'],
+               DIST_SNAT_START_PORT: 10000,
+               DIST_SNAT_END_PORT: 10999,
+               DIST_SNAT_ALLOC_SIZE: 1000})['subnet']
+
+        net = self._make_network(self.fmt, 'net-dist-snat', True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.10.0.1',
+            '10.10.0.0/24')['subnet']
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'router-dist-snat',
+            external_gateway_info={
+                'network_id': ext_net['id'],
+                'external_fixed_ips': [{'subnet_id': snat_subnet['id']}],
+            }, as_admin=True)['router']
+        self._router_interface_action('add', router['id'], subnet['id'],
+                                      None)
+
+        p1 = self._make_port(
+            self.fmt, net['id'],
+            fixed_ips=[{'subnet_id': subnet['id'],
+                        'ip_address': '10.10.0.11'}])['port']
+        p1 = self._bind_port_to_host(p1['id'], 'h1')['port']
+        request = {'device': 'tap' + p1['id'],
+                   'timestamp': 12345,
+                   'request_id': 'h1_request'}
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='h1')
+        self.assertEqual(10000, response['gbp_details']['host_snat_ips'][
+            0]['start_port'])
+
+        p2 = self._make_port(
+            self.fmt, net['id'],
+            fixed_ips=[{'subnet_id': subnet['id'],
+                        'ip_address': '10.10.0.12'}])['port']
+        p2 = self._bind_port_to_host(p2['id'], 'h2')['port']
+        request = {'device': 'tap' + p2['id'],
+                   'timestamp': 12345,
+                   'request_id': 'h2_request'}
+        response = self.driver.request_endpoint_details(
+            n_context.get_admin_context(), request=request, host='h2')
+
+        self.assertEqual([], response['gbp_details']['host_snat_ips'])
+        service_port = self.driver._query_dist_snat_service_port(
+            n_context.get_admin_context(), 'h2', svc_net['id'],
+            'service-net-port:h2')
+        self.assertIsNone(service_port)
+        ctx = n_context.get_admin_context()
+        with db_api.CONTEXT_READER.using(ctx):
+            self.assertEqual([], self.driver.get_dist_snat_mappings(
+                ctx.session, host_name='h2', subnet_id=snat_subnet['id']))
 
     def test_endpoint_details_unbound(self):
         host = 'host1'
