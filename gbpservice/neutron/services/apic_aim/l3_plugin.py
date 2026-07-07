@@ -209,7 +209,8 @@ class ApicL3Plugin(extraroute_db.ExtraRoute_db_mixin,
             for ext_sn in subnets_in_nw:
                 if (ext_sn['apic:snat_subnet_only'] is False and
                     ext_sn['apic:snat_host_pool'] is False and
-                    ext_sn['apic:router_gw_ip_pool'] is True and
+                    (ext_sn['apic:router_gw_ip_pool'] is True or
+                     ext_sn['apic:service_network']) and
                         not subs.get(ext_sn['ip_version'])):
                     subs[ext_sn['ip_version']] = {'subnet_id': ext_sn['id']}
             for ext_sn in subnets_in_nw:

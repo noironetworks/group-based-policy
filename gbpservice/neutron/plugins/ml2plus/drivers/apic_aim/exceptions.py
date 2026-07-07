@@ -169,6 +169,14 @@ class ServiceNetworkInUse(exceptions.BadRequest):
                 "referenced by distributed SNAT subnet %(subnet_id)s.")
 
 
+class ServiceNetworkSubnetStillReferenced(exceptions.BadRequest):
+    message = _("Cannot delete service subnet in network %(network_id)s "
+                "because %(ref_count)d distributed SNAT subnet(s) still "
+                "reference this service network. Delete all SNAT subnets "
+                "that use this service network before deleting the service "
+                "subnet.")
+
+
 class DistributedSnatSubnetInUse(exceptions.BadRequest):
     message = _("Cannot disable distributed SNAT on subnet %(subnet_id)s "
                 "while router gateway ports still use it.")
@@ -183,11 +191,25 @@ class ServiceNetworkReferenceInvalid(exceptions.BadRequest):
     message = _("Network %(network_id)s is not a valid service network.")
 
 
+class ServiceNetworkProjectInvalid(exceptions.BadRequest):
+    message = _("Network %(network_id)s is not in the same project as the "
+                "service network.")
+
+
+class InvalidNetworkForServiceNetworkReference(exceptions.BadRequest):
+    message = _("Network %(network_id)s must be an OpenStack external "
+                "network, with an ExternalNetwork referenced apic_dn.")
+
+
 class ServiceNetworkMismatchOnExternalNetwork(exceptions.BadRequest):
-    message = _(
-        "All distributed SNAT subnets on external network %(network_id)s "
-        "must reference the same service network. Existing service network: "
-        "%(existing_service_network_id)s.")
+    message = _("All distributed SNAT subnets on external network "
+        "%(network_id)s must reference the same service network. "
+        "Existing service network: %(existing_service_network_id)s.")
+
+
+class ServiceNetworkBdReparentFailed(exceptions.BadRequest):
+    message = _("Could not reparent service network BD %(bd_name)s in tenant "
+                "%(tenant_name)s to VRF %(vrf_name)s: BD not found.")
 
 
 class DirectSnatModeTransitionNotSupported(exceptions.BadRequest):
