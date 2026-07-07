@@ -136,6 +136,8 @@ EndpointExternalNetworkInfo = namedtuple(
      'epg_name',
      'epg_app_profile_name',
      'epg_tenant_name',
+     'vrf_name',
+     'vrf_tenant_name',
      'external_network_dn',
      'nat_type'])
 
@@ -243,6 +245,25 @@ class ApicRpcHandlerMixin(object):
             LOG.exception(e)
             return {'l3_policy_id': vrf_id}
 
+    def get_snat_details(self, context, **kwargs):
+        LOG.debug("APIC AIM MD handling get_snat_details for: %s", kwargs)
+
+        host = kwargs.get('host')
+        snat_id = kwargs.get('snat_id')
+        if not snat_id:
+            LOG.error("Missing snat_id in get_snat_details RPC: %s",
+                      kwargs)
+            return
+
+        try:
+            LOG.warning("SNAT %s, host %s", snat_id, host)
+            return self._get_snat_details(context, snat_id, host=host)
+        except Exception as e:
+            LOG.error("An exception occurred while processing "
+                      "get_snat_details RPC: %s", kwargs)
+            LOG.exception(e)
+            return {'snat_id': snat_id}
+
     def request_endpoint_details(self, context, **kwargs):
         LOG.debug("APIC AIM MD handling request_endpoint_details for: %s",
                   kwargs)
@@ -281,6 +302,10 @@ class ApicRpcHandlerMixin(object):
         # implementation from get_vrf_details() to this method.
         return self.get_vrf_details(context, **kwargs)
 
+    def request_snat_details(self, context, **kwargs):
+        LOG.debug("APIC AIM MD handling request_snat_details for: %s", kwargs)
+        return self.get_snat_details(context, **kwargs)
+
     def ip_address_owner_update(self, context, **kwargs):
         LOG.debug("APIC AIM MD handling ip_address_owner_update for: %s",
                   kwargs)
@@ -303,6 +328,11 @@ class ApicRpcHandlerMixin(object):
                 'vrf_name': vrf_name,
                 'vrf_subnets': vrf_subnets
             }
+
+    @db_api.retry_if_session_inactive()
+    def _get_snat_details(self, context, snat_id, host=None):
+        return self.get_hsi_for_distributed_snat_ip(
+            context, snat_id, host=host)
 
     @db_api.retry_if_session_inactive()
     def _request_endpoint_details(self, context, request, host):
@@ -742,6 +772,8 @@ class ApicRpcHandlerMixin(object):
             db.NetworkMapping.epg_name,
             db.NetworkMapping.epg_app_profile_name,
             db.NetworkMapping.epg_tenant_name,
+            db.NetworkMapping.vrf_name,
+            db.NetworkMapping.vrf_tenant_name,
             extension_db.NetworkExtensionDb.external_network_dn,
             extension_db.NetworkExtensionDb.nat_type,
         ))
@@ -1142,11 +1174,19 @@ class ApicRpcHandlerMixin(object):
                 continue
 
             ctx = n_context.get_admin_context()
-            snat_ip = self.get_or_allocate_distributed_snat_ip(
-                ctx, host, {'id': ext_net.network_id,
-                            'tenant_id': ext_net.project_id},
-                routed_subnet_ids)
-            if snat_ip is None:
+            # Only attempt distributed SNAT allocation on compute ports
+            snat_ip = None
+            port_info = info['port_info']
+            if port_info.device_owner.startswith('compute:'):
+                snat_ip = self.get_or_allocate_distributed_snat_ip(
+                    ctx, host, {'id': ext_net.network_id,
+                                'tenant_id': ext_net.project_id,
+                                'vrf_name': ext_net.vrf_name,
+                                'vrf_tenant_name': ext_net.vrf_tenant_name},
+                    routed_subnet_ids)
+            if snat_ip:
+                self._add_distributed_snat_dest(ctx, ext_net.network_id, host)
+            else:
                 snat = snat_info.get(ext_net.network_id)
                 if snat:
                     snat_ip = {'host_snat_ip': snat.ip_address,
