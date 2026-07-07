@@ -25,6 +25,7 @@ from aim.aim_lib import nat_strategy
 from aim import aim_manager
 from aim.api import infra as aim_infra
 from aim.api import resource as aim_resource
+from aim.api import service_graph as aim_service_graph
 from aim.common import utils
 from aim import context as aim_context
 from aim import exceptions as aim_exceptions
@@ -158,6 +159,11 @@ InterfaceValidationInfo = namedtuple(
 StaticPort = namedtuple(
     'StaticPort',
     ['link', 'encap', 'mode'])
+
+
+DistSnatGatewayInfo = namedtuple(
+    'DistSnatGatewayInfo',
+    ['snat_ip', 'subnet_id'])
 
 
 class KeystoneNotificationEndpoint(object):
@@ -824,9 +830,14 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         if current.get(cisco_apic.SERVICE_NETWORK_ENABLE):
             self._validate_service_network_network(current)
-            # Create service network BD in common tenant / UnroutedVRF
+            network_db = self.plugin._get_network(context._plugin_context,
+                                                  current['id'])
+            tenant_name = self.name_mapper.project(
+                context._plugin_context.session, current['tenant_id'])
+            if self._network_shared(network_db):
+                tenant_name = COMMON_TENANT_NAME
             self._create_service_network_bd(aim_ctx, current,
-                                            COMMON_TENANT_NAME)
+                                            tenant_name)
 
         if ((current[cisco_apic.EXTRA_PROVIDED_CONTRACTS] or
              current[cisco_apic.EXTRA_CONSUMED_CONTRACTS]) and
@@ -1226,8 +1237,22 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         # Cleanup service network AIM resources on delete
         if current.get(cisco_apic.SERVICE_NETWORK_ENABLE):
-            self._delete_service_network_resources(aim_ctx, current,
-                                                   COMMON_TENANT_NAME)
+            plugin_context = context._plugin_context
+            network_db = self.plugin._get_network(plugin_context,
+                                                  current['id'])
+            subnets = self.plugin.get_subnets(
+                plugin_context,
+                filters={'network_id': [current['id']]})
+            tenant_name = self.name_mapper.project(
+                plugin_context.session, current['tenant_id'])
+            if self._network_shared(network_db):
+                tenant_name = COMMON_TENANT_NAME
+            bd_name = self._service_network_bd_name(current['id'])
+            for sub in subnets:
+                cidr = self._subnet_to_gw_ip_mask(sub)
+                self._delete_service_subnet_bd_subnet(aim_ctx, tenant_name,
+                                                      bd_name, sub, cidr)
+            self._delete_service_network_bd(aim_ctx, tenant_name, bd_name)
 
         if self._is_external(current):
             l3out, ext_net, ns = self._get_aim_nat_strategy(current)
@@ -1566,28 +1591,53 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # Program AIM policy for distributed SNAT subnets.
         service_network_id = current.get(cisco_apic.SERVICE_NETWORK)
         if service_network_id:
+            service_net_db = self.plugin._get_network(context._plugin_context,
+                                                      service_network_id)
             tenant_name = self.name_mapper.project(
-                session, current['tenant_id'])
+                context._plugin_context.session, service_net_db['tenant_id'])
+            if self._network_shared(service_net_db):
+                tenant_name = COMMON_TENANT_NAME
+
+            # Service Networks can only be referenced by OpenStack external
+            # networks that were created using an L3 Out policy (i.e. using
+            # an ExtenalNetwork DN).
             l3out, _, _ = self._get_aim_nat_strategy_db(session, network_db)
-            self._create_snat_external_network(
-                aim_ctx, current, network, tenant_name)
-            filters = self._create_snat_filters(aim_ctx, current, tenant_name)
-            self._create_snat_contract(
-                aim_ctx, current, network, tenant_name, filters)
-            sg = self._create_service_graph(aim_ctx, network, tenant_name)
-            self._create_service_graph_node(aim_ctx, sg, None, tenant_name)
-            if l3out:
-                self._reparent_service_network_bd(
-                    aim_ctx, service_network_id, l3out.vrf_name,
-                    enable_routing=True)
+            if not l3out:
+                raise exceptions.InvalidNetworkForServiceNetworkReference(
+                        network_id=network_id)
+            l3out_db = self.aim.get(aim_ctx, l3out)
+            if not l3out_db:
+                raise exceptions.InvalidNetworkForServiceNetworkReference(
+                        network_id=network_id)
+
+            service_vlan = self._get_service_network_vlan(
+                context._plugin_context, service_net_db['id'])
+            if service_vlan:
+                service_vlan = 'vlan-%s' % service_vlan
+
+            # Mpve the service network to the same VRF as the L3 Out.
+            self._reparent_service_network_bd(
+                aim_ctx, service_net_db['id'], tenant_name, l3out_db,
+                enable_routing=True)
+
+            # Create resources for the SNAT subnet, as well as the
+            # service network if we haven't  done so already (e.g. other
+            # distributed SNAT subnet is already referencin the service
+            # network).
+            self._handle_dist_snat_first_use(context._plugin_context,
+                                             service_net_db, network_id,
+                                             current, service_vlan)
 
         # Program BD subnet for service network subnets.
         if network.get(cisco_apic.SERVICE_NETWORK_ENABLE):
+            tenant_name = self.name_mapper.project(
+                context._plugin_context.session, current['tenant_id'])
+            if self._network_shared(network_db):
+                tenant_name = COMMON_TENANT_NAME
             bd_name = self._service_network_bd_name(current['network_id'])
-            bd = aim_resource.BridgeDomain(
-                tenant_name=COMMON_TENANT_NAME,
-                name=bd_name)
-            self._create_service_subnet_bd_subnet(aim_ctx, current, bd)
+            cidr = self._subnet_to_gw_ip_mask(current)
+            self._create_service_subnet_bd_subnet(aim_ctx, current, cidr,
+                                                  tenant_name, bd_name)
 
         if network_db.external is not None and current['gateway_ip']:
             l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
@@ -1614,16 +1664,20 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 if cidrs & netaddr.IPSet([current['cidr']]):
                     raise exceptions.ExternalSubnetOverlapInL3Out(
                         cidr=current['cidr'], l3out=l3out.dn)
-            if current[cisco_apic.EPG_SUBNET]:
-                ns.create_epg_subnet(aim_ctx, l3out,
-                    self._subnet_to_gw_ip_mask(current),
-                    scope=subnet_scope,
-                    epg_name=wanted_epg_name)
-            else:
-                ns.create_subnet(aim_ctx, l3out,
-                                 self._subnet_to_gw_ip_mask(current),
-                                 scope=subnet_scope,
-                                 epg_name=wanted_epg_name)
+            # Don't create distributed SNAT subnets - they
+            # are represented as /32 subnets under the AIM
+            # ExternalNetwork/EPG.
+            if not service_network_id:
+                if current[cisco_apic.EPG_SUBNET]:
+                    ns.create_epg_subnet(aim_ctx, l3out,
+                        self._subnet_to_gw_ip_mask(current),
+                        scope=subnet_scope,
+                        epg_name=wanted_epg_name)
+                else:
+                    ns.create_subnet(aim_ctx, l3out,
+                                     self._subnet_to_gw_ip_mask(current),
+                                     scope=subnet_scope,
+                                     epg_name=wanted_epg_name)
             # Send a port update for those existing VMs because
             # SNAT info has been added.
             if current[cisco_apic.SNAT_HOST_POOL]:
@@ -1794,24 +1848,50 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         network_id = current['network_id']
         network_db = self.plugin._get_network(context._plugin_context,
                                               network_id)
+        service_network_id = current.get(cisco_apic.SERVICE_NETWORK)
+
+        # Prevent deletion of service-network subnets while still referenced by
+        # distributed SNAT subnets.
+        network = context.network.current
+        if network.get(cisco_apic.SERVICE_NETWORK_ENABLE):
+            refs = self._get_service_network_references(session, network_id)
+            if refs:
+                raise exceptions.ServiceNetworkSubnetStillReferenced(
+                    network_id=network_id, ref_count=len(refs))
 
         wanted_epg_name = self._determine_epg_name(
             network_db.aim_extension_mapping.multi_ext_nets,
             network_id)
+
+        # Delete BD subnet for service network subnets.
+        network = context.network.current
+        if network.get(cisco_apic.SERVICE_NETWORK_ENABLE):
+            tenant_name = self.name_mapper.project(
+                context._plugin_context.session, current['tenant_id'])
+            if self._network_shared(network_db):
+                tenant_name = COMMON_TENANT_NAME
+            cidr = self._subnet_to_gw_ip_mask(current)
+            bd_name = self._service_network_bd_name(current['network_id'])
+            self._delete_service_subnet_bd_subnet(aim_ctx, tenant_name,
+                                                  bd_name, current, cidr)
 
         if network_db.external is not None and current['gateway_ip']:
             l3out, ext_net, ns = self._get_aim_nat_strategy_db(session,
                                                                network_db)
             if not ext_net:
                 return  # Unmanaged external network
-            if current[cisco_apic.EPG_SUBNET]:
-                ns.delete_epg_subnet(aim_ctx, l3out,
-                    self._subnet_to_gw_ip_mask(current),
-                    epg_name=wanted_epg_name)
-            else:
-                ns.delete_subnet(aim_ctx, l3out,
-                                 self._subnet_to_gw_ip_mask(current),
-                                 epg_name=wanted_epg_name)
+            # No need to delete distributed SNAT subnets - they
+            # are represented as /32 subnets under the AIM
+            # ExternalNetwork/EPG.
+            if not service_network_id:
+                if current[cisco_apic.EPG_SUBNET]:
+                    ns.delete_epg_subnet(aim_ctx, l3out,
+                        self._subnet_to_gw_ip_mask(current),
+                        epg_name=wanted_epg_name)
+                else:
+                    ns.delete_subnet(aim_ctx, l3out,
+                                     self._subnet_to_gw_ip_mask(current),
+                                     epg_name=wanted_epg_name)
             # Send a port update for those existing VMs because
             # SNAT info has been deleted.
             if current[cisco_apic.SNAT_HOST_POOL]:
@@ -1834,19 +1914,31 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         # they are removed from routers.
 
         # Cleanup AIM policy for distributed SNAT subnets
-        service_network_id = current.get(cisco_apic.SERVICE_NETWORK)
         if service_network_id:
             refs = self._get_service_network_references(
                 session, service_network_id)
-            network = self.plugin.get_network(
-                context._plugin_context, current['network_id'])
+
+            service_net_db = self.plugin._get_network(context._plugin_context,
+                                                      service_network_id)
             tenant_name = self.name_mapper.project(
-                context._plugin_context.session, current['tenant_id'])
-            self._delete_snat_resources(aim_ctx, current, network, tenant_name)
+                context._plugin_context.session, service_net_db['tenant_id'])
+            if self._network_shared(service_net_db):
+                tenant_name = COMMON_TENANT_NAME
+            service_vlan = self._get_service_network_vlan(
+                context._plugin_context, service_network_id)
+            if service_vlan:
+                service_vlan = 'vlan-%s' % service_vlan
+
+            self._handle_dist_snat_last_use(context._plugin_context,
+                                            service_net_db, network_id,
+                                            current, service_vlan)
+            # If this is the last/only network referencing a service network,
+            # then we can reparent the service network to its original
+            # tenant and VRF.
             if len(refs) == 1:
                 self._reparent_service_network_bd(
-                    aim_ctx, service_network_id,
-                    self._get_unrouted_vrf_name(), enable_routing=False)
+                    aim_ctx, service_network_id, tenant_name,
+                    None, enable_routing=False)
 
     def delete_subnet_postcommit(self, context):
         self._send_postcommit_notifications(context._plugin_context)
@@ -3498,6 +3590,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self._check_valid_erspan_config(port)
         if context.original_host and context.original_host != context.host:
             self.disassociate_domain(context, use_original=True)
+            aim_ctx = aim_context.AimContext(db_session=session)
+            self._handle_dist_snat_host_vm_removal(
+                context._plugin_context, aim_ctx, orig)
             if self._use_static_path(context.original_bottom_bound_segment):
                 # remove static binding for old host
                 self._update_static_path(context, host=context.original_host,
@@ -3507,6 +3602,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             # from the original port binding, so pass that as the port
             self._delete_erspan_aim_config(context, orig,
                                            port.get(cisco_apic.ERSPAN_CONFIG))
+            # If this port had distributed SNAT, then we need to provide
+            # update notifications for all unique SNATs on this subnet.
+            snat_info = self.get_distributed_snat_info(
+                context._plugin_context, port)
+            if snat_info:
+                snat_ids = self.get_snat_port_ids_by_subnet(
+                    context._plugin_context, snat_info[0].subnet_id)
+                if snat_ids:
+                    self._add_postcommit_snat_notification(
+                        context._plugin_context, snat_ids)
+
         if self._is_port_bound(port):
             if self._use_static_path(context.bottom_bound_segment):
                 self._associate_domain(context, is_vmm=False)
@@ -3526,6 +3632,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._delete_erspan_aim_config(context, port,
                                                erspan_deletions)
                 self._create_erspan_aim_config(context, cep_dn, port)
+            # If this port now has distributed SNAT, then we need to provide
+            # update notifications for all unique SNATs on this subnet.
+            snat_info = self.get_distributed_snat_info(
+                context._plugin_context, port)
+            if snat_info:
+                snat_ids = self.get_snat_port_ids_by_subnet(
+                    context._plugin_context, snat_info[0].subnet_id)
+                if snat_ids:
+                    self._add_postcommit_snat_notification(
+                        context._plugin_context, snat_ids)
 
         security_groups = port['security_groups']
         # Check if any security groups are changed for the port
@@ -3608,6 +3724,28 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 port[portbindings.HOST_ID], subport_ids, owner,
                 binding_profile=port[portbindings.PROFILE])
 
+        # Outside the transaction, delete any unneeded SNAT ports.
+        #
+        # REVISIT: Although unlikely, deleting an SNAT port outside
+        # the transaction means it could become needed again before
+        # it is actually deleted. To eliminate this race condition,
+        # consider having delete_port_precommit validate that the SNAT
+        # port is still not needed by querying again for interfaces of
+        # routers with gateway ports on that network, and if any are
+        # found, raising an exception that would be silently ignored
+        # below.
+        service_port_ids = getattr(context._plugin_context,
+                                '_snat_port_ids', None)
+        context._plugin_context._snat_port_ids = set()
+        if service_port_ids:
+            e_context = context._plugin_context.elevated()
+            for port_id in service_port_ids:
+                try:
+                    self.plugin.delete_port(e_context, port_id)
+                except n_exceptions.NeutronException as ne:
+                    LOG.warning("Failed to delete service port %(port)s: "
+                                "%(ex)s", {'port': port_id, 'ex': ne})
+
         self._send_postcommit_notifications(context._plugin_context)
 
     def _update_floatingip_status(self, session, port_id):
@@ -3649,6 +3787,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         self._update_floatingip_status(
             context._plugin_context.session, port['id'])
 
+        snat_port_ids = set()
         # Handle router gateway port deletion.
         if self._is_port_router_gateway(port):
             router = self.l3_plugin.get_router(
@@ -3661,6 +3800,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             self._handle_dist_snat_gateway_ports(
                 context._plugin_context, aim_ctx, port, adding=False,
                 network=context.network.current)
+            ids = self._delete_unneeded_snat_ip_ports(
+                context._plugin_context, port['network_id'])
+            if ids:
+                snat_port_ids.update(ids)
 
         # Handle router interface port deletion.
         if self._is_port_router_interface(port):
@@ -3671,6 +3814,17 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 context._plugin_context.session, port['id'])
             self._process_router_interface_port(
                 context, [], port['fixed_ips'])
+            router_db = self.l3_plugin._get_router(
+                context._plugin_context, port['device_id'])
+            if router_db and router_db.gw_port:
+                ids = self._delete_unneeded_snat_ip_ports(
+                    context._plugin_context, router_db.gw_port.network_id)
+                if ids:
+                    snat_port_ids.update(ids)
+
+        if snat_port_ids:
+            self._add_postcommit_snat_ports(context._plugin_context,
+                                            snat_port_ids)
 
     def delete_port_postcommit(self, context):
         port = context.current
@@ -3685,18 +3839,26 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 context.host
             )
 
-        # Handle router gateway port deletion.
-        if self._is_port_router_gateway(port):
-            self._delete_unneeded_snat_ip_ports(
-                plugin_context, port['network_id'])
-
-        # Handle router interface port deletion.
-        if self._is_port_router_interface(port):
-            router_db = self.l3_plugin._get_router(
-                plugin_context, port['device_id'])
-            if router_db and router_db.gw_port:
-                self._delete_unneeded_snat_ip_ports(
-                    plugin_context, router_db.gw_port.network_id)
+        # Outside the transaction, delete any unneeded SNAT ports.
+        #
+        # REVISIT: Although unlikely, deleting an SNAT port outside
+        # the transaction means it could become needed again before
+        # it is actually deleted. To eliminate this race condition,
+        # consider having delete_port_precommit validate that the SNAT
+        # port is still not needed by querying again for interfaces of
+        # routers with gateway ports on that network, and if any are
+        # found, raising an exception that would be silently ignored
+        # below.
+        snat_port_ids = getattr(plugin_context, '_snat_port_ids', None)
+        plugin_context._snat_port_ids = set()
+        if snat_port_ids:
+            e_context = plugin_context.elevated()
+            for port_id in snat_port_ids:
+                try:
+                    self.plugin.delete_port(e_context, port_id)
+                except n_exceptions.NeutronException as ne:
+                    LOG.warning("Failed to delete SNAT port %(port)s: %(ex)s",
+                                {'port': port_id, 'ex': ne})
 
         self._send_postcommit_notifications(context._plugin_context)
 
@@ -3734,6 +3896,337 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._handle_dist_snat_gateway_remove(
                     aim_ctx, port, subnet, ext_net, tenant_name)
 
+    def _get_host_links_and_physdoms(self, aim_ctx):
+        # Get all the host links, and organize them
+        # by host.
+        host_links_by_host = {}
+        host_links = self.aim.find(aim_ctx, aim_infra.HostLink)
+        if not host_links:
+            LOG.warning(
+                "Distributed SNAT configured, but no host links in the DB.")
+        else:
+            for host_link in host_links:
+                links = host_links_by_host.setdefault(host_link.host_name, [])
+                links.append(host_link)
+
+        # Get all the physdoms per host, and organize
+        # them by host.
+        all_physdoms = set()
+        physdoms_by_host = {}
+        for host in host_links_by_host.keys():
+            physdoms = self._get_physdoms_for_host(aim_ctx, host)
+            pdoms = physdoms_by_host.setdefault(host, set())
+            pdoms.update(physdoms)
+            all_physdoms.update(physdoms)
+
+        return host_links_by_host, physdoms_by_host, all_physdoms
+
+    def _handle_dist_snat_first_use(self, plugin_context,
+                                    service_net_db, ext_net_id,
+                                    subnet, service_vlan):
+        session = plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+
+        # Get relevant host links and physdoms, organized by host
+        hlbh, pdbh, apds = self._get_host_links_and_physdoms(aim_ctx)
+        host_links_by_host, physdoms_by_host, all_physdoms = hlbh, pdbh, apds
+
+        # Find the tenant that will own the resources. This
+        # will be the same as the L3 out policy's tenant.
+        ext_net_db = self.plugin._get_network(plugin_context,
+                                              ext_net_id)
+        l3out, _, _ = self._get_aim_nat_strategy_db(session, ext_net_db)
+        if not l3out:
+            LOG.warning(
+                "Distributed SNAT configured, but %s is not a valid "
+                "external network.", ext_net_db['id'])
+            return
+        tenant_name = l3out.tenant_name
+        node_name = 'loadbalancer'
+        iface_name = 'interface'
+
+        # Create resources that are independent of host or physdom/physnet.
+        contract = self._create_snat_contract(
+            aim_ctx, subnet['id'], tenant_name)
+        filters = self._create_snat_filters(aim_ctx, subnet, tenant_name)
+
+        snat_epg = self._create_snat_external_network(
+            aim_ctx, subnet['id'], tenant_name, l3out, contract.name)
+
+        mon_pol_name = self._snat_monitor_policy_name(snat_epg.name)
+        self._create_pbr_monitor_pol(aim_ctx, tenant_name, mon_pol_name)
+
+        provider_pbr = self._create_provider_pbr(aim_ctx, subnet['id'],
+            tenant_name, None, mon_pol_name)
+        consumer_pbr = self._create_consumer_pbr(aim_ctx, subnet['id'],
+            tenant_name, None, mon_pol_name)
+
+        for physdom in all_physdoms:
+            self._create_snat_contract_subject(
+                aim_ctx, subnet['id'], contract.name, physdom,
+                tenant_name, filters)
+            # Each physdom gets its own device cluster
+            dc = self._create_device_cluster(aim_ctx, service_net_db['id'],
+                                             physdom, tenant_name)
+            # Initially create a Device Cluster Interface without any
+            # child interfaces - we'll populate that when iterating over
+            # the hosts.
+            dci = self._create_device_cluster_interface(
+                aim_ctx, dc, iface_name,
+                [], encap=service_vlan or 'unknown')
+
+            cdi_set = set()
+            for host in host_links_by_host.keys():
+                if physdom not in physdoms_by_host[host]:
+                    continue
+                cd = self._create_concrete_device(aim_ctx, dc, host)
+
+                # FIXME: health group name scoping
+                hg_name = host
+                self._create_pbr_health_pol(aim_ctx, tenant_name, hg_name)
+
+                for hl in host_links_by_host[host]:
+                    if not hl.path:
+                        continue
+                    cdi = self._create_concrete_interface(
+                        aim_ctx, cd, iface_name, hl.path, host)
+                    cdi_set.add(cdi.dn)
+
+            service_net_id = service_net_db['id']
+            sg = self._create_service_graph(aim_ctx, subnet['id'],
+                                            physdom, tenant_name)
+            self._create_service_graph_node(aim_ctx, sg.name, tenant_name)
+            service_net_bd_name = self._service_network_bd_name(
+                service_net_id)
+
+            self._create_device_cluster_context(
+                aim_ctx,
+                contract_name=contract.name,
+                service_graph_name=sg.name,
+                node_name=node_name,
+                device_cluster=dc,
+                tenant_name=tenant_name)
+
+            bd_tenant_aname = self.name_mapper.project(
+                session, service_net_db['tenant_id'])
+            if self._network_shared(service_net_db):
+                bd_tenant_aname = COMMON_TENANT_NAME
+            bd = aim_resource.BridgeDomain(
+                tenant_name=bd_tenant_aname,
+                name=service_net_bd_name)
+            self._create_device_cluster_interface_context(
+                aim_ctx,
+                contract_name=contract.name,
+                service_graph_name=sg.name,
+                node_name=node_name,
+                connector_name='provider',
+                device_cluster_interface=dci,
+                service_redirect_policy=provider_pbr,
+                bridge_domain_dn=bd.dn,
+                tenant_name=tenant_name)
+            self._create_device_cluster_interface_context(
+                aim_ctx,
+                contract_name=contract.name,
+                service_graph_name=sg.name,
+                node_name=node_name,
+                connector_name='consumer',
+                device_cluster_interface=dci,
+                service_redirect_policy=consumer_pbr,
+                bridge_domain_dn=bd.dn,
+                tenant_name=tenant_name)
+
+            dci = self._add_device_cluster_interfaces(
+                aim_ctx, dc, iface_name,
+                list(cdi_set), encap=service_vlan or 'unknown')
+
+        LOG.debug("Provisioned distributed SNAT device cluster "
+                  "on physdoms %s", all_physdoms)
+
+    def _add_distributed_snat_dest(self, plugin_context, ext_net_id, host):
+        session = plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        ext_net_db = self.plugin._get_network(plugin_context,
+                                              ext_net_id)
+        l3out, _, _ = self._get_aim_nat_strategy_db(session, ext_net_db)
+        if not l3out:
+            LOG.warning(
+                "Distributed SNAT configured, but %s is not a valid "
+                "external network.", ext_net_db['id'])
+            return
+        tenant_name = l3out.tenant_name
+        dist_snat_subnets = self._get_dist_snat_subnets(plugin_context,
+                                                        ext_net_id)
+        for subnet in dist_snat_subnets:
+            service_net_id = subnet[cisco_apic.SERVICE_NETWORK]
+            service_ports = self._get_service_network_ports(
+                plugin_context, service_net_id)
+            snat_name = self._snat_external_network_name(subnet['id'])
+            mp_name = self._snat_monitor_policy_name(snat_name)
+            self._update_provider_pbr(aim_ctx, subnet['id'],
+                tenant_name, service_ports, mp_name)
+            self._update_consumer_pbr(aim_ctx, subnet['id'],
+                tenant_name, service_ports, mp_name)
+
+    def _handle_dist_snat_last_use(self, plugin_context,
+                                   service_net_db, ext_net_id,
+                                   subnet, service_vlan):
+        session = plugin_context.session
+        aim_ctx = aim_context.AimContext(session)
+        # Get relevant host links and physdoms, organized by host
+
+        hlbh, pdbh, apds = self._get_host_links_and_physdoms(aim_ctx)
+        host_links_by_host, physdoms_by_host, all_physdoms = hlbh, pdbh, apds
+
+        # Find the tenant that owns the resources. This
+        # will be the same as the L3 out policy's tenant.
+        ext_net_db = self.plugin._get_network(plugin_context,
+                                              ext_net_id)
+        l3out, _, _ = self._get_aim_nat_strategy_db(session, ext_net_db)
+        if not l3out:
+            LOG.warning(
+                "Distributed SNAT configured, but %s is not a valid "
+                "external network.", ext_net_db['id'])
+            return
+
+        node_name = 'loadbalancer'
+        iface_name = 'interface'
+        tenant_name = l3out.tenant_name
+        snat_name = self._snat_external_network_name(subnet['id'])
+        mon_pol_name = self._snat_monitor_policy_name(snat_name)
+        contract_name = self._snat_contract_name(subnet['id'])
+        service_net_id = subnet[cisco_apic.SERVICE_NETWORK]
+        service_net_bd_name = self._service_network_bd_name(service_net_id)
+        bd_tenant_aname = self.name_mapper.project(
+            session, service_net_db['tenant_id'])
+        if self._network_shared(service_net_db):
+            bd_tenant_aname = COMMON_TENANT_NAME
+        bd = aim_resource.BridgeDomain(
+            tenant_name=bd_tenant_aname,
+            name=service_net_bd_name)
+
+        # Create resources we need for deletion
+        ppbr_name = 'provider_pbr_' + self._generate_snat_resource_name(
+            subnet['id'])
+        ppbr_pol = aim_service_graph.ServiceRedirectPolicy(
+            tenant_name=tenant_name,
+            name=ppbr_name,
+            display_name=ppbr_name,
+            monitoring_policy_name=mon_pol_name,
+            monitoring_policy_tenant_name=tenant_name,
+            resilient_hash_enabled=True)
+        cpbr_name = 'consumer_pbr_' + self._generate_snat_resource_name(
+            subnet['id'])
+        cpbr_pol = aim_service_graph.ServiceRedirectPolicy(
+            tenant_name=tenant_name,
+            name=cpbr_name,
+            display_name=cpbr_name,
+            monitoring_policy_name=mon_pol_name,
+            monitoring_policy_tenant_name=tenant_name,
+            resilient_hash_enabled=True)
+
+        # Redirect policies are per distributed SNAT subnet
+        self._delete_provider_pbr(aim_ctx, subnet['id'],
+            tenant_name, None, mon_pol_name)
+        self._delete_consumer_pbr(aim_ctx, subnet['id'],
+            tenant_name, None, mon_pol_name)
+
+        for physdom in all_physdoms:
+            # Generate names we need for referencing AIM resources
+            cluster_name = self._device_cluster_name(service_net_db['id'],
+                                                     physdom)
+            sg_name = self._service_graph_name(subnet['id'], physdom)
+
+            # Generate AIM resources needed for deletion
+            dci = aim_service_graph.DeviceClusterInterface(
+                tenant_name=tenant_name,
+                device_cluster_name=cluster_name,
+                name=iface_name,
+                display_name=iface_name,
+                encap=service_vlan)
+            dc = aim_service_graph.DeviceCluster(
+                tenant_name=tenant_name,
+                name=cluster_name,
+                display_name=cluster_name,
+                physical_domain_name=physdom,
+                managed=False)
+
+            self._delete_service_graph_node(aim_ctx, sg_name, tenant_name)
+            self._delete_service_graph(aim_ctx, subnet['id'],
+                                       physdom, tenant_name)
+            self._delete_device_cluster_interface_context(
+                aim_ctx,
+                contract_name=contract_name,
+                service_graph_name=sg_name,
+                node_name=node_name,
+                connector_name='provider',
+                device_cluster_interface=dci,
+                service_redirect_policy=ppbr_pol,
+                bridge_domain_dn=bd.dn,
+                tenant_name=tenant_name)
+            self._delete_device_cluster_interface_context(
+                aim_ctx,
+                contract_name=contract_name,
+                service_graph_name=sg_name,
+                node_name=node_name,
+                connector_name='consumer',
+                device_cluster_interface=dci,
+                service_redirect_policy=cpbr_pol,
+                bridge_domain_dn=bd.dn,
+                tenant_name=tenant_name)
+            self._delete_device_cluster_context(
+                aim_ctx,
+                contract_name=contract_name,
+                service_graph_name=sg_name,
+                node_name=node_name,
+                device_cluster=dc,
+                tenant_name=tenant_name)
+
+            # Each physdom gets its own device cluster
+            self._delete_device_cluster(aim_ctx, service_net_db['id'],
+                                        physdom, tenant_name)
+            # Initially create a Device Cluster Interface without any
+            # child interfaces - we'll populate that when iterating over
+            # the hosts.
+            self._delete_device_cluster_interface(
+                aim_ctx, dc, iface_name,
+                [], encap=service_vlan or 'unknown')
+
+            for host in host_links_by_host.keys():
+                if physdom not in physdoms_by_host[host]:
+                    continue
+                cd = aim_service_graph.ConcreteDevice(
+                    tenant_name=tenant_name,
+                    device_cluster_name=dc.name,
+                    name=host, display_name=host)
+                self._delete_concrete_device(aim_ctx, dc, host)
+
+                # FIXME: health group name scoping
+                hg_name = host
+                self._delete_pbr_health_pol(aim_ctx, tenant_name, hg_name)
+
+                for hl in host_links_by_host[host]:
+                    if not hl.path:
+                        continue
+                    self._delete_concrete_interface(
+                        aim_ctx, cd, iface_name, hl.path, host)
+
+            self._delete_snat_contract_subject(
+                aim_ctx, subnet['id'], contract_name, physdom,
+                tenant_name)
+
+        # Delete resources that are independent of host or physdom/physnet.
+        self._delete_snat_contract(
+            aim_ctx, subnet['id'], tenant_name)
+        self._delete_snat_filters(aim_ctx, subnet, tenant_name)
+
+        self._delete_snat_external_network(
+            aim_ctx, subnet['id'], tenant_name, l3out, contract_name)
+
+        self._delete_pbr_monitor_pol(aim_ctx, tenant_name, mon_pol_name)
+
+        LOG.debug("Rmoved distributed SNAT device cluster "
+                  "on physdoms %s", all_physdoms)
+
     def _handle_dist_snat_host_vm_removal(self, plugin_context, aim_ctx,
                                           port):
         """Remove ConcreteDevice or entire cluster on last VM departure.
@@ -3745,72 +4238,37 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         host = port['binding:host_id']
         if not host:
             return
-
         session = plugin_context.session
-
-        # Step 1: derive host private networks and distributed-SNAT
-        # reachability/usage in one joined query.
-        private_network_ids, active_service_nets = (
-            self._get_host_dist_snat_cleanup_context(session, host))
-        if not private_network_ids:
+        snat_info = self._get_port_distributed_snat_info(session, port)
+        if not snat_info:
             return
 
-        # Step 2: keep resources while any affected dist-SNAT service-network
-        # is still referenced by router gateway IPs on reachable external
-        # networks.
-        if active_service_nets:
-            return
+        ports = self.get_distributed_snat_ports_for_host(
+            plugin_context, host, snat_info[0].snat_ip,
+            subnet_id=snat_info[0].subnet_id, exclude_port_id=port['id'])
 
-        # Step 3: are there remaining compute ports on this host on those
-        # private networks (excluding the port being deleted)?
-        remaining = session.query(models_v2.Port.id).join(
-            models.PortBindingLevel,
-            models.PortBindingLevel.port_id == models_v2.Port.id
-        ).filter(
-            models.PortBindingLevel.host == host,
-            models_v2.Port.device_owner.like('compute:%'),
-            models_v2.Port.network_id.in_(private_network_ids),
-            models_v2.Port.id != port['id']
-        ).limit(1).count()
-        if remaining > 0:
-            return
+        # If there are no other ports, then we can remove the entry for
+        # this distributed SNAT IP on that host.
+        if not ports:
+            mappings = self.get_dist_snat_mappings(session,
+                snat_ip=snat_info[0].snat_ip, host_name=host)
+            if not mappings or len(mappings) > 1:
+                LOG.warning("_handle_dist_snat_host_vm_removal: "
+                            "unexpected mappings %s for %s", mappings, port)
+                return
+            mapping = mappings[0]
 
-        # Step 4: get physdoms for the departing host from
-        # HostDomainMappingV2.
-        physdoms = self._get_physdoms_for_host(aim_ctx, host)
-        if not physdoms:
-            return
-
-        # Step 5: find other compute hosts on the same private networks via
-        # a joined query - avoids fetching all ports globally.
-        other_hosts = {
-            r[0] for r in session.query(
-                models.PortBindingLevel.host
-            ).join(
-                segments_model.NetworkSegment,
-                segments_model.NetworkSegment.id ==
-                models.PortBindingLevel.segment_id
-            ).filter(
-                segments_model.NetworkSegment.network_id.in_(
-                    private_network_ids),
-                models.PortBindingLevel.host != host
-            ).distinct()
-        }
-
-        other_host_physdoms = self._get_physdoms_by_hosts(
-            aim_ctx, other_hosts)
-
-        # Step 6: per physdom decide whether to remove just the ConcreteDevice
-        # or the entire DeviceCluster.
-        for physdom in physdoms:
-            has_other = any(physdom in host_physdoms
-                            for host_physdoms in other_host_physdoms.values())
-            if has_other:
-                self._remove_concrete_device_for_host(
-                    aim_ctx, physdom, host, COMMON_TENANT_NAME)
-            else:
-                self._cleanup_device_cluster_for_last_host(
-                    aim_ctx, physdom, host, COMMON_TENANT_NAME)
+            self.delete_dist_snat_mappings(session,
+                snat_ip=mapping.snat_ip, host_name=mapping.host_name,
+                start_port=mapping.start_port, subnet_id=mapping.subnet_id,
+                service_port_id=mapping.service_port_id)
+            # If there are no other distributed SNAT mappings on this host,
+            # then we can also remove the service port.
+            all_mappings = self.get_dist_snat_mappings(
+                session, host_name=host)
+            if not all_mappings:
+                self._add_postcommit_snat_ports(plugin_context,
+                    [mapping.service_port_id])
 
     def _get_host_dist_snat_cleanup_context(self, session, host):
         """Return private networks and active service nets for host cleanup.
@@ -3870,6 +4328,46 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         active_service_nets = {r[1] for r in rows if r[2] is not None}
         return private_network_ids, active_service_nets
 
+    def _get_dist_snat_subnets(self, plugin_context, network_id):
+        """Return all subnets on the netwwork that have
+           apic:service_network set.
+        """
+        session = plugin_context.session
+        extn_db_sn = extension_db.SubnetExtensionDb
+        query = BAKERY(lambda s: s.query(models_v2.Subnet.id))
+        query += lambda q: q.join(
+            extn_db_sn,
+            extn_db_sn.subnet_id == models_v2.Subnet.id)
+        query += lambda q: q.join(
+            models_v2.Network,
+            models_v2.Network.id == models_v2.Subnet.network_id)
+        query += lambda q: q.filter(
+            models_v2.Network.id == sa.bindparam('network_id'))
+        query += lambda q: q.filter(
+            extn_db_sn.service_network_id.isnot(None),
+            extn_db_sn.service_network_id != '')
+        sub_objs = query(session).params(
+                network_id=network_id).all()
+        subnet_ids = [sub[0] for sub in sub_objs]
+        if not subnet_ids:
+            return []
+        return self.plugin.get_subnets(
+            plugin_context, filters={'id': subnet_ids})
+
+    def _get_all_physdoms(self, aim_ctx):
+        """Return all physdom names using HostDomainMappingV2."""
+        mappings = self.aim.find(
+            aim_ctx, aim_infra.HostDomainMappingV2,
+            domain_type='PhysDom')
+        if not mappings:
+            mappings = self.aim.find(
+                aim_ctx, aim_infra.HostDomainMappingV2,
+                host_name=DEFAULT_HOST_DOMAIN, domain_type='PhysDom')
+        return {
+            m.domain_name for m in mappings
+            if getattr(m, 'domain_name', None)
+        }
+
     def _get_physdoms_for_host(self, aim_ctx, host):
         """Return physdom names for a host using HostDomainMappingV2."""
         mappings = self.aim.find(
@@ -3910,6 +4408,51 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             }
             for host in missing_hosts:
                 result[host].update(default_physdoms)
+        return result
+
+    def _get_service_network_vlan(self, plugin_context, service_net_id):
+        network_db = self.plugin._get_network(plugin_context,
+                                              service_net_id)
+        vlan = None
+        for seg in network_db.segments:
+            if seg.network_type == n_constants.TYPE_VLAN:
+                vlan = seg.segmentation_id
+                break
+        return vlan
+
+    def _get_service_network_ports(self, plugin_context,
+                                   service_net_id):
+        """Return service-network ports."""
+        ports = self.plugin.get_ports(
+            plugin_context,
+            filters={'network_id': [service_net_id]})
+        result = []
+        for p in ports:
+            for fip in p.get('fixed_ips', []):
+                result.append({
+                    'id': p['id'],
+                    'name': p['name'],
+                    'ip_address': fip['ip_address'],
+                    'mac_address': p['mac_address']
+                })
+        return result
+
+    def _get_service_network_ports_for_host(self, plugin_context,
+                                            service_net_id, host):
+        """Return service-network ports bound to the given host."""
+        name = 'service-net-port:%s' % host
+        ports = self.plugin.get_ports(
+            plugin_context,
+            filters={'network_id': [service_net_id],
+                     'name': [name]})
+        result = []
+        for p in ports:
+            for fip in p.get('fixed_ips', []):
+                result.append({
+                    'id': p['id'],
+                    'ip_address': fip['ip_address'],
+                    'mac_address': p['mac_address']
+                })
         return result
 
     def _is_port_router_interface(self, port):
@@ -5676,11 +6219,28 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         for vrf in vrfs_to_notify:
             self.notifier.opflex_notify_vrf(plugin_context, vrf)
 
+    @n_utils.transaction_guard
+    def _notify_snat_update(self, plugin_context, snats_to_notify):
+        for snat in snats_to_notify:
+            self.notifier.opflex_notify_snat(plugin_context, snat)
+
     def _add_postcommit_port_notifications(self, plugin_context, ports):
         ports_to_notify = getattr(plugin_context, '_ports_to_notify', None)
         if not ports_to_notify:
             ports_to_notify = plugin_context._ports_to_notify = set()
         ports_to_notify.update(ports)
+
+    def _add_postcommit_snat_ports(self, plugin_context, ports):
+        snat_port_ids = getattr(plugin_context, '_snat_port_ids', None)
+        if not snat_port_ids:
+            snat_port_ids = plugin_context._snat_port_ids = set()
+        snat_port_ids.update(ports)
+
+    def _add_postcommit_snat_notification(self, plugin_context, snats):
+        snat_ids = getattr(plugin_context, '_snats_to_notify', None)
+        if not snat_ids:
+            snat_ids = plugin_context._snats_to_notify = set()
+        snat_ids.update(snats)
 
     def _add_postcommit_vrf_notification(self, plugin_context, vrf):
         vrfs_to_notify = getattr(plugin_context, '_vrfs_to_notify', None)
@@ -5698,6 +6258,282 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if vrfs:
             self._notify_vrf_update(plugin_context, vrfs)
             plugin_context._vrfs_to_notify = set()
+
+        snats = getattr(plugin_context, '_snats_to_notify', None)
+        if snats:
+            self._notify_snat_update(plugin_context, snats)
+            plugin_context._snats_to_notify = set()
+
+    @db_api.CONTEXT_READER
+    def get_snat_port_ids_by_subnet(self, plugin_context, subnet_id):
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            rows = (session.query(
+                    models_v2.IPAllocation.port_id).join(
+                        extension_db.DistSnatMappingDb,
+                        sa.and_(
+                            extension_db.DistSnatMappingDb.subnet_id ==
+                            models_v2.IPAllocation.subnet_id,
+                            extension_db.DistSnatMappingDb.snat_ip ==
+                            models_v2.IPAllocation.ip_address,
+                        ),
+                    ).filter(
+                        extension_db.DistSnatMappingDb.subnet_id == subnet_id)
+                    .distinct()
+                    .all())
+            return [row.port_id for row in rows]
+
+    def _query_port_distributed_snat_info(self, session, port_id):
+        port_alloc = orm.aliased(models_v2.IPAllocation)
+        rtr_alloc = orm.aliased(models_v2.IPAllocation)
+        gw_port = orm.aliased(models_v2.Port)
+        gw_alloc = orm.aliased(models_v2.IPAllocation)
+        extn_db_sn = extension_db.SubnetExtensionDb
+
+        query = BAKERY(lambda s: s.query(
+            gw_alloc.ip_address,
+            gw_alloc.subnet_id).select_from(models_v2.Port))
+        query += lambda q: q.join(
+            port_alloc,
+            port_alloc.port_id == models_v2.Port.id)
+        query += lambda q: q.join(
+            rtr_alloc,
+            rtr_alloc.subnet_id == port_alloc.subnet_id)
+        query += lambda q: q.join(
+            l3_db.RouterPort,
+            sa.and_(
+                l3_db.RouterPort.port_id == rtr_alloc.port_id,
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF))
+        query += lambda q: q.join(
+            l3_db.Router,
+            l3_db.Router.id == l3_db.RouterPort.router_id)
+        query += lambda q: q.join(
+            gw_port,
+            gw_port.id == l3_db.Router.gw_port_id)
+        query += lambda q: q.join(
+            gw_alloc,
+            gw_alloc.port_id == gw_port.id)
+        query += lambda q: q.join(
+            extn_db_sn,
+            extn_db_sn.subnet_id == gw_alloc.subnet_id)
+        query += lambda q: q.filter(
+            models_v2.Port.id == sa.bindparam('port_id'),
+            l3_db.Router.gw_port_id.isnot(None),
+            gw_port.device_owner == n_constants.DEVICE_OWNER_ROUTER_GW,
+            extn_db_sn.service_network_id.isnot(None),
+            extn_db_sn.service_network_id != '')
+        query += lambda q: q.distinct()
+        return [DistSnatGatewayInfo._make(row) for row in
+                query(session).params(port_id=port_id).all()]
+
+    def _query_subnets_distributed_snat_info(self, session, subnet_ids):
+        if not subnet_ids:
+            return []
+
+        rtr_alloc = orm.aliased(models_v2.IPAllocation)
+        gw_port = orm.aliased(models_v2.Port)
+        gw_alloc = orm.aliased(models_v2.IPAllocation)
+        extn_db_sn = extension_db.SubnetExtensionDb
+
+        query = BAKERY(lambda s: s.query(
+            gw_alloc.ip_address,
+            gw_alloc.subnet_id).select_from(rtr_alloc))
+        query += lambda q: q.join(
+            l3_db.RouterPort,
+            sa.and_(
+                l3_db.RouterPort.port_id == rtr_alloc.port_id,
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF))
+        query += lambda q: q.join(
+            l3_db.Router,
+            l3_db.Router.id == l3_db.RouterPort.router_id)
+        query += lambda q: q.join(
+            gw_port,
+            gw_port.id == l3_db.Router.gw_port_id)
+        query += lambda q: q.join(
+            gw_alloc,
+            gw_alloc.port_id == gw_port.id)
+        query += lambda q: q.join(
+            extn_db_sn,
+            extn_db_sn.subnet_id == gw_alloc.subnet_id)
+        query += lambda q: q.filter(
+            rtr_alloc.subnet_id.in_(
+                sa.bindparam('subnet_ids', expanding=True)),
+            l3_db.Router.gw_port_id.isnot(None),
+            gw_port.device_owner == n_constants.DEVICE_OWNER_ROUTER_GW,
+            extn_db_sn.service_network_id.isnot(None),
+            extn_db_sn.service_network_id != '')
+        query += lambda q: q.distinct()
+        return [DistSnatGatewayInfo._make(row) for row in
+                query(session).params(subnet_ids=subnet_ids).all()]
+
+    def _get_port_fixed_ip_subnet_ids(self, port):
+        return sorted({fixed_ip.get('subnet_id') for fixed_ip in
+                       port.get('fixed_ips', [])
+                       if fixed_ip.get('subnet_id')})
+
+    def _get_port_distributed_snat_info(self, session, port):
+        snat_infos = []
+        if port.get('id'):
+            snat_infos = self._query_port_distributed_snat_info(
+                session, port['id'])
+        if snat_infos:
+            return snat_infos
+        return self._query_subnets_distributed_snat_info(
+            session, self._get_port_fixed_ip_subnet_ids(port))
+
+    def get_distributed_snat_info(self, plugin_context, port):
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            return self._get_port_distributed_snat_info(session, port)
+
+    def port_should_have_distributed_snat(self, plugin_context, port):
+        if not port or not port.get('id'):
+            return False
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            return bool(self._get_port_distributed_snat_info(session, port))
+
+    def _query_distributed_snat_mapping_rows(self, session):
+        mapping_db = extension_db.DistSnatMappingDb
+        query = BAKERY(lambda s: s.query(
+            mapping_db.host_name,
+            mapping_db.snat_ip,
+            mapping_db.subnet_id))
+        query += lambda q: q.distinct()
+        query += lambda q: q.order_by(
+            mapping_db.host_name,
+            mapping_db.snat_ip,
+            mapping_db.subnet_id)
+        return query(session).all()
+
+    def _distributed_snat_ip_map(self, rows):
+        result = defaultdict(list)
+        seen = defaultdict(set)
+        for host, snat_ip, _subnet_id in rows:
+            if snat_ip not in seen[host]:
+                result[host].append(snat_ip)
+                seen[host].add(snat_ip)
+        return dict(result)
+
+    def _distributed_snat_key_map(self, rows):
+        result = defaultdict(set)
+        for host, snat_ip, subnet_id in rows:
+            result[host].add((snat_ip, subnet_id))
+        return result
+
+    def _query_distributed_snat_ips_for_host(self, session, host):
+        mapping_db = extension_db.DistSnatMappingDb
+        query = BAKERY(lambda s: s.query(mapping_db.snat_ip))
+        query += lambda q: q.filter(
+            mapping_db.host_name == sa.bindparam('host_name'))
+        query += lambda q: q.distinct()
+        query += lambda q: q.order_by(mapping_db.snat_ip)
+        return [row[0] for row in
+                query(session).params(host_name=host).all()]
+
+    def get_distributed_snat_ips_for_host(self, plugin_context, host):
+        if not host:
+            return []
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            return self._query_distributed_snat_ips_for_host(session, host)
+
+    def _query_distributed_snat_ports_for_host(
+            self, session, host, snat_ip, subnet_id=None,
+            exclude_port_id=None):
+        port_alloc = orm.aliased(models_v2.IPAllocation)
+        rtr_alloc = orm.aliased(models_v2.IPAllocation)
+        gw_port = orm.aliased(models_v2.Port)
+        gw_alloc = orm.aliased(models_v2.IPAllocation)
+        extn_db_sn = extension_db.SubnetExtensionDb
+
+        query = BAKERY(lambda s: s.query(
+            models_v2.Port.id).select_from(models_v2.Port))
+        query += lambda q: q.join(
+            models.PortBinding,
+            models.PortBinding.port_id == models_v2.Port.id)
+        query += lambda q: q.join(
+            port_alloc,
+            port_alloc.port_id == models_v2.Port.id)
+        query += lambda q: q.join(
+            rtr_alloc,
+            rtr_alloc.subnet_id == port_alloc.subnet_id)
+        query += lambda q: q.join(
+            l3_db.RouterPort,
+            sa.and_(
+                l3_db.RouterPort.port_id == rtr_alloc.port_id,
+                l3_db.RouterPort.port_type ==
+                n_constants.DEVICE_OWNER_ROUTER_INTF))
+        query += lambda q: q.join(
+            l3_db.Router,
+            l3_db.Router.id == l3_db.RouterPort.router_id)
+        query += lambda q: q.join(
+            gw_port,
+            gw_port.id == l3_db.Router.gw_port_id)
+        query += lambda q: q.join(
+            gw_alloc,
+            gw_alloc.port_id == gw_port.id)
+        query += lambda q: q.join(
+            extn_db_sn,
+            extn_db_sn.subnet_id == gw_alloc.subnet_id)
+        query += lambda q: q.filter(
+            models.PortBinding.host == sa.bindparam('host'),
+            models_v2.Port.device_owner.like(
+                n_constants.DEVICE_OWNER_COMPUTE_PREFIX + '%'),
+            ~models.PortBinding.vif_type.in_([
+                portbindings.VIF_TYPE_UNBOUND,
+                portbindings.VIF_TYPE_BINDING_FAILED]),
+            l3_db.Router.gw_port_id.isnot(None),
+            gw_port.device_owner == n_constants.DEVICE_OWNER_ROUTER_GW,
+            gw_alloc.ip_address == sa.bindparam('snat_ip'),
+            extn_db_sn.service_network_id.isnot(None),
+            extn_db_sn.service_network_id != '')
+
+        params = {'host': host, 'snat_ip': snat_ip}
+        if subnet_id:
+            query += lambda q: q.filter(
+                gw_alloc.subnet_id == sa.bindparam('subnet_id'))
+            params['subnet_id'] = subnet_id
+        if exclude_port_id:
+            query += lambda q: q.filter(
+                models_v2.Port.id != sa.bindparam('exclude_port_id'))
+            params['exclude_port_id'] = exclude_port_id
+
+        query += lambda q: q.distinct()
+        query += lambda q: q.order_by(models_v2.Port.id)
+        return [row[0] for row in query(session).params(**params).all()]
+
+    def get_distributed_snat_ports_for_host(
+            self, plugin_context, host, snat_ip, subnet_id=None,
+            exclude_port_id=None):
+        if not host or not snat_ip:
+            return []
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            return self._query_distributed_snat_ports_for_host(
+                session, host, snat_ip, subnet_id=subnet_id,
+                exclude_port_id=exclude_port_id)
+
+    def get_distributed_snat_notify_hosts(self, plugin_context, port,
+                                          is_delete=False):
+        host = port.get(portbindings.HOST_ID) if port else None
+        if not host or not port.get('id'):
+            return {}
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            snat_infos = self._get_port_distributed_snat_info(session, port)
+            if not snat_infos:
+                return {}
+
+            mapping_rows = self._query_distributed_snat_mapping_rows(session)
+            notify_info = self._distributed_snat_ip_map(mapping_rows)
+            snat_key_info = self._distributed_snat_key_map(mapping_rows)
+            if host not in notify_info:
+                return {} if is_delete else notify_info
+            if is_delete:
+                return notify_info
+
+            for snat_info in snat_infos:
+                if ((snat_info.snat_ip, snat_info.subnet_id) not in
+                        snat_key_info[host]):
+                    return notify_info
+        return {}
 
     def get_or_allocate_distributed_snat_ip(self, plugin_context, host,
                                             ext_network,
@@ -5718,6 +6554,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 gw_info['service_network_id'], host)
             return {}
 
+        service_vlan = self._get_service_network_vlan(plugin_context,
+            gw_info['service_network_id'])
+
         mapping = self._get_or_allocate_dist_snat_port_range(
             plugin_context, gw_info, host, service_port['id'])
         if not mapping:
@@ -5736,13 +6575,63 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 'prefixlen': gw_info['prefixlen'],
                 'start_port': mapping.start_port,
                 'end_port': mapping.end_port,
-                'service_vrf': gw_info['service_vrf'],
+                'service_vrf': ext_network['vrf_name'],
+                'service_vlan': service_vlan,
                 'service_ip': service_port['ip_address'],
                 'service_mac': service_port['mac_address'],
                 'dest_prefix': '0.0.0.0/0',
                 'service_nodes': service_nodes,
                 'snat_subnet_id': gw_info['snat_subnet_id'],
-                'snat_uuid': gw_info['snat_subnet_id']}
+                'snat_uuid': gw_info['host_snat_uuid']}
+
+    def get_hsi_for_distributed_snat_ip(self, plugin_context,
+                                        snat_uuid, host=None):
+        # TODO(thbachma): this all needs to be turned into an
+        # optimized DB query.
+        hsi = {'snat_uuid': snat_uuid}
+
+        # Get any mappings for the host. If there are no mappings, we
+        # can return an empty dict.
+        with db_api.CONTEXT_READER.using(plugin_context) as session:
+            mappings = self.get_dist_snat_mappings(session, host_name=host)
+        if not mappings:
+            LOG.eebug("No SNAT IP mappings for host %s", host)
+            return hsi
+        hsi.update({'dest_prefix': '0.0.0.0/0'})
+        snat_port_db = self.plugin._get_port(plugin_context, snat_uuid)
+        ips = [fip['ip_address'] for fip in snat_port_db['fixed_ips']]
+        mapping = None
+        for mapping in mappings:
+            if mapping.snat_ip in ips:
+                break
+        if mapping:
+            # This host has this SNAT IP.
+            hsi.update({'start_port': mapping.start_port,
+                        'host_snat_ip': mapping.snat_ip,
+                        'end_port': mapping.end_port})
+
+        service_port_db = self.plugin._get_port(plugin_context,
+                                                mapping.service_port_id)
+        if not service_port_db or not snat_port_db:
+            LOG.warning("No SNAT IP port or service port fo host %s", host)
+            return hsi
+        hsi.update(
+            {'host_snat_mac': snat_port_db['mac_address'],
+             'host_snat_ip': snat_port_db['fixed_ips'][0]['ip_address'],
+             'snat_subnet_id': snat_port_db['fixed_ips'][0]['subnet_id'],
+             'service_mac': service_port_db['mac_address'],
+             'service_ip': service_port_db['fixed_ips'][0]['ip_address']})
+
+        service_vlan = self._get_service_network_vlan(
+                plugin_context, service_port_db['network_id'])
+        hsi.update({'service_vlan': service_vlan})
+
+        service_nodes = self._query_dist_snat_service_nodes(
+            plugin_context, snat_port_db['fixed_ips'][0]['ip_address'],
+            snat_port_db['fixed_ips'][0]['subnet_id'], host)
+
+        hsi.update({'service_nodes': service_nodes})
+        return hsi
 
     def _query_dist_snat_gateway_info(self, session, ext_network_id,
                                       routed_subnet_ids):
@@ -5752,6 +6641,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         query = session.query(
             gw_alloc.ip_address,
+            models_v2.Port.id,
             models_v2.Port.mac_address,
             models_v2.Subnet.gateway_ip,
             models_v2.Subnet.cidr,
@@ -5796,15 +6686,16 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             return
 
         return {'snat_ip': row[0],
-                'host_snat_mac': row[1],
-                'gateway_ip': row[2],
-                'prefixlen': int(row[3].split('/')[1]),
-                'snat_subnet_id': row[4],
-                'service_network_id': row[5],
-                'start_port': row[6],
-                'end_port': row[7],
-                'alloc_size': row[8],
-                'service_vrf': row[9]}
+                'host_snat_uuid': row[1],
+                'host_snat_mac': row[2],
+                'gateway_ip': row[3],
+                'prefixlen': int(row[4].split('/')[1]),
+                'snat_subnet_id': row[5],
+                'service_network_id': row[6],
+                'start_port': row[7],
+                'end_port': row[8],
+                'alloc_size': row[9],
+                'service_vrf': row[10]}
 
     def _get_or_create_dist_snat_service_port(self, plugin_context, host,
                                               service_network_id,
@@ -5933,6 +6824,21 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     session.flush()
                     return mapping
                 candidate += alloc_size
+
+    def _release_dist_snat_port_range(self, plugin_context,
+                                      gw_info, host, service_port_id):
+        with db_api.CONTEXT_WRITER.using(plugin_context) as session:
+            existing = self.get_dist_snat_mappings(
+                session, host_name=host,
+                service_port_id=service_port_id)
+            if existing and len(existing) == 1:
+                entry = existing[0]
+                self.delete_dist_snat_mappings(session,
+                    snat_ip=entry.snat_ip,
+                    host_name=entry.host_name,
+                    start_port=entry.start_port,
+                    subnet_id=entry.subnet_id,
+                    service_port_id=entry.service_port_id)
 
     def _query_dist_snat_service_nodes(self, plugin_context, snat_ip,
                                        snat_subnet_id, local_host):
@@ -6129,24 +7035,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     aim_cst.DEVICE_OWNER_SNAT_PORT)
                 snat_port_ids = [p[0] for p in query(session).params(
                     ext_network_id=ext_network_id).all()]
-
-        # Outside the transaction, delete any unneeded SNAT ports.
-        #
-        # REVISIT: Although unlikely, deleting an SNAT port outside
-        # the transaction means it could become needed again before
-        # it is actually deleted. To eliminate this race condition,
-        # consider having delete_port_precommit validate that the SNAT
-        # port is still not needed by querying again for interfaces of
-        # routers with gateway ports on that network, and if any are
-        # found, raising an exception that would be silently ignored
-        # below.
-        e_context = plugin_context.elevated()
-        for port_id in snat_port_ids:
-            try:
-                self.plugin.delete_port(e_context, port_id)
-            except n_exceptions.NeutronException as ne:
-                LOG.warning("Failed to delete SNAT port %(port)s: %(ex)s",
-                            {'port': port_id, 'ex': ne})
+        return snat_port_ids
 
     # Called by l3_plugin.
     def check_floatingip_external_address(self, context, floatingip):
@@ -7435,6 +8324,9 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 raise exceptions.ServiceNetworkReferenceInvalid(
                     network_id=service_network)
             self._validate_service_network_network(service_net)
+            if service_net['project_id'] != subnet['project_id']:
+                raise exceptions.ServiceNetworkProjectInvalid(
+                    network_id=service_network)
             self._validate_single_service_network_per_external_network(
                 plugin_context.session, subnet, service_network)
 
