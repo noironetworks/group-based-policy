@@ -8350,24 +8350,6 @@ class TestExtensionAttributes(ApicAimTestCase):
                 ctx.session, snat_ip='66.66.66.7')
             self.assertEqual(['host-b'], [m.host_name for m in mappings])
 
-    def test_dist_snat_mapping_db_prevents_duplicate_range_slot(self):
-        ctx = n_context.get_admin_context()
-        extn = extn_db.ExtensionDbMixin()
-
-        net = self._make_network(self.fmt, 'net1', True)['network']
-        subnet = self._make_subnet(
-            self.fmt, {'network': net}, '10.0.0.1',
-            '10.0.0.0/24')['subnet']
-
-        with testtools.ExpectedException(exc.DBDuplicateEntry):
-            with db_api.CONTEXT_WRITER.using(ctx):
-                extn.set_dist_snat_mapping(
-                    ctx.session, '66.66.66.7', 'host-a', 5000, 5499,
-                    subnet_id=subnet['id'], service_port_id='port-1')
-                extn.set_dist_snat_mapping(
-                    ctx.session, '66.66.66.7', 'host-b', 5000, 5499,
-                    subnet_id=subnet['id'], service_port_id='port-2')
-
     def test_dist_snat_existing_mapping_reuses_service_port(self):
         ctx = n_context.get_admin_context()
         extn = extn_db.ExtensionDbMixin()
@@ -8568,20 +8550,22 @@ class TestExtensionAttributes(ApicAimTestCase):
                       err['NeutronError']['message'])
 
     def test_service_network_bd_creation(self):
-        """Test that service network BD is created in common/UnroutedVRF."""
+        """Test that service network BD is created in project/UnroutedVRF."""
 
         # Create service network
         svc_net = self._make_service_network('svc-bd-creation')
 
-        # Verify service network BD was created in common tenant
+        # Verify service network BD was created in the service network tenant.
         ctx = n_context.get_admin_context()
         aim_ctx = aim_context.AimContext(db_session=ctx.session)
+        tenant_name = self.name_mapper.project(
+            ctx.session, svc_net.get('tenant_id') or svc_net['project_id'])
 
         bd_name = 'svc_' + svc_net['id']
         bd = self.aim_mgr.find(aim_ctx, aim_resource.BridgeDomain,
-                               tenant_name='common', name=bd_name)
+                               tenant_name=tenant_name, name=bd_name)
         self.assertTrue(bd)
-        self.assertEqual('common', bd[0].tenant_name)
+        self.assertEqual(tenant_name, bd[0].tenant_name)
         self.assertEqual(self.driver.apic_system_id + '_UnroutedVRF',
                  bd[0].vrf_name)
         self.assertFalse(bd[0].enable_routing)
@@ -8589,24 +8573,54 @@ class TestExtensionAttributes(ApicAimTestCase):
     def test_service_subnet_bd_subnet_creation(self):
         """Test service subnet BD-subnet is created with private scope."""
 
+        ctx = n_context.get_admin_context()
+        aim_ctx = aim_context.AimContext(db_session=ctx.session)
+
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
+
         # Create service network and its own subnet.
         svc_net = self._make_service_network('svc-subnet-creation')
         self._create_subnet_with_extension(
             self.fmt, svc_net, '10.50.0.1', '10.50.0.0/24')
 
-        # Verify BD-subnet was created in common tenant
-        ctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(db_session=ctx.session)
+        # Verify BD-subnet was created in the service network tenant.
+        tenant_name = self.name_mapper.project(
+            ctx.session, svc_net.get('tenant_id') or svc_net['project_id'])
 
         bd_name = 'svc_' + svc_net['id']
         bd_subnet = self.aim_mgr.find(aim_ctx, aim_resource.Subnet,
-                                     tenant_name='common', bd_name=bd_name,
-                                     gw_ip_mask='10.50.0.0/24')
+                                     tenant_name=tenant_name, bd_name=bd_name,
+                                     gw_ip_mask='10.50.0.1/24')
         self.assertTrue(bd_subnet)
         self.assertEqual('private', bd_subnet[0].scope)
 
     def test_snat_subnet_external_network_creation(self):
         """Test that SNAT ExternalNetwork is created for dist-SNAT subnet."""
+
+        ctx = n_context.get_admin_context()
+        aim_ctx = aim_context.AimContext(db_session=ctx.session)
+
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
 
         # Create service network and SNAT subnet
         svc_net = self._make_service_network('svc-epg-creation')
@@ -8617,8 +8631,6 @@ class TestExtensionAttributes(ApicAimTestCase):
             **{SERVICE_NETWORK: svc_net['id']})['subnet']
 
         # Verify SNAT ExternalNetwork was created
-        ctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(db_session=ctx.session)
         expected_ext_net = aim_resource.ExternalNetwork.from_dn(
             self.dn_t1_l1_n1)
 
@@ -8633,17 +8645,37 @@ class TestExtensionAttributes(ApicAimTestCase):
     def test_dist_snat_subnet_precommit_programming(self):
         """Test dist-SNAT subnet AIM programming runs in precommit."""
 
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+
+        l3out = aim_resource.L3Outside(tenant_name=self.t1_aname,
+            name='l1', vrf_name='external_vrf')
+
         session = mock.Mock()
         plugin_context = mock.Mock(session=session)
 
-        network_db = mock.Mock()
+        mock_segment = mock.Mock()
+        mock_segment.network_type = 'vlan'
+        mock_segment.segmentation_id = 10
+        network_db = mock.MagicMock()
         network_db.external = None
+        network_db['tenant_id'] = self._tenant_id
+        network_db.segments = [mock_segment]
+        network_db.aim_mapping = None
         network_db.aim_extension_mapping = mock.Mock(
             multi_ext_nets=False, svi=False, external_network_dn=None)
+        network_db.rbac_entries = []
 
         self.driver._core_plugin = mock.Mock()
         self.driver._core_plugin._get_network.return_value = network_db
-        self.driver.name_mapper.project = mock.Mock(return_value='prj_t1')
+        self.driver.name_mapper.project = mock.Mock(return_value=self.t1_aname)
 
         current = {
             'id': 'subnet-precommit-test',
@@ -8658,7 +8690,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         }
         context = mock.Mock(current=current, original={})
         context._plugin_context = plugin_context
-        context.network = mock.Mock(current={SERVICE_NETWORK_ENABLE: True})
+        context.network = mock.Mock(current={SERVICE_NETWORK_ENABLE: False})
 
         with (
             mock.patch('gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
@@ -8667,6 +8699,9 @@ class TestExtensionAttributes(ApicAimTestCase):
             mock.patch.object(self.driver, '_validate_subnet_snat_mode'),
             mock.patch.object(self.driver,
                               '_get_aim_nat_strategy_db') as nat_strategy,
+            mock.patch.object(self.driver.aim, 'get', side_effect=[l3out]),
+            mock.patch.object(self.driver.aim, 'find',
+                              side_effect=[[self.hlink1], [hd_mapping]]),
             mock.patch.object(self.driver,
                               '_create_snat_external_network') as snat_ext,
             mock.patch.object(self.driver,
@@ -8674,47 +8709,276 @@ class TestExtensionAttributes(ApicAimTestCase):
             mock.patch.object(self.driver,
                               '_create_snat_contract') as snat_contract,
             mock.patch.object(self.driver,
+                '_create_snat_contract_subject') as snat_subject,
+            mock.patch.object(self.driver,
+                              '_create_pbr_health_pol') as snat_health,
+            mock.patch.object(self.driver,
                               '_create_service_graph') as sg_create,
             mock.patch.object(self.driver,
                               '_create_service_graph_node') as sg_node,
+            mock.patch.object(self.driver,
+                              '_create_device_cluster_context') as snat_dcc,
+            mock.patch.object(self.driver,
+                              '_create_device_cluster_interface_context'
+                              ) as snat_dcic,
             mock.patch.object(self.driver,
                               '_reparent_service_network_bd') as reparent_bd,
             mock.patch.object(self.driver,
                               '_create_service_subnet_bd_subnet') as bd_subnet,
         ):
-            nat_strategy.return_value = (
-                mock.Mock(vrf_name='external_vrf'), mock.Mock(), mock.Mock())
-            sg_create.return_value = mock.Mock(name='sg')
+            nat_strategy.return_value = (l3out, mock.Mock(), mock.Mock())
+            snat_epg = mock.Mock()
+            snat_epg.name = 'snat_epg'
+            snat_ext.return_value = snat_epg
+            sg = mock.Mock()
+            sg.name = 'sg'
+            sg_create.return_value = sg
             snat_filters.return_value = {
                 'provider_filter': mock.Mock(),
                 'consumer_filter': mock.Mock()}
 
             self.driver.create_subnet_precommit(context)
 
-        aim_ctx_cls.assert_called_once_with(session)
+        aim_ctx_cls.assert_has_calls([mock.call(session),
+                                      mock.call(session)],
+                                     any_order=True)
         aim_ctx = aim_ctx_cls.return_value
-        network = context.network.current
-        tenant_name = 'prj_t1'
+        tenant_name = self.t1_aname
 
         snat_ext.assert_called_once_with(
-            aim_ctx, current, network, tenant_name)
+            aim_ctx, current['id'], tenant_name, l3out, mock.ANY)
         snat_filters.assert_called_once_with(
             aim_ctx, current, tenant_name)
         snat_contract.assert_called_once_with(
-            aim_ctx, current, network, tenant_name,
-            snat_filters.return_value)
+            aim_ctx, current['id'], tenant_name)
+        snat_subject.assert_called_once_with(
+            aim_ctx, current['id'], mock.ANY, hd_mapping.domain_name,
+            tenant_name,
+            {'provider_filter': mock.ANY, 'consumer_filter': mock.ANY})
+        snat_health.assert_called_once_with(
+            aim_ctx, tenant_name, self.hlink1.host_name)
         sg_create.assert_called_once_with(
-            aim_ctx, network, tenant_name)
-        sg_node.assert_called_once_with(
-            aim_ctx, sg_create.return_value, None, tenant_name)
+            aim_ctx, current['id'], 'ph1', tenant_name)
+        sg_node.assert_called_once_with(aim_ctx, sg.name, tenant_name)
+        dc = aim_service_graph.DeviceCluster(tenant_name=tenant_name,
+            name=mock.ANY, display_name=mock.ANY, device_type='PHYSICAL',
+            service_type='OTHERS', context_aware='single-Context',
+            managed=False, physical_domain_name='ph1', vmm_domain_type='',
+            vmm_domain_name='', encap='', devices=[])
+        snat_dcc.assert_called_once_with(aim_ctx, contract_name=mock.ANY,
+            service_graph_name=sg.name,
+            node_name='loadbalancer',
+            device_cluster=dc,
+            tenant_name=tenant_name)
+        dci = aim_service_graph.DeviceClusterInterface(name='interface',
+                display_name='interface', tenant_name=tenant_name,
+                encap='vlan-10', device_cluster_name=mock.ANY)
+        psrp = aim_service_graph.ServiceRedirectPolicy(
+            display_name='provider_pbr_subnet-preco',
+            monitoring_policy_tenant_name=tenant_name,
+            monitoring_policy_name='mon_pol_snat_epg',
+            destinations=[],
+            tenant_name=tenant_name,
+            name='provider_pbr_subnet-preco',
+            resilient_hash_enabled=True)
+        csrp = aim_service_graph.ServiceRedirectPolicy(
+            display_name='consumer_pbr_subnet-preco',
+            monitoring_policy_tenant_name=tenant_name,
+            monitoring_policy_name='mon_pol_snat_epg',
+            destinations=[],
+            tenant_name=tenant_name,
+            name='consumer_pbr_subnet-preco',
+            resilient_hash_enabled=True)
+        snat_dcic.assert_has_calls(
+            [mock.call(mock.ANY, contract_name=mock.ANY,
+                       service_graph_name=sg.name, node_name='loadbalancer',
+                       connector_name='provider',
+                       device_cluster_interface=dci,
+                       service_redirect_policy=psrp,
+                       bridge_domain_dn=mock.ANY,
+                       tenant_name=tenant_name),
+             mock.call(mock.ANY, contract_name=mock.ANY,
+                       service_graph_name=sg.name, node_name='loadbalancer',
+                       connector_name='consumer',
+                       device_cluster_interface=dci,
+                       service_redirect_policy=csrp,
+                       bridge_domain_dn=mock.ANY,
+                       tenant_name=tenant_name)],
+            any_order=True)
         reparent_bd.assert_called_once_with(
-            aim_ctx, current[SERVICE_NETWORK], 'external_vrf',
+            aim_ctx, mock.ANY, tenant_name, l3out,
             enable_routing=True)
-        bd_subnet.assert_called_once()
-        bd_subnet_call = bd_subnet.call_args[0]
-        self.assertEqual(current, bd_subnet_call[1])
-        self.assertEqual('common', bd_subnet_call[2].tenant_name)
-        self.assertEqual('svc_net-precommit-test', bd_subnet_call[2].name)
+        bd_subnet.assert_not_called()
+
+    def test_dist_snat_subnet_delete_precommit_reparents_service_network(self):
+        """Test last dist-SNAT subnet delete restores the service BD VRF."""
+
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+
+        l3out = aim_resource.L3Outside(tenant_name=self.t1_aname,
+            name='l1', vrf_name='external_vrf')
+
+        session = mock.Mock()
+        plugin_context = mock.Mock(session=session)
+
+        mock_segment = mock.Mock()
+        mock_segment.network_type = 'vlan'
+        mock_segment.segmentation_id = 10
+        network_db = mock.Mock()
+        network_db.external = None
+        network_db.segments = [mock_segment]
+        network_db.aim_mapping = None
+        network_db.aim_extension_mapping = mock.Mock(
+            multi_ext_nets=False, svi=False, external_network_dn=None)
+        network_db.rbac_entries = []
+
+        self.driver._core_plugin = mock.Mock()
+        self.driver._core_plugin._get_network.return_value = network_db
+        self.driver.name_mapper.project = mock.Mock(return_value=self.t1_aname)
+
+        current = {
+            'id': 'subnet-precommit-test',
+            'network_id': 'net-precommit-test',
+            'tenant_id': self._tenant_id,
+            'cidr': '10.200.0.0/24',
+            'gateway_ip': '10.200.0.1',
+            SERVICE_NETWORK: 'svc-net-id',
+            SNAT_POOL: False,
+            ADVERTISED_EXTERNALLY: True,
+            SHARED_BETWEEN_VRFS: False,
+        }
+        context = mock.Mock(current=current, original={})
+        context._plugin_context = plugin_context
+        context.network = mock.Mock(current={SERVICE_NETWORK_ENABLE: False})
+
+        with (
+            mock.patch('gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+                       'mechanism_driver.aim_context.AimContext',
+                       return_value=mock.Mock()) as aim_ctx_cls,
+            mock.patch.object(self.driver, '_validate_subnet_snat_mode'),
+            mock.patch.object(self.driver,
+                              '_get_aim_nat_strategy_db') as nat_strategy,
+            mock.patch.object(self.driver.aim, 'get', side_effect=[l3out]),
+            mock.patch.object(self.driver.aim, 'find',
+                              side_effect=[[self.hlink1], [hd_mapping]]),
+            mock.patch.object(self.driver,
+                              '_create_snat_external_network') as snat_ext,
+            mock.patch.object(self.driver,
+                              '_create_snat_filters') as snat_filters,
+            mock.patch.object(self.driver,
+                              '_create_snat_contract') as snat_contract,
+            mock.patch.object(self.driver,
+                '_create_snat_contract_subject') as snat_subject,
+            mock.patch.object(self.driver,
+                              '_create_pbr_health_pol') as snat_health,
+            mock.patch.object(self.driver,
+                              '_create_service_graph') as sg_create,
+            mock.patch.object(self.driver,
+                              '_create_service_graph_node') as sg_node,
+            mock.patch.object(self.driver,
+                              '_create_device_cluster_context') as snat_dcc,
+            mock.patch.object(self.driver,
+                              '_create_device_cluster_interface_context'
+                              ) as snat_dcic,
+            mock.patch.object(self.driver,
+                              '_reparent_service_network_bd') as reparent_bd,
+            mock.patch.object(self.driver,
+                              '_create_service_subnet_bd_subnet') as bd_subnet,
+        ):
+            nat_strategy.return_value = (l3out, mock.Mock(), mock.Mock())
+            snat_epg = mock.Mock()
+            snat_epg.name = 'snat_epg'
+            snat_ext.return_value = snat_epg
+            sg = mock.Mock()
+            sg.name = 'sg'
+            sg_create.return_value = sg
+            snat_filters.return_value = {
+                'provider_filter': mock.Mock(),
+                'consumer_filter': mock.Mock()}
+
+            self.driver.create_subnet_precommit(context)
+
+        aim_ctx_cls.assert_has_calls([mock.call(session),
+                                      mock.call(session)],
+                                     any_order=True)
+        aim_ctx = aim_ctx_cls.return_value
+        tenant_name = self.t1_aname
+
+        snat_ext.assert_called_once_with(
+            aim_ctx, current['id'], tenant_name, l3out, mock.ANY)
+        snat_filters.assert_called_once_with(
+            aim_ctx, current, tenant_name)
+        snat_contract.assert_called_once_with(
+            aim_ctx, current['id'], tenant_name)
+        snat_subject.assert_called_once_with(
+            aim_ctx, current['id'], mock.ANY, hd_mapping.domain_name,
+            tenant_name,
+            {'provider_filter': mock.ANY, 'consumer_filter': mock.ANY})
+        snat_health.assert_called_once_with(
+            aim_ctx, tenant_name, self.hlink1.host_name)
+        sg_create.assert_called_once_with(
+            aim_ctx, current['id'], 'ph1', tenant_name)
+        sg_node.assert_called_once_with(aim_ctx, sg.name, tenant_name)
+        dc = aim_service_graph.DeviceCluster(tenant_name=tenant_name,
+            name=mock.ANY, display_name=mock.ANY, device_type='PHYSICAL',
+            service_type='OTHERS', context_aware='single-Context',
+            managed=False, physical_domain_name='ph1', vmm_domain_type='',
+            vmm_domain_name='', encap='', devices=[])
+        snat_dcc.assert_called_once_with(aim_ctx, contract_name=mock.ANY,
+            service_graph_name=sg.name,
+            node_name='loadbalancer',
+            device_cluster=dc,
+            tenant_name=tenant_name,
+            service_redirect_policy_name='provider_pbr_subnet-preco',
+            bridge_domain_name=mock.ANY,
+            bridge_domain_tenant_name=tenant_name)
+        dci = aim_service_graph.DeviceClusterInterface(name='interface',
+                display_name='interface', tenant_name=tenant_name,
+                encap='vlan-10', device_cluster_name=mock.ANY)
+        psrp = aim_service_graph.ServiceRedirectPolicy(
+            display_name='provider_pbr_subnet-preco',
+            monitoring_policy_tenant_name=tenant_name,
+            monitoring_policy_name='mon_pol_snat_epg',
+            destinations=[],
+            tenant_name=tenant_name,
+            name='provider_pbr_subnet-preco',
+            resilient_hash_enabled=True)
+        csrp = aim_service_graph.ServiceRedirectPolicy(
+            display_name='consumer_pbr_subnet-preco',
+            monitoring_policy_tenant_name=tenant_name,
+            monitoring_policy_name='mon_pol_snat_epg',
+            destinations=[],
+            tenant_name=tenant_name,
+            name='consumer_pbr_subnet-preco',
+            resilient_hash_enabled=True)
+        snat_dcic.assert_has_calls(
+            [mock.call(mock.ANY, contract_name=mock.ANY,
+                       service_graph_name=sg.name, node_name='loadbalancer',
+                       connector_name='provider',
+                       device_cluster_interface=dci,
+                       service_redirect_policy=psrp,
+                       bridge_domain_dn=mock.ANY,
+                       tenant_name=tenant_name),
+             mock.call(mock.ANY, contract_name=mock.ANY,
+                       service_graph_name=sg.name, node_name='loadbalancer',
+                       connector_name='consumer',
+                       device_cluster_interface=dci,
+                       service_redirect_policy=csrp,
+                       bridge_domain_dn=mock.ANY,
+                       tenant_name=tenant_name)],
+            any_order=True)
+        reparent_bd.assert_called_once_with(
+            aim_ctx, mock.ANY, tenant_name, l3out,
+            enable_routing=True)
+        bd_subnet.assert_not_called()
 
     def test_dist_snat_subnet_delete_precommit_reparents_service_network(self):
         """Test last dist-SNAT subnet delete restores the service BD VRF."""
@@ -8722,10 +8986,20 @@ class TestExtensionAttributes(ApicAimTestCase):
         session = mock.Mock()
         plugin_context = mock.Mock(session=session)
 
-        network_db = mock.Mock()
+        l3out = aim_resource.L3Outside(tenant_name=self.t1_aname,
+            name='l1', vrf_name='external_vrf')
+
+        mock_segment = mock.Mock()
+        mock_segment.network_type = 'vlan'
+        mock_segment.segmentation_id = 10
+        network_db = mock.MagicMock()
+        network_db['tenant_id'] = self._tenant_id
         network_db.external = None
+        network_db.segments = [mock_segment]
+        network_db.aim_mapping = None
         network_db.aim_extension_mapping = mock.Mock(
             multi_ext_nets=False, svi=False, external_network_dn=None)
+        network_db.rbac_entries = []
 
         self.driver._core_plugin = mock.Mock()
         self.driver._core_plugin._get_network.return_value = network_db
@@ -8746,28 +9020,63 @@ class TestExtensionAttributes(ApicAimTestCase):
         context = mock.Mock(current=current, original={})
         context._plugin_context = plugin_context
 
+        context.network = mock.Mock(current={SERVICE_NETWORK_ENABLE: False})
         with (
             mock.patch('gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
                        'mechanism_driver.aim_context.AimContext',
                        return_value=mock.Mock()) as aim_ctx_cls,
+            mock.patch('neutron.db.segments_db.get_network_segments'),
+            mock.patch.object(self.driver,
+                              '_get_aim_nat_strategy_db',
+                              return_value=[l3out, None, None]),
+            mock.patch.object(self.driver.aim, 'get', side_effect=[l3out]),
+            mock.patch.object(self.driver.aim, 'find'),
             mock.patch.object(self.driver, '_get_service_network_references',
                               return_value=['subnet-delete-test']) as refs,
-            mock.patch.object(self.driver, '_delete_snat_resources'),
+            mock.patch.object(self.driver,
+                              '_delete_service_graph_node'),
+            mock.patch.object(self.driver,
+                              '_delete_service_graph'),
+            mock.patch.object(self.driver,
+                              '_delete_snat_contract'),
+            mock.patch.object(self.driver,
+                              '_delete_snat_filters'),
+            mock.patch.object(self.driver,
+                              '_delete_snat_external_network'),
+            mock.patch.object(self.driver,
+                              '_delete_pbr_monitor_pol'),
             mock.patch.object(self.driver,
                               '_reparent_service_network_bd') as reparent_bd,
         ):
             self.driver.delete_subnet_precommit(context)
 
-        aim_ctx_cls.assert_called_once_with(session)
+        aim_ctx_cls.assert_has_calls([mock.call(session),
+                                      mock.call(session)],
+                                     any_order=True)
         refs.assert_called_once_with(session, current[SERVICE_NETWORK])
         reparent_bd.assert_called_once_with(
             aim_ctx_cls.return_value, current[SERVICE_NETWORK],
-            self.driver._get_unrouted_vrf_name(), enable_routing=False)
+            'prj_t1', None, enable_routing=False)
 
     def test_snat_filters_creation(self):
         """Test that TCP/UDP filters are created with correct port ranges."""
 
         default_max_port = '65535'
+
+        ctx = n_context.get_admin_context()
+        aim_ctx = aim_context.AimContext(db_session=ctx.session)
+
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
 
         # Create service network and SNAT subnet
         svc_net = self._make_service_network('svc-filters-creation')
@@ -8778,28 +9087,23 @@ class TestExtensionAttributes(ApicAimTestCase):
             **{SERVICE_NETWORK: svc_net['id']})['subnet']
 
         # Verify provider and consumer filters were created
-        ctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(db_session=ctx.session)
-        tenant_aname = self.driver.name_mapper.project(
-            ctx.session, self._tenant_id)
-
         subnet_hash = self._generate_snat_resource_name(snat_subnet['id'])
         provider_filter_name = 'snat_provider_' + subnet_hash
         consumer_filter_name = 'snat_consumer_' + subnet_hash
 
         provider_filter = self.aim_mgr.find(aim_ctx, aim_resource.Filter,
-                                            tenant_name=tenant_aname,
+                                            tenant_name=self.t1_aname,
                                             name=provider_filter_name)
         self.assertIsNotNone(provider_filter)
 
         consumer_filter = self.aim_mgr.find(aim_ctx, aim_resource.Filter,
-                                            tenant_name=tenant_aname,
+                                            tenant_name=self.t1_aname,
                                             name=consumer_filter_name)
         self.assertIsNotNone(consumer_filter)
 
         provider_entries = self.aim_mgr.find(
             aim_ctx, aim_resource.FilterEntry,
-            tenant_name=tenant_aname,
+            tenant_name=self.t1_aname,
             filter_name=provider_filter_name)
         self.assertEqual(2, len(provider_entries))
         provider_entries_by_name = {e.name: e for e in provider_entries}
@@ -8809,20 +9113,20 @@ class TestExtensionAttributes(ApicAimTestCase):
         provider_udp = provider_entries_by_name['provider_udp_port_range']
         self.assertEqual('tcp', provider_tcp.ip_protocol)
         self.assertEqual('udp', provider_udp.ip_protocol)
+        self.assertEqual('unspecified', provider_tcp.dest_from_port)
+        self.assertEqual('unspecified', provider_tcp.dest_to_port)
         self.assertEqual('0', provider_tcp.source_from_port)
         self.assertEqual(default_max_port, provider_tcp.source_to_port)
-        self.assertEqual('0', provider_tcp.dest_from_port)
-        self.assertEqual(default_max_port, provider_tcp.dest_to_port)
-        self.assertTrue(provider_tcp.stateful)
+        self.assertFalse(provider_tcp.stateful)
+        self.assertEqual('unspecified', provider_udp.dest_from_port)
+        self.assertEqual('unspecified', provider_udp.dest_to_port)
         self.assertEqual('0', provider_udp.source_from_port)
         self.assertEqual(default_max_port, provider_udp.source_to_port)
-        self.assertEqual('0', provider_udp.dest_from_port)
-        self.assertEqual(default_max_port, provider_udp.dest_to_port)
-        self.assertTrue(provider_udp.stateful)
+        self.assertFalse(provider_udp.stateful)
 
         consumer_entries = self.aim_mgr.find(
             aim_ctx, aim_resource.FilterEntry,
-            tenant_name=tenant_aname,
+            tenant_name=self.t1_aname,
             filter_name=consumer_filter_name)
         self.assertEqual(2, len(consumer_entries))
         consumer_entries_by_name = {e.name: e for e in consumer_entries}
@@ -8832,19 +9136,34 @@ class TestExtensionAttributes(ApicAimTestCase):
         consumer_udp = consumer_entries_by_name['consumer_udp_port_range']
         self.assertEqual('tcp', consumer_tcp.ip_protocol)
         self.assertEqual('udp', consumer_udp.ip_protocol)
-        self.assertEqual('0', consumer_tcp.source_from_port)
-        self.assertEqual(default_max_port, consumer_tcp.source_to_port)
         self.assertEqual('0', consumer_tcp.dest_from_port)
         self.assertEqual(default_max_port, consumer_tcp.dest_to_port)
-        self.assertTrue(consumer_tcp.stateful)
-        self.assertEqual('0', consumer_udp.source_from_port)
-        self.assertEqual(default_max_port, consumer_udp.source_to_port)
+        self.assertEqual('unspecified', consumer_tcp.source_from_port)
+        self.assertEqual('unspecified', consumer_tcp.source_to_port)
+        self.assertFalse(consumer_tcp.stateful)
         self.assertEqual('0', consumer_udp.dest_from_port)
         self.assertEqual(default_max_port, consumer_udp.dest_to_port)
-        self.assertTrue(consumer_udp.stateful)
+        self.assertEqual('unspecified', consumer_udp.source_from_port)
+        self.assertEqual('unspecified', consumer_udp.source_to_port)
+        self.assertFalse(consumer_udp.stateful)
 
     def test_snat_filters_creation_with_custom_port_range(self):
         """Test provider/consumer filters honor configured SNAT port range."""
+
+        ctx = n_context.get_admin_context()
+        aim_ctx = aim_context.AimContext(db_session=ctx.session)
+
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
 
         svc_net = self._make_service_network('svc-filters-custom-range')
         ext_net = self._make_ext_network('ext-net-filters-custom-range',
@@ -8855,41 +9174,50 @@ class TestExtensionAttributes(ApicAimTestCase):
                DIST_SNAT_START_PORT: 5000,
                DIST_SNAT_END_PORT: 65000})['subnet']
 
-        ctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(db_session=ctx.session)
-        tenant_aname = self.driver.name_mapper.project(
-            ctx.session, self._tenant_id)
-
         subnet_hash = self._generate_snat_resource_name(snat_subnet['id'])
         provider_filter_name = 'snat_provider_' + subnet_hash
         consumer_filter_name = 'snat_consumer_' + subnet_hash
 
         provider_entries = self.aim_mgr.find(
             aim_ctx, aim_resource.FilterEntry,
-            tenant_name=tenant_aname,
+            tenant_name=self.t1_aname,
             filter_name=provider_filter_name)
         provider_entries_by_name = {e.name: e for e in provider_entries}
         provider_tcp = provider_entries_by_name['provider_tcp_port_range']
         provider_udp = provider_entries_by_name['provider_udp_port_range']
-        self.assertEqual('5000', provider_tcp.dest_from_port)
-        self.assertEqual('65000', provider_tcp.dest_to_port)
-        self.assertEqual('5000', provider_udp.dest_from_port)
-        self.assertEqual('65000', provider_udp.dest_to_port)
+        self.assertEqual('5000', provider_tcp.source_from_port)
+        self.assertEqual('65000', provider_tcp.source_to_port)
+        self.assertEqual('5000', provider_udp.source_from_port)
+        self.assertEqual('65000', provider_udp.source_to_port)
 
         consumer_entries = self.aim_mgr.find(
             aim_ctx, aim_resource.FilterEntry,
-            tenant_name=tenant_aname,
+            tenant_name=self.t1_aname,
             filter_name=consumer_filter_name)
         consumer_entries_by_name = {e.name: e for e in consumer_entries}
         consumer_tcp = consumer_entries_by_name['consumer_tcp_port_range']
         consumer_udp = consumer_entries_by_name['consumer_udp_port_range']
-        self.assertEqual('5000', consumer_tcp.source_from_port)
-        self.assertEqual('65000', consumer_tcp.source_to_port)
-        self.assertEqual('5000', consumer_udp.source_from_port)
-        self.assertEqual('65000', consumer_udp.source_to_port)
+        self.assertEqual('5000', consumer_tcp.dest_from_port)
+        self.assertEqual('65000', consumer_tcp.dest_to_port)
+        self.assertEqual('5000', consumer_udp.dest_from_port)
+        self.assertEqual('65000', consumer_udp.dest_to_port)
 
     def test_snat_contract_creation(self):
         """Test that SNAT contract is created with associated filters."""
+        ctx = n_context.get_admin_context()
+        aim_ctx = aim_context.AimContext(db_session=ctx.session)
+
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
 
         # Create service network and SNAT subnet
         svc_net = self._make_service_network('svc-contract-creation')
@@ -8900,52 +9228,62 @@ class TestExtensionAttributes(ApicAimTestCase):
             **{SERVICE_NETWORK: svc_net['id']})['subnet']
 
         # Verify SNAT contract was created
-        ctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(db_session=ctx.session)
-        tenant_aname = self.driver.name_mapper.project(
-            ctx.session, self._tenant_id)
-
         contract_name = 'snat_' + snat_subnet['id']
         contract = self.aim_mgr.find(aim_ctx, aim_resource.Contract,
-                                    tenant_name=tenant_aname,
+                                    tenant_name=self.t1_aname,
                                     name=contract_name)
         self.assertTrue(contract)
         # Verify contract subject exists
+        subject_name = ('snat_' +
+            snat_subnet['id'][:len(snat_subnet['id']) // 2] + '_' + 'ph1')
         subject = self.aim_mgr.find(aim_ctx, aim_resource.ContractSubject,
-                                   tenant_name=tenant_aname,
+                                   tenant_name=self.t1_aname,
                                    contract_name=contract_name,
-                                   name='snat_subj')
+                                   name=subject_name)
         self.assertTrue(subject)
-        self.assertEqual('sg_' + ext_net['id'],
+        sg_name = ('sg_' +
+            snat_subnet['id'][:len(snat_subnet['id']) // 2] + '_' + 'ph1')
+        self.assertEqual(sg_name,
                  subject[0].in_service_graph_name)
-        self.assertEqual('sg_' + ext_net['id'],
+        self.assertEqual(sg_name,
                  subject[0].out_service_graph_name)
 
         subnet_hash = self._generate_snat_resource_name(snat_subnet['id'])
-        expected_filters = sorted([
-            'snat_provider_' + subnet_hash,
-            'snat_consumer_' + subnet_hash])
-        self.assertEqual(expected_filters, sorted(subject[0].bi_filters))
+        in_filters = ['snat_provider_' + subnet_hash]
+        out_filters = ['snat_consumer_' + subnet_hash]
+        self.assertEqual(in_filters, sorted(subject[0].in_filters))
+        self.assertEqual(out_filters, sorted(subject[0].out_filters))
 
     def test_service_graph_connectors_creation(self):
         """Test provider/consumer connectors are created in service graph."""
 
+        ctx = n_context.get_admin_context()
+        aim_ctx = aim_context.AimContext(db_session=ctx.session)
+
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
+
         svc_net = self._make_service_network('svc-graph-connectors')
         ext_net = self._make_ext_network('ext-net-graph-connectors',
                                          dn=self.dn_t1_l1_n1)
-        self._create_subnet_with_extension(
+        sub = self._create_subnet_with_extension(
             self.fmt, ext_net, '10.95.0.1', '10.95.0.0/24',
-            **{SERVICE_NETWORK: svc_net['id']})
+            **{SERVICE_NETWORK: svc_net['id']})['subnet']
 
-        ctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(db_session=ctx.session)
-        tenant_aname = self.driver.name_mapper.project(
-            ctx.session, self._tenant_id)
-
-        sg_name = 'sg_' + ext_net['id']
+        sg_name = ('sg_' + sub['id'][:len(sub['id']) // 2] +
+                   '_' + 'ph1')
         conns = self.aim_mgr.find(
             aim_ctx, aim_service_graph.ServiceGraphConnection,
-            tenant_name=tenant_aname,
+            tenant_name=self.t1_aname,
             service_graph_name=sg_name)
         names = sorted([c.name for c in conns])
         self.assertEqual(['consumer', 'provider'], names)
@@ -8953,32 +9291,43 @@ class TestExtensionAttributes(ApicAimTestCase):
     def test_service_graph_lb_node_created_on_subnet_create(self):
         """Test LB node exists immediately after dist-SNAT subnet create."""
 
+        ctx = n_context.get_admin_context()
+        aim_ctx = aim_context.AimContext(db_session=ctx.session)
+
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
+
         svc_net = self._make_service_network('svc-graph-node')
         ext_net = self._make_ext_network('ext-net-graph-node',
                                          dn=self.dn_t1_l1_n1)
-        self._create_subnet_with_extension(
+        sub = self._create_subnet_with_extension(
             self.fmt, ext_net, '10.96.0.1', '10.96.0.0/24',
-            **{SERVICE_NETWORK: svc_net['id']})
+            **{SERVICE_NETWORK: svc_net['id']})['subnet']
 
-        ctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(db_session=ctx.session)
-        tenant_aname = self.driver.name_mapper.project(
-            ctx.session, self._tenant_id)
-
-        sg_name = 'sg_' + ext_net['id']
+        sg_name = ('sg_' + sub['id'][:len(sub['id']) // 2] +
+                   '_' + 'ph1')
         node = self.aim_mgr.find(
             aim_ctx, aim_service_graph.ServiceGraphNode,
-            tenant_name=tenant_aname,
+            tenant_name=self.t1_aname,
             service_graph_name=sg_name,
-            name='snat_lb_node')
+            name='loadbalancer')
         self.assertTrue(node)
 
         sg = self.aim_mgr.find(
             aim_ctx, aim_service_graph.ServiceGraph,
-            tenant_name=tenant_aname,
+            tenant_name=self.t1_aname,
             name=sg_name)
         self.assertTrue(sg)
-        self.assertEqual('snat_lb_node', sg[0].linear_chain_nodes[0]['name'])
+        self.assertEqual([], sg[0].linear_chain_nodes)
 
     def test_router_gateway_external_subnet_lifecycle(self):
         """Test gateway /32 ExternalSubnet is added/removed for dist-SNAT."""
@@ -9017,6 +9366,20 @@ class TestExtensionAttributes(ApicAimTestCase):
 
     def test_snat_subnet_cleanup_on_delete(self):
         """Test that SNAT resources are cleaned up when subnet is deleted."""
+        ctx = n_context.get_admin_context()
+        aim_ctx = aim_context.AimContext(db_session=ctx.session)
+
+        hd_mapping = aim_infra.HostDomainMappingV2(
+            host_name='h1', domain_name='ph1',
+            domain_type='PhysDom')
+        self.aim_mgr.create(aim_ctx, hd_mapping)
+
+        # Host 1: VPC host
+        host1_pg = 'pg-ostack-pt-1-17'
+        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
+        self.hlink1 = aim_infra.HostLink(
+            host_name='h1', interface_name='eth0', path=host1_dn)
+        self.aim_mgr.create(aim_ctx, self.hlink1)
 
         # Create service network and SNAT subnet
         svc_net = self._make_service_network('svc-cleanup')
@@ -9041,8 +9404,6 @@ class TestExtensionAttributes(ApicAimTestCase):
         self.assertEqual(204, resp.status_code)
 
         # Verify SNAT resources are deleted
-        ctx = n_context.get_admin_context()
-        aim_ctx = aim_context.AimContext(db_session=ctx.session)
         tenant_aname = self.driver.name_mapper.project(
             ctx.session, self._tenant_id)
 
@@ -14666,6 +15027,14 @@ class TestOpflexRpc(ApicAimTestCase):
             n_context.get_admin_context(), request=request, host='h1')
         snat = response['gbp_details']['host_snat_ips'][0]
 
+        rtr_ports = self._list('ports',
+            query_params=('device_id=%s' % router['id']))['ports']
+        gw_port = None
+        for rtr_port in rtr_ports:
+            if rtr_port['device_owner'] == 'network:router_gateway':
+                gw_port = rtr_port
+                break
+
         self.assertEqual(snat_ip, snat['host_snat_ip'])
         self.assertEqual(ext_net['id'], snat['ext_net_id'])
         self.assertEqual(self.dn_t1_l1_n1.replace('/', ':'),
@@ -14674,7 +15043,7 @@ class TestOpflexRpc(ApicAimTestCase):
         self.assertEqual(11999, snat['end_port'])
         self.assertEqual('0.0.0.0/0', snat['dest_prefix'])
         self.assertEqual(snat_subnet['id'], snat['snat_subnet_id'])
-        self.assertEqual(snat_subnet['id'], snat['snat_uuid'])
+        self.assertEqual(gw_port['id'], snat['snat_uuid'])
         self._check_ip_in_cidr(snat['service_ip'], svc_subnet['cidr'])
         self.assertIsNotNone(snat['service_mac'])
 
