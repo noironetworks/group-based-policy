@@ -12,37 +12,45 @@
     check:
       jobs:
         - openstack-tox-pep8:
+            vars:
+              ensure_tox_version: '<4'
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
                 override-checkout: wallaby-eol
         - openstack-tox-py38:
+            vars:
+              ensure_tox_version: '<4'
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
                 override-checkout: wallaby-eol
         - openstack-tox-py39:
+            vars:
+              ensure_tox_version: '<4'
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
                 override-checkout: wallaby-eol
-        - legacy-group-based-policy-dsvm-functional:
-            voting: false
-        - legacy-group-based-policy-dsvm-aim:
-            voting: false
-        - legacy-group-based-policy-dsvm-nfp:
-            voting: false
     gate:
       jobs:
         - openstack-tox-pep8:
+            vars:
+              ensure_tox_version: '<4'
+            nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
                 override-checkout: wallaby-eol
         - openstack-tox-py38:
+            vars:
+              ensure_tox_version: '<4'
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
                 override-checkout: wallaby-eol
         - openstack-tox-py39:
+            vars:
+              ensure_tox_version: '<4'
             nodeset: ubuntu-focal
             required-projects:
               - name: openstack/requirements
