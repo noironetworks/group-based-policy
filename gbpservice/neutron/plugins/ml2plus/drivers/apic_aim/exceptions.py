@@ -188,7 +188,8 @@ class ServiceNetworkSnatHostPoolConflict(exceptions.BadRequest):
 
 
 class ServiceNetworkReferenceInvalid(exceptions.BadRequest):
-    message = _("Network %(network_id)s is not a valid service network.")
+    message = _("Network %(network_id)s is not a valid service network. "
+                "Make sure the service network contains at least one subnet.")
 
 
 class ServiceNetworkProjectInvalid(exceptions.BadRequest):
@@ -214,5 +215,5 @@ class ServiceNetworkBdReparentFailed(exceptions.BadRequest):
 
 class DirectSnatModeTransitionNotSupported(exceptions.BadRequest):
     message = _("Cannot directly transition subnet %(subnet_id)s between "
-                "host-pool SNAT and distributed SNAT. Disable one mode "
-                "first, then enable the other.")
+                "host-pool SNAT and distributed SNAT. Delete the subnet "
+                "first, then create it with the new mode.")
