@@ -1366,8 +1366,7 @@ class DistributedSnatHelper(object):
         try:
             sg_health_pol = aim_service_graph.ServiceRedirectHealthGroup(
                 tenant_name=tenant_name,
-                name=name,
-                display_name=name)
+                name=name)
             sg_h_pol = self.aim.get(aim_ctx, sg_health_pol)
             if sg_h_pol:
                 self.aim.delete(aim_ctx, sg_health_pol)
@@ -1379,12 +1378,12 @@ class DistributedSnatHelper(object):
     def _health_group_dn_from_port(self, tenant_name, port):
         if ":" in port.get('name', ''):
             hg_name = port['name'].split(':')[1]
-            sg_health_pol = aim_service_graph.ServiceRedirectHealthGroup(
-                tenant_name=tenant_name,
-                name=hg_name)
-            return sg_health_pol.dn
-        else:
-            return None
+            if hg_name:
+                sg_health_pol = aim_service_graph.ServiceRedirectHealthGroup(
+                    tenant_name=tenant_name,
+                    name=hg_name)
+                return sg_health_pol.dn
+        return None
 
     def _create_provider_pbr(self, aim_ctx, subnet_id, tenant_name,
                              service_ports, monitor_policy):
@@ -1438,7 +1437,7 @@ class DistributedSnatHelper(object):
         return pbr if pbr else pbr_pol
 
     def _update_provider_pbr(self, aim_ctx, subnet_id, tenant_name,
-                             service_ports, monitor_policy):
+                             service_ports):
         """Update provider-side Policy-Based Redirect.
 
         Args:
@@ -1446,7 +1445,6 @@ class DistributedSnatHelper(object):
             subnet: Neutron subnet ID
             tenant_name: Project tenant name
             service_ports: List of service port objects with IP/MAC
-            monitor_policy: PBR monitor policy name
 
         Returns:
             aim_resource.ServiceRedirectPolicy: Updated PBR
@@ -1472,11 +1470,7 @@ class DistributedSnatHelper(object):
 
             pbr_pol = aim_service_graph.ServiceRedirectPolicy(
                 tenant_name=tenant_name,
-                name=pbr_name,
-                display_name=pbr_name,
-                monitoring_policy_name=monitor_policy,
-                monitoring_policy_tenant_name=tenant_name,
-                resilient_hash_enabled=True)
+                name=pbr_name)
             pbr = self.aim.get(aim_ctx, pbr_pol)
             if pbr:
                 pbr = self.aim.update(aim_ctx, pbr, destinations=destinations)
@@ -1521,7 +1515,8 @@ class DistributedSnatHelper(object):
                     destinations.append(dest)
 
             pbr_pol = aim_service_graph.ServiceRedirectPolicy(
-                tenant_name=tenant_name)
+                tenant_name=tenant_name,
+                name=pbr_name)
             pbr = self.aim.get(aim_ctx, pbr_pol)
             if pbr:
                 self.aim.delete(aim_ctx, pbr)
@@ -1583,7 +1578,7 @@ class DistributedSnatHelper(object):
         return pbr if pbr else pbr_pol
 
     def _update_consumer_pbr(self, aim_ctx, subnet_id, tenant_name,
-                             service_ports, monitor_policy):
+                             service_ports):
         """Update consumer-side Policy-Based Redirect.
 
         Args:
@@ -1591,7 +1586,6 @@ class DistributedSnatHelper(object):
             subnet_id: Neutron subnet ID
             tenant_name: Project tenant name
             service_ports: List of service port objects with IP/MAC
-            monitor_policy: PBR monitor policy name
 
         Returns:
             aim_resource.ServiceRedirectPolicy: Updated PBR
@@ -1617,11 +1611,7 @@ class DistributedSnatHelper(object):
 
             pbr_pol = aim_service_graph.ServiceRedirectPolicy(
                 tenant_name=tenant_name,
-                name=pbr_name,
-                display_name=pbr_name,
-                monitoring_policy_name=monitor_policy,
-                monitoring_policy_tenant_name=tenant_name,
-                resilient_hash_enabled=True)
+                name=pbr_name)
             pbr = self.aim.get(aim_ctx, pbr_pol)
             if pbr:
                 pbr = self.aim.update(aim_ctx, pbr, destinations=destinations)
