@@ -8403,14 +8403,17 @@ class TestExtensionAttributes(ApicAimTestCase):
                 ctx.session, service_port_id=service_port['id']))
 
     def _make_service_network(self, name='svc-valid'):
-        return self._make_network(
+        net = self._make_network(
             self.fmt, name, True, as_admin=True,
             arg_list=self.extension_attributes + (
                 'provider:physical_network',),
             **{'router:external': True,
                'provider:network_type': 'vlan',
                'provider:physical_network': 'physnet1',
-               SERVICE_NETWORK_ENABLE: True})['network']
+               SERVICE_NETWORK_ENABLE: True})
+        self._make_subnet(
+            self.fmt, net, '10.0.0.1', '10.0.0.0/24')
+        return net['network']
 
     def test_service_network_validation_and_lifecycle(self):
         # Network must be external VLAN provider
@@ -8449,7 +8452,7 @@ class TestExtensionAttributes(ApicAimTestCase):
         resp = req.get_response(self.api)
         self.assertEqual(400, resp.status_code)
         err = self.deserialize(self.fmt, resp)
-        self.assertIn('Cannot delete service network',
+        self.assertIn('Cannot delete service subnet',
                       err['NeutronError']['message'])
         self._show('networks', svc_net['id'], as_admin=True)
 
