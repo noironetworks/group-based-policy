@@ -1577,8 +1577,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         self._validate_subnet_snat_mode(
             context._plugin_context, current,
-            snat_pool=current.get(cisco_apic.SNAT_HOST_POOL, False),
-            service_network=current.get(cisco_apic.SERVICE_NETWORK))
+            current.get(cisco_apic.SNAT_HOST_POOL, False),
+            current.get(cisco_apic.SERVICE_NETWORK))
 
         wanted_epg_name = self._determine_epg_name(
             network_db.aim_extension_mapping.multi_ext_nets,
@@ -1593,6 +1593,11 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if service_network_id:
             service_net_db = self.plugin._get_network(context._plugin_context,
                                                       service_network_id)
+            subnets = self.plugin.get_subnets(context._plugin_context,
+                        filters={'network_id': [service_network_id]})
+            if not subnets:
+                raise exceptions.ServiceNetworkReferenceInvalid(
+                        network_id=service_network_id)
             tenant_name = self.name_mapper.project(
                 context._plugin_context.session, service_net_db['tenant_id'])
             if self._network_shared(service_net_db):
@@ -1757,8 +1762,8 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
         self._validate_subnet_snat_mode(
             context._plugin_context, current,
-            snat_pool=current.get(cisco_apic.SNAT_HOST_POOL, False),
-            service_network=current.get(cisco_apic.SERVICE_NETWORK),
+            current.get(cisco_apic.SNAT_HOST_POOL, False),
+            current.get(cisco_apic.SERVICE_NETWORK), update=True,
             original_snat_pool=original.get(cisco_apic.SNAT_HOST_POOL, False),
             original_service_network=original.get(cisco_apic.SERVICE_NETWORK))
 
@@ -3859,6 +3864,43 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 except n_exceptions.NeutronException as ne:
                     LOG.warning("Failed to delete SNAT port %(port)s: %(ex)s",
                                 {'port': port_id, 'ex': ne})
+        service_port_ids = getattr(plugin_context, '_service_port_ids', None)
+        plugin_context._service_port_ids = set()
+        if service_port_ids:
+            session = plugin_context.session
+            aim_ctx = aim_context.AimContext(session)
+            handled_subnets = set()
+            e_context = plugin_context.elevated()
+            for port_id, subnet_id in service_port_ids:
+                try:
+                    self.plugin.delete_port(e_context, port_id)
+                except n_exceptions.NeutronException as ne:
+                    LOG.warning("Failed to delete service port %(port)s: "
+                                "%(ex)s", {'port': port_id, 'ex': ne})
+                if subnet_id not in handled_subnets:
+                    handled_subnets.add(subnet_id)
+                    # Upeate the policies with the correct destinations.
+                    subnets = self.plugin.get_subnets(
+                        plugin_context,
+                        filters={'id': [subnet_id]})
+                    if not subnets:
+                        continue
+                    service_net_id = subnets[0].get(cisco_apic.SERVICE_NETWORK)
+                    if not service_net_id:
+                        continue
+                    ext_net_db = self.plugin._get_network(
+                        plugin_context, subnets[0]['network_id'])
+                    l3out, _, _ = self._get_aim_nat_strategy_db(
+                        session, ext_net_db)
+                    if not l3out:
+                        continue
+                    tenant_name = l3out.tenant_name
+                    service_ports = self._get_service_network_ports(
+                        plugin_context, service_net_id)
+                    self._update_provider_pbr(aim_ctx, subnet_id,
+                        tenant_name, service_ports)
+                    self._update_consumer_pbr(aim_ctx, subnet_id,
+                        tenant_name, service_ports)
 
         self._send_postcommit_notifications(context._plugin_context)
 
@@ -4060,12 +4102,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             service_net_id = subnet[cisco_apic.SERVICE_NETWORK]
             service_ports = self._get_service_network_ports(
                 plugin_context, service_net_id)
-            snat_name = self._snat_external_network_name(subnet['id'])
-            mp_name = self._snat_monitor_policy_name(snat_name)
             self._update_provider_pbr(aim_ctx, subnet['id'],
-                tenant_name, service_ports, mp_name)
+                tenant_name, service_ports)
             self._update_consumer_pbr(aim_ctx, subnet['id'],
-                tenant_name, service_ports, mp_name)
+                tenant_name, service_ports)
 
     def _handle_dist_snat_last_use(self, plugin_context,
                                    service_net_db, ext_net_id,
@@ -4109,20 +4149,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             subnet['id'])
         ppbr_pol = aim_service_graph.ServiceRedirectPolicy(
             tenant_name=tenant_name,
-            name=ppbr_name,
-            display_name=ppbr_name,
-            monitoring_policy_name=mon_pol_name,
-            monitoring_policy_tenant_name=tenant_name,
-            resilient_hash_enabled=True)
+            name=ppbr_name)
         cpbr_name = 'consumer_pbr_' + self._generate_snat_resource_name(
             subnet['id'])
         cpbr_pol = aim_service_graph.ServiceRedirectPolicy(
             tenant_name=tenant_name,
-            name=cpbr_name,
-            display_name=cpbr_name,
-            monitoring_policy_name=mon_pol_name,
-            monitoring_policy_tenant_name=tenant_name,
-            resilient_hash_enabled=True)
+            name=cpbr_name)
 
         # Redirect policies are per distributed SNAT subnet
         self._delete_provider_pbr(aim_ctx, subnet['id'],
@@ -4243,12 +4275,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not snat_info:
             return
 
+        # Check if there are any other ports bound to this host that are
+        # using the same distributed SNAT IP. If not, then we can remove
+        # the mapping entry on this host for that SNAT IP.
         ports = self.get_distributed_snat_ports_for_host(
             plugin_context, host, snat_info[0].snat_ip,
             subnet_id=snat_info[0].subnet_id, exclude_port_id=port['id'])
-
-        # If there are no other ports, then we can remove the entry for
-        # this distributed SNAT IP on that host.
         if not ports:
             mappings = self.get_dist_snat_mappings(session,
                 snat_ip=snat_info[0].snat_ip, host_name=host)
@@ -4262,13 +4294,19 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 snat_ip=mapping.snat_ip, host_name=mapping.host_name,
                 start_port=mapping.start_port, subnet_id=mapping.subnet_id,
                 service_port_id=mapping.service_port_id)
+            # Provide a notification for this SNAT IP, so that other hosts
+            # can re-request and update their mappings.
+            snat_ids = self.get_snat_port_ids_by_subnet(
+                plugin_context, mapping.subnet_id)
+            self._add_postcommit_snat_notification(
+                plugin_context, snat_ids)
             # If there are no other distributed SNAT mappings on this host,
             # then we can also remove the service port.
             all_mappings = self.get_dist_snat_mappings(
                 session, host_name=host)
             if not all_mappings:
-                self._add_postcommit_snat_ports(plugin_context,
-                    [mapping.service_port_id])
+                self._add_postcommit_service_ports(plugin_context,
+                    [(mapping.service_port_id, mapping.subnet_id)])
 
     def _get_host_dist_snat_cleanup_context(self, session, host):
         """Return private networks and active service nets for host cleanup.
@@ -6229,6 +6267,12 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         if not ports_to_notify:
             ports_to_notify = plugin_context._ports_to_notify = set()
         ports_to_notify.update(ports)
+
+    def _add_postcommit_service_ports(self, plugin_context, ports):
+        service_port_ids = getattr(plugin_context, '_service_port_ids', None)
+        if not service_port_ids:
+            service_port_ids = plugin_context._service_port_ids = set()
+        service_port_ids.update(ports)
 
     def _add_postcommit_snat_ports(self, plugin_context, ports):
         snat_port_ids = getattr(plugin_context, '_snat_port_ids', None)
@@ -8305,7 +8349,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
 
     def _validate_subnet_snat_mode(self, plugin_context, subnet,
                                    snat_pool, service_network,
-                                   original_snat_pool=None,
+                                   update=False, original_snat_pool=None,
                                    original_service_network=None):
         service_network = service_network or ''
         dist_snat_enabled = bool(service_network)
@@ -8314,6 +8358,10 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
             raise exceptions.ServiceNetworkSnatHostPoolConflict()
 
         if dist_snat_enabled:
+            if update and (
+                    original_service_network != service_network):
+                raise exceptions.DirectSnatModeTransitionNotSupported(
+                    subnet_id=subnet['id'])
             try:
                 service_net = self.plugin.get_network(
                     plugin_context.elevated(), service_network)
