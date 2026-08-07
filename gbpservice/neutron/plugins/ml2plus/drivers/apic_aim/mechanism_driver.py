@@ -4308,64 +4308,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 self._add_postcommit_service_ports(plugin_context,
                     [(mapping.service_port_id, mapping.subnet_id)])
 
-    def _get_host_dist_snat_cleanup_context(self, session, host):
-        """Return private networks and active service nets for host cleanup.
-
-        This query collapses the old stepwise lookups (host-bound private
-        networks, reachable external networks, dist-SNAT references, and
-        active gateway-IP usage) into one joined query.
-        """
-        extn_db_sn = extension_db.SubnetExtensionDb
-        gw_port = orm.aliased(models_v2.Port)
-        ext_subnet = orm.aliased(models_v2.Subnet)
-        gw_alloc = orm.aliased(models_v2.IPAllocation)
-
-        query = BAKERY(lambda s: s.query(
-            segments_model.NetworkSegment.network_id,
-            extn_db_sn.service_network_id,
-            gw_alloc.port_id))
-        query += lambda q: q.join(
-            models.PortBindingLevel,
-            models.PortBindingLevel.segment_id ==
-            segments_model.NetworkSegment.id)
-        query += lambda q: q.join(
-            l3_db.RouterPort,
-            l3_db.RouterPort.port_id == models.PortBindingLevel.port_id)
-        query += lambda q: q.join(
-            l3_db.Router,
-            l3_db.Router.id == l3_db.RouterPort.router_id)
-        query += lambda q: q.join(
-            gw_port,
-            gw_port.id == l3_db.Router.gw_port_id)
-        query += lambda q: q.join(
-            ext_subnet,
-            ext_subnet.network_id == gw_port.network_id)
-        query += lambda q: q.join(
-            extn_db_sn,
-            extn_db_sn.subnet_id == ext_subnet.id)
-        query += lambda q: q.outerjoin(
-            gw_alloc,
-            sa.and_(
-                gw_alloc.port_id == gw_port.id,
-                gw_alloc.subnet_id == ext_subnet.id))
-        query += lambda q: q.filter(
-            models.PortBindingLevel.host == sa.bindparam('host'),
-            l3_db.RouterPort.port_type ==
-            n_constants.DEVICE_OWNER_ROUTER_INTF,
-            l3_db.Router.gw_port_id.isnot(None),
-            gw_port.device_owner == n_constants.DEVICE_OWNER_ROUTER_GW,
-            extn_db_sn.service_network_id.isnot(None),
-            extn_db_sn.service_network_id != '')
-        query += lambda q: q.distinct()
-
-        rows = query(session).params(host=host).all()
-        if not rows:
-            return set(), set()
-
-        private_network_ids = {r[0] for r in rows}
-        active_service_nets = {r[1] for r in rows if r[2] is not None}
-        return private_network_ids, active_service_nets
-
     def _get_dist_snat_subnets(self, plugin_context, network_id):
         """Return all subnets on the netwwork that have
            apic:service_network set.
@@ -4470,24 +4412,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 result.append({
                     'id': p['id'],
                     'name': p['name'],
-                    'ip_address': fip['ip_address'],
-                    'mac_address': p['mac_address']
-                })
-        return result
-
-    def _get_service_network_ports_for_host(self, plugin_context,
-                                            service_net_id, host):
-        """Return service-network ports bound to the given host."""
-        name = 'service-net-port:%s' % host
-        ports = self.plugin.get_ports(
-            plugin_context,
-            filters={'network_id': [service_net_id],
-                     'name': [name]})
-        result = []
-        for p in ports:
-            for fip in p.get('fixed_ips', []):
-                result.append({
-                    'id': p['id'],
                     'ip_address': fip['ip_address'],
                     'mac_address': p['mac_address']
                 })
@@ -6430,56 +6354,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         with db_api.CONTEXT_READER.using(plugin_context) as session:
             return self._get_port_distributed_snat_info(session, port)
 
-    def port_should_have_distributed_snat(self, plugin_context, port):
-        if not port or not port.get('id'):
-            return False
-        with db_api.CONTEXT_READER.using(plugin_context) as session:
-            return bool(self._get_port_distributed_snat_info(session, port))
-
-    def _query_distributed_snat_mapping_rows(self, session):
-        mapping_db = extension_db.DistSnatMappingDb
-        query = BAKERY(lambda s: s.query(
-            mapping_db.host_name,
-            mapping_db.snat_ip,
-            mapping_db.subnet_id))
-        query += lambda q: q.distinct()
-        query += lambda q: q.order_by(
-            mapping_db.host_name,
-            mapping_db.snat_ip,
-            mapping_db.subnet_id)
-        return query(session).all()
-
-    def _distributed_snat_ip_map(self, rows):
-        result = defaultdict(list)
-        seen = defaultdict(set)
-        for host, snat_ip, _subnet_id in rows:
-            if snat_ip not in seen[host]:
-                result[host].append(snat_ip)
-                seen[host].add(snat_ip)
-        return dict(result)
-
-    def _distributed_snat_key_map(self, rows):
-        result = defaultdict(set)
-        for host, snat_ip, subnet_id in rows:
-            result[host].add((snat_ip, subnet_id))
-        return result
-
-    def _query_distributed_snat_ips_for_host(self, session, host):
-        mapping_db = extension_db.DistSnatMappingDb
-        query = BAKERY(lambda s: s.query(mapping_db.snat_ip))
-        query += lambda q: q.filter(
-            mapping_db.host_name == sa.bindparam('host_name'))
-        query += lambda q: q.distinct()
-        query += lambda q: q.order_by(mapping_db.snat_ip)
-        return [row[0] for row in
-                query(session).params(host_name=host).all()]
-
-    def get_distributed_snat_ips_for_host(self, plugin_context, host):
-        if not host:
-            return []
-        with db_api.CONTEXT_READER.using(plugin_context) as session:
-            return self._query_distributed_snat_ips_for_host(session, host)
-
     def _query_distributed_snat_ports_for_host(
             self, session, host, snat_ip, subnet_id=None,
             exclude_port_id=None):
@@ -6555,30 +6429,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                 session, host, snat_ip, subnet_id=subnet_id,
                 exclude_port_id=exclude_port_id)
 
-    def get_distributed_snat_notify_hosts(self, plugin_context, port,
-                                          is_delete=False):
-        host = port.get(portbindings.HOST_ID) if port else None
-        if not host or not port.get('id'):
-            return {}
-        with db_api.CONTEXT_READER.using(plugin_context) as session:
-            snat_infos = self._get_port_distributed_snat_info(session, port)
-            if not snat_infos:
-                return {}
-
-            mapping_rows = self._query_distributed_snat_mapping_rows(session)
-            notify_info = self._distributed_snat_ip_map(mapping_rows)
-            snat_key_info = self._distributed_snat_key_map(mapping_rows)
-            if host not in notify_info:
-                return {} if is_delete else notify_info
-            if is_delete:
-                return notify_info
-
-            for snat_info in snat_infos:
-                if ((snat_info.snat_ip, snat_info.subnet_id) not in
-                        snat_key_info[host]):
-                    return notify_info
-        return {}
-
     def get_or_allocate_distributed_snat_ip(self, plugin_context, host,
                                             ext_network,
                                             routed_subnet_ids):
@@ -6639,7 +6489,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
         with db_api.CONTEXT_READER.using(plugin_context) as session:
             mappings = self.get_dist_snat_mappings(session, host_name=host)
         if not mappings:
-            LOG.eebug("No SNAT IP mappings for host %s", host)
+            LOG.debug("No SNAT IP mappings for host %s", host)
             return hsi
         hsi.update({'dest_prefix': '0.0.0.0/0'})
         snat_port_db = self.plugin._get_port(plugin_context, snat_uuid)
@@ -6868,21 +6718,6 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
                     session.flush()
                     return mapping
                 candidate += alloc_size
-
-    def _release_dist_snat_port_range(self, plugin_context,
-                                      gw_info, host, service_port_id):
-        with db_api.CONTEXT_WRITER.using(plugin_context) as session:
-            existing = self.get_dist_snat_mappings(
-                session, host_name=host,
-                service_port_id=service_port_id)
-            if existing and len(existing) == 1:
-                entry = existing[0]
-                self.delete_dist_snat_mappings(session,
-                    snat_ip=entry.snat_ip,
-                    host_name=entry.host_name,
-                    start_port=entry.start_port,
-                    subnet_id=entry.subnet_id,
-                    service_port_id=entry.service_port_id)
 
     def _query_dist_snat_service_nodes(self, plugin_context, snat_ip,
                                        snat_subnet_id, local_host):
