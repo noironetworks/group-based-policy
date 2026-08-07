@@ -8816,176 +8816,6 @@ class TestExtensionAttributes(ApicAimTestCase):
     def test_dist_snat_subnet_delete_precommit_reparents_service_network(self):
         """Test last dist-SNAT subnet delete restores the service BD VRF."""
 
-        hd_mapping = aim_infra.HostDomainMappingV2(
-            host_name='h1', domain_name='ph1',
-            domain_type='PhysDom')
-
-        # Host 1: VPC host
-        host1_pg = 'pg-ostack-pt-1-17'
-        host1_dn = 'topology/pod-1/protpaths-101-102/pathep-[%s]' % host1_pg
-        self.hlink1 = aim_infra.HostLink(
-            host_name='h1', interface_name='eth0', path=host1_dn)
-
-        l3out = aim_resource.L3Outside(tenant_name=self.t1_aname,
-            name='l1', vrf_name='external_vrf')
-
-        session = mock.Mock()
-        plugin_context = mock.Mock(session=session)
-
-        mock_segment = mock.Mock()
-        mock_segment.network_type = 'vlan'
-        mock_segment.segmentation_id = 10
-        network_db = mock.Mock()
-        network_db.external = None
-        network_db.segments = [mock_segment]
-        network_db.aim_mapping = None
-        network_db.aim_extension_mapping = mock.Mock(
-            multi_ext_nets=False, svi=False, external_network_dn=None)
-        network_db.rbac_entries = []
-
-        self.driver._core_plugin = mock.Mock()
-        self.driver._core_plugin._get_network.return_value = network_db
-        self.driver.name_mapper.project = mock.Mock(return_value=self.t1_aname)
-
-        current = {
-            'id': 'subnet-precommit-test',
-            'network_id': 'net-precommit-test',
-            'tenant_id': self._tenant_id,
-            'cidr': '10.200.0.0/24',
-            'gateway_ip': '10.200.0.1',
-            SERVICE_NETWORK: 'svc-net-id',
-            SNAT_POOL: False,
-            ADVERTISED_EXTERNALLY: True,
-            SHARED_BETWEEN_VRFS: False,
-        }
-        context = mock.Mock(current=current, original={})
-        context._plugin_context = plugin_context
-        context.network = mock.Mock(current={SERVICE_NETWORK_ENABLE: False})
-
-        with (
-            mock.patch('gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
-                       'mechanism_driver.aim_context.AimContext',
-                       return_value=mock.Mock()) as aim_ctx_cls,
-            mock.patch.object(self.driver, '_validate_subnet_snat_mode'),
-            mock.patch.object(self.driver,
-                              '_get_aim_nat_strategy_db') as nat_strategy,
-            mock.patch.object(self.driver.aim, 'get', side_effect=[l3out]),
-            mock.patch.object(self.driver.aim, 'find',
-                              side_effect=[[self.hlink1], [hd_mapping]]),
-            mock.patch.object(self.driver,
-                              '_create_snat_external_network') as snat_ext,
-            mock.patch.object(self.driver,
-                              '_create_snat_filters') as snat_filters,
-            mock.patch.object(self.driver,
-                              '_create_snat_contract') as snat_contract,
-            mock.patch.object(self.driver,
-                '_create_snat_contract_subject') as snat_subject,
-            mock.patch.object(self.driver,
-                              '_create_pbr_health_pol') as snat_health,
-            mock.patch.object(self.driver,
-                              '_create_service_graph') as sg_create,
-            mock.patch.object(self.driver,
-                              '_create_service_graph_node') as sg_node,
-            mock.patch.object(self.driver,
-                              '_create_device_cluster_context') as snat_dcc,
-            mock.patch.object(self.driver,
-                              '_create_device_cluster_interface_context'
-                              ) as snat_dcic,
-            mock.patch.object(self.driver,
-                              '_reparent_service_network_bd') as reparent_bd,
-            mock.patch.object(self.driver,
-                              '_create_service_subnet_bd_subnet') as bd_subnet,
-        ):
-            nat_strategy.return_value = (l3out, mock.Mock(), mock.Mock())
-            snat_epg = mock.Mock()
-            snat_epg.name = 'snat_epg'
-            snat_ext.return_value = snat_epg
-            sg = mock.Mock()
-            sg.name = 'sg'
-            sg_create.return_value = sg
-            snat_filters.return_value = {
-                'provider_filter': mock.Mock(),
-                'consumer_filter': mock.Mock()}
-
-            self.driver.create_subnet_precommit(context)
-
-        aim_ctx_cls.assert_has_calls([mock.call(session),
-                                      mock.call(session)],
-                                     any_order=True)
-        aim_ctx = aim_ctx_cls.return_value
-        tenant_name = self.t1_aname
-
-        snat_ext.assert_called_once_with(
-            aim_ctx, current['id'], tenant_name, l3out, mock.ANY)
-        snat_filters.assert_called_once_with(
-            aim_ctx, current, tenant_name)
-        snat_contract.assert_called_once_with(
-            aim_ctx, current['id'], tenant_name)
-        snat_subject.assert_called_once_with(
-            aim_ctx, current['id'], mock.ANY, hd_mapping.domain_name,
-            tenant_name,
-            {'provider_filter': mock.ANY, 'consumer_filter': mock.ANY})
-        snat_health.assert_called_once_with(
-            aim_ctx, tenant_name, self.hlink1.host_name)
-        sg_create.assert_called_once_with(
-            aim_ctx, current['id'], 'ph1', tenant_name)
-        sg_node.assert_called_once_with(aim_ctx, sg.name, tenant_name)
-        dc = aim_service_graph.DeviceCluster(tenant_name=tenant_name,
-            name=mock.ANY, display_name=mock.ANY, device_type='PHYSICAL',
-            service_type='OTHERS', context_aware='single-Context',
-            managed=False, physical_domain_name='ph1', vmm_domain_type='',
-            vmm_domain_name='', encap='', devices=[])
-        snat_dcc.assert_called_once_with(aim_ctx, contract_name=mock.ANY,
-            service_graph_name=sg.name,
-            node_name='loadbalancer',
-            device_cluster=dc,
-            tenant_name=tenant_name,
-            service_redirect_policy_name='provider_pbr_subnet-preco',
-            bridge_domain_name=mock.ANY,
-            bridge_domain_tenant_name=tenant_name)
-        dci = aim_service_graph.DeviceClusterInterface(name='interface',
-                display_name='interface', tenant_name=tenant_name,
-                encap='vlan-10', device_cluster_name=mock.ANY)
-        psrp = aim_service_graph.ServiceRedirectPolicy(
-            display_name='provider_pbr_subnet-preco',
-            monitoring_policy_tenant_name=tenant_name,
-            monitoring_policy_name='mon_pol_snat_epg',
-            destinations=[],
-            tenant_name=tenant_name,
-            name='provider_pbr_subnet-preco',
-            resilient_hash_enabled=True)
-        csrp = aim_service_graph.ServiceRedirectPolicy(
-            display_name='consumer_pbr_subnet-preco',
-            monitoring_policy_tenant_name=tenant_name,
-            monitoring_policy_name='mon_pol_snat_epg',
-            destinations=[],
-            tenant_name=tenant_name,
-            name='consumer_pbr_subnet-preco',
-            resilient_hash_enabled=True)
-        snat_dcic.assert_has_calls(
-            [mock.call(mock.ANY, contract_name=mock.ANY,
-                       service_graph_name=sg.name, node_name='loadbalancer',
-                       connector_name='provider',
-                       device_cluster_interface=dci,
-                       service_redirect_policy=psrp,
-                       bridge_domain_dn=mock.ANY,
-                       tenant_name=tenant_name),
-             mock.call(mock.ANY, contract_name=mock.ANY,
-                       service_graph_name=sg.name, node_name='loadbalancer',
-                       connector_name='consumer',
-                       device_cluster_interface=dci,
-                       service_redirect_policy=csrp,
-                       bridge_domain_dn=mock.ANY,
-                       tenant_name=tenant_name)],
-            any_order=True)
-        reparent_bd.assert_called_once_with(
-            aim_ctx, mock.ANY, tenant_name, l3out,
-            enable_routing=True)
-        bd_subnet.assert_not_called()
-
-    def test_dist_snat_subnet_delete_precommit_reparents_service_network(self):
-        """Test last dist-SNAT subnet delete restores the service BD VRF."""
-
         session = mock.Mock()
         plugin_context = mock.Mock(session=session)
 
@@ -9437,6 +9267,537 @@ class TestExtensionAttributes(ApicAimTestCase):
         return ''.join(
             c if c.isalnum() or c in ('-', '_', '.') else '_'
             for c in str(resource_id))[:12]
+
+    def test_dist_snat_port_config_validation(self):
+        """Test _validate_dist_snat_port_config rejects invalid port params."""
+        svc_net = self._make_service_network('svc-port-validation')
+        ext_net = self._make_ext_network('ext-port-validation',
+                                         dn=self.dn_t1_l1_n1)
+
+        def _try_create(gateway, cidr, **kwargs):
+            data = {'subnet': {
+                'network_id': ext_net['id'],
+                'ip_version': 4,
+                'tenant_id': self._tenant_id,
+                'gateway_ip': gateway,
+                'cidr': cidr,
+                SERVICE_NETWORK: svc_net['id'],
+            }}
+            data['subnet'].update(kwargs)
+            req = self.new_create_request('subnets', data, self.fmt,
+                                          as_admin=True)
+            resp = req.get_response(self.api)
+            return resp
+
+        # start_port = 0 (below minimum)
+        resp = _try_create('10.60.0.1', '10.60.0.0/24',
+                           **{DIST_SNAT_START_PORT: 0,
+                              DIST_SNAT_END_PORT: 65000})
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('start port must be 1-65535',
+                      resp.json['NeutronError']['message'])
+
+        # start_port = 65536 (above maximum)
+        resp = _try_create('10.61.0.1', '10.61.0.0/24',
+                           **{DIST_SNAT_START_PORT: 65536,
+                              DIST_SNAT_END_PORT: 65535})
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('start port must be 1-65535',
+                      resp.json['NeutronError']['message'])
+
+        # end_port = 0 (below minimum)
+        resp = _try_create('10.62.0.1', '10.62.0.0/24',
+                           **{DIST_SNAT_START_PORT: 1024,
+                              DIST_SNAT_END_PORT: 0})
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('end port must be 1-65535',
+                      resp.json['NeutronError']['message'])
+
+        # end_port = 65536 (above maximum)
+        resp = _try_create('10.63.0.1', '10.63.0.0/24',
+                           **{DIST_SNAT_START_PORT: 1024,
+                              DIST_SNAT_END_PORT: 65536})
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('end port must be 1-65535',
+                      resp.json['NeutronError']['message'])
+
+        # start_port >= end_port (inverted range)
+        resp = _try_create('10.64.0.1', '10.64.0.0/24',
+                           **{DIST_SNAT_START_PORT: 5000,
+                              DIST_SNAT_END_PORT: 5000})
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('start_port must be less than end_port',
+                      resp.json['NeutronError']['message'])
+
+        # alloc_size = 0 (not positive)
+        resp = _try_create('10.65.0.1', '10.65.0.0/24',
+                           **{DIST_SNAT_START_PORT: 1024,
+                              DIST_SNAT_END_PORT: 65000,
+                              DIST_SNAT_ALLOC_SIZE: 0})
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('allocation size must be greater than zero',
+                      resp.json['NeutronError']['message'])
+
+        # alloc_size exceeds the available port range
+        resp = _try_create('10.66.0.1', '10.66.0.0/24',
+                           **{DIST_SNAT_START_PORT: 1000,
+                              DIST_SNAT_END_PORT: 1099,
+                              DIST_SNAT_ALLOC_SIZE: 200})
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('allocation size exceeds available port range',
+                      resp.json['NeutronError']['message'])
+
+        # Valid configuration must succeed
+        subnet = self._create_subnet_with_extension(
+            self.fmt, ext_net, '10.67.0.1', '10.67.0.0/24',
+            **{SERVICE_NETWORK: svc_net['id'],
+               DIST_SNAT_START_PORT: 1024,
+               DIST_SNAT_END_PORT: 65000,
+               DIST_SNAT_ALLOC_SIZE: 500})['subnet']
+        self.assertEqual(svc_net['id'], subnet[SERVICE_NETWORK])
+        self.assertEqual(1024, subnet[DIST_SNAT_START_PORT])
+        self.assertEqual(65000, subnet[DIST_SNAT_END_PORT])
+        self.assertEqual(500, subnet[DIST_SNAT_ALLOC_SIZE])
+
+    def test_dist_snat_port_config_validation_on_update(self):
+        """_validate_dist_snat_port_config also runs during subnet update."""
+        svc_net = self._make_service_network('svc-port-valid-update')
+        ext_net = self._make_ext_network('ext-port-valid-update',
+                                         dn=self.dn_t1_l1_n1)
+        subnet = self._create_subnet_with_extension(
+            self.fmt, ext_net, '10.68.0.1', '10.68.0.0/24',
+            **{SERVICE_NETWORK: svc_net['id'],
+               DIST_SNAT_START_PORT: 1024,
+               DIST_SNAT_END_PORT: 65000,
+               DIST_SNAT_ALLOC_SIZE: 500})['subnet']
+
+        # Update with invalid alloc_size should be rejected
+        req = self.new_update_request(
+            'subnets',
+            {'subnet': {DIST_SNAT_START_PORT: 1024,
+                        DIST_SNAT_END_PORT: 65000,
+                        DIST_SNAT_ALLOC_SIZE: 0}},
+            subnet['id'], self.fmt, as_admin=True)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('allocation size must be greater than zero',
+                      resp.json['NeutronError']['message'])
+
+        # Update with valid parameters should succeed
+        req = self.new_update_request(
+            'subnets',
+            {'subnet': {DIST_SNAT_START_PORT: 2000,
+                        DIST_SNAT_END_PORT: 65000,
+                        DIST_SNAT_ALLOC_SIZE: 1000}},
+            subnet['id'], self.fmt, as_admin=True)
+        resp = req.get_response(self.api)
+        self.assertEqual(200, resp.status_int)
+
+    def test_service_network_mismatch_on_external_network(self):
+        """Two subnets on the same ext-net must reference the same svc-net."""
+        svc_net1 = self._make_service_network('svc-mismatch-1')
+        svc_net2 = self._make_service_network('svc-mismatch-2')
+        ext_net = self._make_ext_network('ext-svc-mismatch',
+                                         dn=self.dn_t1_l1_n1)
+
+        # First subnet references svc_net1 — should succeed
+        self._create_subnet_with_extension(
+            self.fmt, ext_net, '10.210.0.1', '10.210.0.0/24',
+            **{SERVICE_NETWORK: svc_net1['id']})
+
+        # Second subnet on the same ext-net references svc_net2 — must fail
+        data = {'subnet': {
+            'network_id': ext_net['id'],
+            'ip_version': 4,
+            'cidr': '10.211.0.0/24',
+            'gateway_ip': '10.211.0.1',
+            'tenant_id': self._tenant_id,
+            SERVICE_NETWORK: svc_net2['id'],
+        }}
+        req = self.new_create_request('subnets', data, self.fmt,
+                                      as_admin=True)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('must reference the same service network',
+                      resp.json['NeutronError']['message'])
+
+    def test_service_network_project_invalid(self):
+        """Service network must belong to the same project as the subnet."""
+        # Create a service network owned by 'tenant_2'
+        svc_net = self._make_network(
+            self.fmt, 'svc-cross-project', True, as_admin=True,
+            tenant_id='tenant_2',
+            arg_list=self.extension_attributes + (
+                'provider:physical_network',),
+            **{'router:external': True,
+               'provider:network_type': 'vlan',
+               'provider:physical_network': 'physnet1',
+               SERVICE_NETWORK_ENABLE: True})['network']
+        self._make_subnet(self.fmt, {'network': svc_net}, '10.0.1.1',
+                          '10.0.1.0/24', tenant_id='tenant_2')
+
+        ext_net = self._make_ext_network('ext-cross-project',
+                                         dn=self.dn_t1_l1_n1)
+
+        # Subnet in self._tenant_id references svc_net owned by 'tenant_2'
+        data = {'subnet': {
+            'network_id': ext_net['id'],
+            'ip_version': 4,
+            'cidr': '10.212.0.0/24',
+            'gateway_ip': '10.212.0.1',
+            'tenant_id': self._tenant_id,
+            SERVICE_NETWORK: svc_net['id'],
+        }}
+        req = self.new_create_request('subnets', data, self.fmt,
+                                      as_admin=True)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('not in the same project',
+                      resp.json['NeutronError']['message'])
+
+    def test_dist_snat_port_range_count(self):
+        """_dist_snat_port_range_count returns allocatable slot count."""
+        gw_info = {'start_port': 1000, 'end_port': 1999, 'alloc_size': 500}
+        self.assertEqual(2, self.driver._dist_snat_port_range_count(gw_info))
+
+        gw_info = {'start_port': 10000, 'end_port': 11999, 'alloc_size': 1000}
+        self.assertEqual(2, self.driver._dist_snat_port_range_count(gw_info))
+
+        gw_info = {'start_port': 1024, 'end_port': 65535, 'alloc_size': 500}
+        expected = (65535 - 1024 + 1) // 500
+        self.assertEqual(expected,
+                         self.driver._dist_snat_port_range_count(gw_info))
+
+        # Single slot
+        gw_info = {'start_port': 1000, 'end_port': 1999, 'alloc_size': 1000}
+        self.assertEqual(1, self.driver._dist_snat_port_range_count(gw_info))
+
+    def test_add_postcommit_service_ports(self):
+        """_add_postcommit_service_ports accumulates port/subnet pairs."""
+        plugin_context = mock.Mock(spec=[])
+
+        self.driver._add_postcommit_service_ports(
+            plugin_context, [('port-1', 'subnet-a')])
+        self.assertEqual({('port-1', 'subnet-a')},
+                         plugin_context._service_port_ids)
+
+        # Second call merges into the same set
+        self.driver._add_postcommit_service_ports(
+            plugin_context, [('port-2', 'subnet-b'), ('port-3', 'subnet-a')])
+        self.assertEqual(
+            {('port-1', 'subnet-a'),
+             ('port-2', 'subnet-b'),
+             ('port-3', 'subnet-a')},
+            plugin_context._service_port_ids)
+
+        # Duplicate entries are deduplicated by the set
+        self.driver._add_postcommit_service_ports(
+            plugin_context, [('port-1', 'subnet-a')])
+        self.assertEqual(3, len(plugin_context._service_port_ids))
+
+    def test_handle_dist_snat_host_vm_removal_cleans_mapping(self):
+        """VM deletion removes mapping and queues service port cleanup.
+
+        This applies when the deleted VM is the last one on the host using
+        the SNAT IP.
+        """
+        ctx = n_context.get_admin_context()
+
+        net = self._make_network(self.fmt, 'net-vm-removal', True)['network']
+        svc_net = self._make_service_network('svc-vm-removal')
+        svc_subnet = self._make_subnet(
+            self.fmt, {'network': svc_net}, '169.254.201.1',
+            '169.254.201.0/24')['subnet']
+
+        service_port = self._make_port(
+            self.fmt, svc_net['id'], as_admin=True,
+            device_owner='apic:dist-snat',
+            device_id='h1',
+            name='service-net-port:h1',
+            fixed_ips=[{'subnet_id': svc_subnet['id']}])['port']
+
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.201.0.1',
+            '10.201.0.0/24')['subnet']
+
+        # Seed a mapping entry for this host
+        with db_api.CONTEXT_WRITER.using(ctx):
+            extn_db.ExtensionDbMixin().set_dist_snat_mapping(
+                ctx.session, '172.31.0.10', 'h1', 5000, 5499,
+                subnet_id=subnet['id'],
+                service_port_id=service_port['id'])
+
+        port = self._make_port(
+            self.fmt, net['id'],
+            fixed_ips=[{'subnet_id': subnet['id']}])['port']
+        port['binding:host_id'] = 'h1'
+
+        # Provide the SNAT info that _get_port_distributed_snat_info returns
+        snat_info_row = mock.Mock()
+        snat_info_row.snat_ip = '172.31.0.10'
+        snat_info_row.subnet_id = subnet['id']
+
+        with (
+            mock.patch.object(self.driver,
+                              '_get_port_distributed_snat_info',
+                              return_value=[snat_info_row]),
+            mock.patch.object(self.driver,
+                              'get_distributed_snat_ports_for_host',
+                              return_value=[]),
+        ):
+            aim_ctx = mock.Mock()
+            with db_api.CONTEXT_WRITER.using(ctx):
+                self.driver._handle_dist_snat_host_vm_removal(
+                    ctx, aim_ctx, port)
+
+        # The mapping must be gone
+        with db_api.CONTEXT_READER.using(ctx):
+            remaining = extn_db.ExtensionDbMixin().get_dist_snat_mappings(
+                ctx.session, snat_ip='172.31.0.10', host_name='h1')
+        self.assertEqual([], remaining)
+
+        # The service port must be queued for postcommit deletion
+        queued = getattr(ctx, '_service_port_ids', set())
+        self.assertIn((service_port['id'], subnet['id']), queued)
+
+    def test_handle_dist_snat_host_vm_removal_other_vms_present(self):
+        """Preserve mapping when another host VM still uses the SNAT IP.
+        """
+        ctx = n_context.get_admin_context()
+
+        net = self._make_network(self.fmt, 'net-vm-other', True)['network']
+        svc_net = self._make_service_network('svc-vm-other')
+        svc_subnet = self._make_subnet(
+            self.fmt, {'network': svc_net}, '169.254.202.1',
+            '169.254.202.0/24')['subnet']
+
+        service_port = self._make_port(
+            self.fmt, svc_net['id'], as_admin=True,
+            device_owner='apic:dist-snat',
+            device_id='h1',
+            name='service-net-port:h1',
+            fixed_ips=[{'subnet_id': svc_subnet['id']}])['port']
+
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.202.0.1',
+            '10.202.0.0/24')['subnet']
+
+        with db_api.CONTEXT_WRITER.using(ctx):
+            extn_db.ExtensionDbMixin().set_dist_snat_mapping(
+                ctx.session, '172.31.0.20', 'h1', 5000, 5499,
+                subnet_id=subnet['id'],
+                service_port_id=service_port['id'])
+
+        port = self._make_port(
+            self.fmt, net['id'],
+            fixed_ips=[{'subnet_id': subnet['id']}])['port']
+        port['binding:host_id'] = 'h1'
+
+        snat_info_row = mock.Mock()
+        snat_info_row.snat_ip = '172.31.0.20'
+        snat_info_row.subnet_id = subnet['id']
+
+        with (
+            mock.patch.object(self.driver,
+                              '_get_port_distributed_snat_info',
+                              return_value=[snat_info_row]),
+            # Simulate another bound VM on the same host
+            mock.patch.object(self.driver,
+                              'get_distributed_snat_ports_for_host',
+                              return_value=['other-port-id']),
+        ):
+            aim_ctx = mock.Mock()
+            with db_api.CONTEXT_WRITER.using(ctx):
+                self.driver._handle_dist_snat_host_vm_removal(
+                    ctx, aim_ctx, port)
+
+        # Mapping must still exist because another VM is using the SNAT IP
+        with db_api.CONTEXT_READER.using(ctx):
+            remaining = extn_db.ExtensionDbMixin().get_dist_snat_mappings(
+                ctx.session, snat_ip='172.31.0.20', host_name='h1')
+        self.assertEqual(1, len(remaining))
+
+        # No service port should be queued for deletion
+        queued = getattr(ctx, '_service_port_ids', set())
+        self.assertFalse(queued)
+
+    def test_service_network_reference_invalid_no_subnets(self):
+        """Reject dist-SNAT subnet if service network has no subnets.
+        """
+        # Service network without any subnet
+        svc_net = self._make_network(
+            self.fmt, 'svc-no-subnets', True, as_admin=True,
+            arg_list=self.extension_attributes + (
+                'provider:physical_network',),
+            **{'router:external': True,
+               'provider:network_type': 'vlan',
+               'provider:physical_network': 'physnet1',
+               SERVICE_NETWORK_ENABLE: True})['network']
+
+        ext_net = self._make_ext_network(
+            'ext-no-subnets', dn=self.dn_t1_l1_n1)
+
+        data = {'subnet': {
+            'network_id': ext_net['id'],
+            'ip_version': 4,
+            'cidr': '10.213.0.0/24',
+            'gateway_ip': '10.213.0.1',
+            'tenant_id': self._tenant_id,
+            SERVICE_NETWORK: svc_net['id'],
+        }}
+        req = self.new_create_request('subnets', data, self.fmt,
+                                      as_admin=True)
+        resp = req.get_response(self.api)
+        self.assertEqual(400, resp.status_int)
+        self.assertIn('not a valid service network',
+                      resp.json['NeutronError']['message'])
+
+    def test_delete_port_postcommit_updates_pbr_after_service_port_removal(
+            self):
+        """delete_port_postcommit updates PBR for queued service ports.
+        """
+        plugin_context = mock.Mock()
+        plugin_context.session = mock.Mock()
+        plugin_context._service_port_ids = {('svc-port-1', 'snat-subnet-1')}
+        plugin_context._snat_port_ids = set()
+
+        context = mock.Mock()
+        context._plugin_context = plugin_context
+        context.current = {}
+
+        snat_subnet = {'id': 'snat-subnet-1',
+                       'network_id': 'ext-net-1',
+                       'apic:service_network': 'svc-net-1'}
+        l3out = aim_resource.L3Outside(tenant_name='t1', name='l1',
+                                       vrf_name='v1')
+        service_ports = [mock.Mock()]
+
+        with (
+            mock.patch.object(self.driver.plugin, 'delete_port'),
+            mock.patch.object(self.driver.plugin, 'get_subnets',
+                              return_value=[snat_subnet]),
+            mock.patch.object(self.driver.plugin, '_get_network',
+                              return_value=mock.Mock()),
+            mock.patch.object(self.driver, '_get_aim_nat_strategy_db',
+                              return_value=(l3out, mock.Mock(), mock.Mock())),
+            mock.patch.object(self.driver, '_get_service_network_ports',
+                              return_value=service_ports),
+            mock.patch.object(self.driver, '_update_provider_pbr') as upbr,
+            mock.patch.object(self.driver, '_update_consumer_pbr') as ucpbr,
+            mock.patch('gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+                       'mechanism_driver.aim_context.AimContext'),
+            mock.patch.object(self.driver,
+                              '_send_postcommit_notifications'),
+        ):
+            self.driver.delete_port_postcommit(context)
+
+        upbr.assert_called_once_with(
+            mock.ANY, 'snat-subnet-1', 't1', service_ports)
+        ucpbr.assert_called_once_with(
+            mock.ANY, 'snat-subnet-1', 't1', service_ports)
+        # Set must be reset after processing
+        self.assertEqual(set(), plugin_context._service_port_ids)
+
+    def test_delete_port_postcommit_skips_pbr_update_without_service_ports(
+            self):
+        """delete_port_postcommit skips PBR updates when none are queued.
+        """
+        plugin_context = mock.Mock()
+        plugin_context._service_port_ids = set()
+        plugin_context._snat_port_ids = set()
+
+        context = mock.Mock()
+        context._plugin_context = plugin_context
+        context.current = {}
+
+        with (
+            mock.patch.object(self.driver, '_update_provider_pbr') as upbr,
+            mock.patch.object(self.driver, '_update_consumer_pbr') as ucpbr,
+            mock.patch.object(self.driver,
+                              '_send_postcommit_notifications'),
+        ):
+            self.driver.delete_port_postcommit(context)
+
+        upbr.assert_not_called()
+        ucpbr.assert_not_called()
+
+    def test_send_postcommit_notifications_notifies_snat_and_clears(self):
+        class _Ctx(object):
+            pass
+
+        plugin_context = _Ctx()
+        expected_snats = {'snat-1', 'snat-2'}
+        plugin_context._snats_to_notify = set(expected_snats)
+
+        with mock.patch.object(self.driver, '_notify_snat_update') as notify:
+            self.driver._send_postcommit_notifications(plugin_context)
+
+        notify.assert_called_once_with(plugin_context, expected_snats)
+        self.assertEqual(set(), plugin_context._snats_to_notify)
+
+    def test_update_port_precommit_adds_dist_snat_notification_on_rebind(
+            self):
+        plugin_context = mock.Mock()
+        plugin_context.session = mock.Mock()
+
+        context = mock.Mock()
+        context._plugin_context = plugin_context
+        context.original_host = 'h1'
+        context.host = 'h2'
+        context.original_bottom_bound_segment = None
+        context.bottom_bound_segment = None
+        context.current = {
+            'id': 'port-1',
+            'device_owner': 'compute:nova',
+            'device_id': 'vm-1',
+            'fixed_ips': [],
+            'security_groups': [],
+            'binding:vif_type': portbindings.VIF_TYPE_UNBOUND,
+        }
+        context.original = {
+            'id': 'port-1',
+            'device_owner': 'compute:nova',
+            'device_id': 'vm-1',
+            'fixed_ips': [],
+            'security_groups': [],
+            'binding:vif_type': portbindings.VIF_TYPE_UNBOUND,
+        }
+
+        snat_info = [mock.Mock(subnet_id='snat-subnet-1')]
+
+        with (
+            mock.patch.object(self.driver, '_check_active_active_aap'),
+            mock.patch.object(self.driver, 'disassociate_domain'),
+            mock.patch('gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+                       'mechanism_driver.aim_context.AimContext'),
+            mock.patch.object(
+                self.driver, '_handle_dist_snat_host_vm_removal'),
+            mock.patch.object(
+                self.driver, '_use_static_path', return_value=False),
+            mock.patch.object(self.driver, '_delete_erspan_aim_config'),
+            mock.patch.object(
+                self.driver, '_is_port_bound', return_value=False),
+            mock.patch.object(self.driver, 'get_distributed_snat_info',
+                              return_value=snat_info),
+            mock.patch.object(self.driver, 'get_snat_port_ids_by_subnet',
+                              return_value=['snat-port-1']),
+            mock.patch.object(self.driver,
+                              '_add_postcommit_snat_notification'
+                              ) as add_notify,
+            mock.patch.object(
+                self.driver, 'get_hpp_normalized', return_value=False),
+            mock.patch.object(self.driver,
+                              '_really_update_sg_rule_with_remote_group_set'),
+            mock.patch.object(self.driver, '_check_allowed_address_pairs'),
+            mock.patch.object(self.driver, '_insert_provisioning_block'),
+            mock.patch.object(self.driver, '_is_port_router_interface',
+                              return_value=False),
+            mock.patch('gbpservice.neutron.plugins.ml2plus.drivers.apic_aim.'
+                       'mechanism_driver.registry.publish'),
+        ):
+            self.driver.update_port_precommit(context)
+
+        add_notify.assert_called_once_with(plugin_context, ['snat-port-1'])
 
     def test_router_lifecycle(self):
         ctx = n_context.get_admin_context()
@@ -15123,6 +15484,126 @@ class TestOpflexRpc(ApicAimTestCase):
         with db_api.CONTEXT_READER.using(ctx):
             self.assertEqual([], self.driver.get_dist_snat_mappings(
                 ctx.session, host_name='h2', subnet_id=snat_subnet['id']))
+
+    def _setup_dist_snat_scenario(self, host='h1', port_ip='10.10.0.11',
+                                  start_port=10000, end_port=11999,
+                                  alloc_size=1000):
+        """Build a minimal distributed-SNAT topology and bind a port."""
+        self._register_agent(host, AGENT_CONF_OPFLEX)
+        svc_net = self._make_dist_snat_service_network()
+        svc_subnet = self._make_subnet(
+            self.fmt, {'network': svc_net}, '169.254.100.1',
+            '169.254.100.0/24')['subnet']
+        ext_net = self._make_ext_network(
+            'ext-hsi-' + host, dn=self.dn_t1_l1_n1, nat_type='distributed')
+        snat_subnet = self._create_subnet_with_extension(
+            self.fmt, ext_net, '172.28.0.1', '172.28.0.0/24',
+            **{SERVICE_NETWORK: svc_net['id'],
+               DIST_SNAT_START_PORT: start_port,
+               DIST_SNAT_END_PORT: end_port,
+               DIST_SNAT_ALLOC_SIZE: alloc_size})['subnet']
+        net = self._make_network(self.fmt, 'net-hsi-' + host, True)['network']
+        subnet = self._make_subnet(
+            self.fmt, {'network': net}, '10.10.0.1',
+            '10.10.0.0/24')['subnet']
+        router = self._make_router(
+            self.fmt, self._tenant_id, 'rtr-hsi-' + host,
+            external_gateway_info={
+                'network_id': ext_net['id'],
+                'external_fixed_ips': [{'subnet_id': snat_subnet['id']}],
+            }, as_admin=True)['router']
+        self._router_interface_action('add', router['id'], subnet['id'], None)
+        port = self._make_port(
+            self.fmt, net['id'],
+            fixed_ips=[{'subnet_id': subnet['id'], 'ip_address': port_ip}]
+        )['port']
+        port = self._bind_port_to_host(port['id'], host)['port']
+        # Drive the full RPC path to populate the mapping table.
+        self.driver.request_endpoint_details(
+            n_context.get_admin_context(),
+            request={'device': 'tap' + port['id'],
+                     'timestamp': 1, 'request_id': 'setup'},
+            host=host)
+        rtr_ports = self._list(
+            'ports',
+            query_params='device_id=%s' % router['id'])['ports']
+        gw_port = next(
+            p for p in rtr_ports
+            if p['device_owner'] == 'network:router_gateway')
+        return {'svc_net': svc_net, 'svc_subnet': svc_subnet,
+                'ext_net': ext_net, 'snat_subnet': snat_subnet,
+                'net': net, 'subnet': subnet, 'router': router,
+                'port': port, 'gw_port': gw_port}
+
+    def test_get_snat_details_rpc(self):
+        """get_snat_details and request_snat_details return HSI dict."""
+        s = self._setup_dist_snat_scenario(host='h1', port_ip='10.10.0.11')
+        gw_port_id = s['gw_port']['id']
+        ctx = n_context.get_admin_context()
+
+        result = self.driver.get_snat_details(
+            ctx, snat_id=gw_port_id, host='h1')
+
+        self.assertIn('snat_uuid', result)
+        self.assertEqual(gw_port_id, result['snat_uuid'])
+        self.assertIn('host_snat_ip', result)
+        self.assertIn('start_port', result)
+        self.assertIn('end_port', result)
+        self.assertIn('service_ip', result)
+        self.assertIn('service_mac', result)
+
+        # request_snat_details is a thin alias
+        result2 = self.driver.request_snat_details(
+            ctx, snat_id=gw_port_id, host='h1')
+        self.assertEqual(result['snat_uuid'], result2['snat_uuid'])
+
+        # Missing snat_id returns None
+        none_result = self.driver.get_snat_details(ctx, host='h1')
+        self.assertIsNone(none_result)
+
+    def test_get_hsi_for_distributed_snat_ip(self):
+        """get_hsi_for_distributed_snat_ip returns full HSI payload."""
+        s = self._setup_dist_snat_scenario(host='h1', port_ip='10.10.0.11')
+        gw_port_id = s['gw_port']['id']
+        ctx = n_context.get_admin_context()
+
+        hsi = self.driver.get_hsi_for_distributed_snat_ip(
+            ctx, snat_uuid=gw_port_id, host='h1')
+
+        self.assertEqual(gw_port_id, hsi['snat_uuid'])
+        self.assertIn('host_snat_ip', hsi)
+        self.assertIn('host_snat_mac', hsi)
+        self.assertIn('start_port', hsi)
+        self.assertIn('end_port', hsi)
+        self.assertIn('service_ip', hsi)
+        self.assertIn('service_mac', hsi)
+        self.assertIn('service_vlan', hsi)
+        self.assertIn('service_nodes', hsi)
+        self.assertEqual('0.0.0.0/0', hsi['dest_prefix'])
+
+        # Host with no mapping returns only snat_uuid
+        hsi_empty = self.driver.get_hsi_for_distributed_snat_ip(
+            ctx, snat_uuid=gw_port_id, host='unknown-host')
+        self.assertEqual(gw_port_id, hsi_empty['snat_uuid'])
+        self.assertNotIn('start_port', hsi_empty)
+
+    def test_add_distributed_snat_dest_updates_pbr(self):
+        """_add_distributed_snat_dest calls update_provider/consumer_pbr."""
+        s = self._setup_dist_snat_scenario(host='h1', port_ip='10.10.0.11')
+        ctx = n_context.get_admin_context()
+
+        with (
+            mock.patch.object(self.driver, '_update_provider_pbr') as upbr,
+            mock.patch.object(self.driver, '_update_consumer_pbr') as ucpbr,
+        ):
+            self.driver._add_distributed_snat_dest(
+                ctx, s['ext_net']['id'], 'h1')
+
+        upbr.assert_called_once()
+        ucpbr.assert_called_once()
+        # Both calls must reference the same snat subnet
+        self.assertEqual(upbr.call_args[0][1], s['snat_subnet']['id'])
+        self.assertEqual(ucpbr.call_args[0][1], s['snat_subnet']['id'])
 
     def test_endpoint_details_unbound(self):
         host = 'host1'
