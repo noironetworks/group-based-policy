@@ -71,6 +71,12 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/2025.2
+        - openstack-tox-cover:
+            nodeset: ubuntu-jammy
+            timeout: 6000
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/2025.2
         - group-based-policy-dsvm-functional:
             voting: false
         - group-based-policy-dsvm-aim:
