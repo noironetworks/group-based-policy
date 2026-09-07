@@ -53,5 +53,5 @@ from gbpservice.neutron.tests.unit.services.grouppolicy.drivers import (  # noqa
 from networking_sfc.db import flowclassifier_db  # noqa
 from networking_sfc.db import sfc_db  # noqa
 
-# Note that the models in gbpservice.nfp.orchestrator.db.nfp_db_model
-# are managed by a separate fixture, so are not imported here.
+# Note: NFP (Network Function Proxy) models have been removed
+# as the NFP subsystem is no longer maintained (deprecated in April 2022).

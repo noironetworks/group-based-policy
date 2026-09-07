@@ -25,7 +25,20 @@ down_revision = '98862f2d814e'
 from alembic import op
 import sqlalchemy as sa
 
-from gbpservice.nfp.common import constants as nfp_constants
+
+# Inline constants (previously imported from gbpservice.nfp.common)
+# These were used to define NFP database schema enums
+NEUTRON_PORT = "neutron_port"
+GBP_PORT = "gbp_policy_target"
+NEUTRON_NETWORK = "neutron_network"
+GBP_NETWORK = "gbp_group"
+PROVIDER = "provider"
+CONSUMER = "consumer"
+MANAGEMENT = "management"
+MONITOR = "monitoring"
+ACTIVE_PORT = "ACTIVE"
+STANDBY_PORT = "STANDBY"
+MASTER_PORT = "MASTER"
 
 
 def upgrade():
@@ -35,21 +48,21 @@ def upgrade():
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('port_model',
-                  sa.Enum(nfp_constants.NEUTRON_PORT,
-                          nfp_constants.GBP_PORT,
+                  sa.Enum(NEUTRON_PORT,
+                          GBP_PORT,
                           name='port_model'),
                   nullable=False),
         sa.Column('port_classification',
-                  sa.Enum(nfp_constants.PROVIDER,
-                          nfp_constants.CONSUMER,
-                          nfp_constants.MANAGEMENT,
-                          nfp_constants.MONITOR,
+                  sa.Enum(PROVIDER,
+                          CONSUMER,
+                          MANAGEMENT,
+                          MONITOR,
                           name='port_classification'),
                   nullable=False),
         sa.Column('port_role',
-                  sa.Enum(nfp_constants.ACTIVE_PORT,
-                          nfp_constants.STANDBY_PORT,
-                          nfp_constants.MASTER_PORT,
+                  sa.Enum(ACTIVE_PORT,
+                          STANDBY_PORT,
+                          MASTER_PORT,
                           name='port_role'),
                   nullable=True),
         sa.PrimaryKeyConstraint('id')
@@ -60,8 +73,8 @@ def upgrade():
         sa.Column('tenant_id', sa.String(length=255), nullable=True),
         sa.Column('id', sa.String(length=36), nullable=False),
         sa.Column('network_model',
-                  sa.Enum(nfp_constants.NEUTRON_NETWORK,
-                          nfp_constants.GBP_NETWORK,
+                  sa.Enum(NEUTRON_NETWORK,
+                          GBP_NETWORK,
                           name='network_model'),
                   nullable=False),
         sa.PrimaryKeyConstraint('id')
