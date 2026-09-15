@@ -17,8 +17,10 @@ from neutron.db.db_base_plugin_v2 import _constants
 from neutron.db import l3_db
 from neutron.db import models_v2
 from neutron.db import securitygroups_db
+from neutron.db import segments_db
 from neutron.objects import securitygroup as sg_obj
 from neutron.plugins.ml2 import db as ml2_db
+from neutron.plugins.ml2 import driver_context
 from neutron.quota import resource as quota_resource
 from neutron_lib.api import attributes
 from neutron_lib.api import validators
@@ -33,6 +35,21 @@ from gbpservice.neutron.db import api as db_api
 
 
 LOG = log.getLogger(__name__)
+
+
+if not getattr(driver_context.NetworkContext, '_apic_aim_compat', False):
+    original_init = driver_context.NetworkContext.__init__
+
+    def _network_context_init(self, plugin, plugin_context, network,
+                              original_network=None, segments=None):
+        segments = (segments if segments is not None else
+                    segments_db.get_network_segments(
+                        plugin_context, network['id']))
+        original_init(self, plugin, plugin_context, network,
+                      original_network=original_network, segments=segments)
+
+    driver_context.NetworkContext.__init__ = _network_context_init
+    driver_context.NetworkContext._apic_aim_compat = True
 
 
 if not hasattr(quota_resource, 'GBP_PATCHED'):
