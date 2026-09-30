@@ -71,6 +71,11 @@
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/2025.2
+        - openstack-tox-py314:
+            voting: false
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/2025.2
         - openstack-tox-cover:
             nodeset: ubuntu-jammy
             timeout: 6000
@@ -106,6 +111,11 @@
               - name: openstack/requirements
                 override-checkout: stable/2025.2
         - openstack-tox-py313:
+            required-projects:
+              - name: openstack/requirements
+                override-checkout: stable/2025.2
+        - openstack-tox-py314:
+            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/2025.2
