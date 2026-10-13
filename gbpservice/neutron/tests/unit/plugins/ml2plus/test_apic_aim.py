@@ -15004,6 +15004,11 @@ class TestOpflexRpc(ApicAimTestCase):
         self.assertEqual(not port['port_security_enabled'],
                          gbp_details['promiscuous_mode'])
         self.assertEqual(epg.tenant_name, gbp_details['ptg_tenant'])
+        if 'BridgeDomain' in net.get('apic:distinguished_names', {}):
+            bd = aim_resource.BridgeDomain.from_dn(
+                net['apic:distinguished_names']['BridgeDomain'])
+            self.assertEqual(bd.name, gbp_details['bd_name'])
+            self.assertEqual(bd.tenant_name, gbp_details['bd_tenant'])
         # security_group tested in TestGbpDetailsForML2
         # segmentation_labels tested in TestPolicyTarget
         self._check_response_subnets(gbp_details['subnets'], subnets)
