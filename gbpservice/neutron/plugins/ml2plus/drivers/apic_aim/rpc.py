@@ -78,6 +78,8 @@ EndpointPortInfo = namedtuple(
      'epg_name',
      'epg_app_profile_name',
      'epg_tenant_name',
+     'bd_name',
+     'bd_tenant_name',
      'vrf_name',
      'vrf_tenant_name',
      'vm_name'])
@@ -557,6 +559,8 @@ class ApicRpcHandlerMixin(object):
             db.NetworkMapping.epg_name,
             db.NetworkMapping.epg_app_profile_name,
             db.NetworkMapping.epg_tenant_name,
+            db.NetworkMapping.bd_name,
+            db.NetworkMapping.bd_tenant_name,
             db.NetworkMapping.vrf_name,
             db.NetworkMapping.vrf_tenant_name,
             db.VMName.vm_name,
@@ -1041,6 +1045,8 @@ class ApicRpcHandlerMixin(object):
         details['allowed_address_pairs'] = self._build_aaps(info)
         details['active_active_aap'] = info['active_active_aap']
         details['app_profile_name'] = port_info.epg_app_profile_name
+        details['bd_name'] = port_info.bd_name
+        details['bd_tenant'] = port_info.bd_tenant_name
         details['device'] = info['device']  # Redundant.
         if self.apic_optimized_dhcp_lease_time > 0:
             details['dhcp_lease_time'] = self.apic_optimized_dhcp_lease_time
