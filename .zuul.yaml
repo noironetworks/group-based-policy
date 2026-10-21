@@ -72,7 +72,6 @@
               - name: openstack/requirements
                 override-checkout: stable/2026.1
         - openstack-tox-py314:
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/2026.1
@@ -115,7 +114,6 @@
               - name: openstack/requirements
                 override-checkout: stable/2026.1
         - openstack-tox-py314:
-            voting: false
             required-projects:
               - name: openstack/requirements
                 override-checkout: stable/2026.1
