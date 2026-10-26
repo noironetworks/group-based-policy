@@ -23,6 +23,7 @@ from neutron.db.models import securitygroup as securitygroups_db
 from neutron.db import models_v2
 from neutron.plugins.ml2.common import exceptions as ml2_exc
 from neutron.plugins.ml2 import managers as ml2_managers
+from neutron.api.rpc.agentnotifiers import utils as notifier_utils
 from neutron.plugins.ml2 import plugin as ml2_plugin
 from neutron.quota import resource_registry
 from neutron_lib.api.definitions import address_scope as as_def
@@ -97,6 +98,8 @@ class Ml2PlusPlugin(ml2_plugin.Ml2Plugin,
         self.mechanism_manager.initialize()
         self._setup_dhcp()
         self._start_rpc_notifiers()
+        if hasattr(notifier_utils, 'RPCNotifierHandler'):
+            self.notifier = notifier_utils.RPCNotifierHandler()
         self.add_agent_status_check_worker(self.agent_health_check)
         self.add_workers(self.mechanism_manager.get_workers())
         self._verify_service_plugins_requirements()
