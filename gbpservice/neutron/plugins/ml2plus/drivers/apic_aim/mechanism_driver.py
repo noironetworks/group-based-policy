@@ -704,7 +704,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def _handle_qos_policy(self, context, policy, is_update=False):
         session = context.session
         aim_ctx = aim_context.AimContext(session)
-        tenant_aname = self.name_mapper.project(session, context.tenant_id)
+        tenant_aname = self.name_mapper.project(session, context.project_id)
         bw_rules = []
         dscp = None
         egress_dpp_pol = None
@@ -802,7 +802,7 @@ class ApicMechanismDriver(api_plus.MechanismDriver,
     def delete_qos_policy_precommit(self, context, policy):
         session = context.session
         aim_ctx = aim_context.AimContext(session)
-        tenant_aname = self.name_mapper.project(session, context.tenant_id)
+        tenant_aname = self.name_mapper.project(session, context.project_id)
         qos_aim = aim_resource.QosRequirement(
                     tenant_name=tenant_aname, name=policy['id'])
         aim_qos_db = self.aim.get(aim_ctx, qos_aim)

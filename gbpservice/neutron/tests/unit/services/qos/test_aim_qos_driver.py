@@ -114,7 +114,7 @@ class TestQosPolicy(TestAIMQosBase):
             self.ctxt, **self.policy_data['policy'])
         _policy.create()
         self.qos_driver.create_policy_precommit(self.ctxt, _policy)
-        tenant_name = 'prj_' + self.ctxt.tenant_id
+        tenant_name = 'prj_' + self.ctxt.project_id
         pol = aim_res.QosRequirement(name=_policy.id, tenant_name=tenant_name)
         pol = self.aim_mgr.get(self._aim_context, pol)
         self.assertIsNotNone(pol)

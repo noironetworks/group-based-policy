@@ -94,6 +94,11 @@ class ResourceMappingTestCase(test_plugin.GroupPolicyPluginTestCase):
         self._context = nctx.get_admin_context()
         self._gbp_plugin = directory.get_plugin(pconst.GROUP_POLICY)
         self._l3_plugin = directory.get_plugin(pconst.L3)
+        resource_owner = mock.patch.object(
+            resource_mapping.ResourceMappingDriver,
+            '_get_resource_owner_tenant_id', return_value=CHAIN_TENANT_ID)
+        resource_owner.start()
+        self.addCleanup(resource_owner.stop)
         self.saved_keystone_client = resource_mapping.k_client.Client
         resource_mapping.k_client.Client = mock.Mock()
         pdm.PolicyDriverManager.get_policy_target_group_status = (

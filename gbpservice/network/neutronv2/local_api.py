@@ -95,7 +95,7 @@ class LocalAPI(object):
         reservation = None
         if plugin in [self._group_policy_plugin]:
             reservation = quota.QUOTAS.make_reservation(
-                context, context.tenant_id, {resource: 1}, plugin)
+                context, context.project_id, {resource: 1}, plugin)
         action = 'create_' + resource
         obj_creator = getattr(plugin, action)
         try:

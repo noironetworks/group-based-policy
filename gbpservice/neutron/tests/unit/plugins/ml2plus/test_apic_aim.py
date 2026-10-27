@@ -6230,7 +6230,7 @@ class TestPortBinding(ApicAimTestCase):
                     self.assertEqual(bgp_peer.asn, '2')
                     bgp_peers.append(bgp_peer)
 
-                self._delete('ports', p1['port']['id'])
+                self._delete('ports', p1['port']['id'], as_admin=True)
                 self._check_no_dynamic_segment(net1['id'])
 
                 for l3out_if in l3out_ifs:
@@ -6424,7 +6424,7 @@ class TestPortBinding(ApicAimTestCase):
                     else:
                         self.assertIsNone(l3out_if)
 
-                self._delete('ports', p1['port']['id'])
+                self._delete('ports', p1['port']['id'], as_admin=True)
                 self._check_no_dynamic_segment(net1['id'])
 
                 for l3out_if in l3out_ifs:
@@ -6439,7 +6439,7 @@ class TestPortBinding(ApicAimTestCase):
                     # Force creation of SVI  Port for 'h2'.
                     p2 = self._make_port(self.fmt, net1['id'])['port']
                     p2 = self._bind_port_to_host(p2['id'], 'h2')
-                    self._delete('ports', p2['port']['id'])
+                    self._delete('ports', p2['port']['id'], as_admin=True)
 
         self._delete('subnets', sub1['subnet']['id'])
         self._delete('subnets', sub2['id'])
@@ -6472,7 +6472,7 @@ class TestPortBinding(ApicAimTestCase):
                 else:
                     # Corresponds to host 'h1' - no bound port.
                     self.assertEqual([], svi_port['fixed_ips'])
-            self._delete('ports', p2['port']['id'])
+                    self._delete('ports', p2['port']['id'], as_admin=True)
             self._delete('subnets', sub2['id'])
 
     def test_bind_opflex_agent_svi(self):
@@ -7433,7 +7433,7 @@ class TestPortBindingDvs(ApicAimTestCase):
         self.assertIsNotNone(port_key)
         self.assertEqual(BOOKED_PORT_VALUE, port_key)
         self._verify_dvs_notifier('update_postcommit_port_call', port, 'host1')
-        self._delete('ports', port_id)
+        self._delete('ports', port_id, as_admin=True)
         self._verify_dvs_notifier('delete_port_call', port, 'host1')
 
     def test_bind_port_dvs_with_opflex_diff_hosts(self):
@@ -7455,7 +7455,7 @@ class TestPortBindingDvs(ApicAimTestCase):
         self.assertIsNotNone(port_key)
         self.assertEqual(port_key, BOOKED_PORT_VALUE)
         self._verify_dvs_notifier('update_postcommit_port_call', p1, 'h2')
-        self._delete('ports', port_id)
+        self._delete('ports', port_id, as_admin=True)
         self._verify_dvs_notifier('delete_port_call', p1, 'h2')
 
     def test_bind_ports_opflex_same_host(self):
@@ -7476,7 +7476,7 @@ class TestPortBindingDvs(ApicAimTestCase):
         dvs_mock = self.driver.dvs_notifier.update_postcommit_port_call
         dvs_mock.assert_not_called()
         dvs_mock = self.driver.dvs_notifier.delete_port_call
-        self._delete('ports', port_id)
+        self._delete('ports', port_id, as_admin=True)
         dvs_mock.assert_not_called()
         self.driver.dvs_notifier.reset_mock()
         p2 = self._make_port(self.fmt, net['network']['id'])['port']
@@ -7488,7 +7488,7 @@ class TestPortBindingDvs(ApicAimTestCase):
         port_key = newp2['port']['binding:vif_details'].get('dvs_port_key')
         self.assertIsNone(port_key)
         dvs_mock.assert_not_called()
-        self._delete('ports', newp2['port']['id'])
+        self._delete('ports', newp2['port']['id'], as_admin=True)
         dvs_mock = self.driver.dvs_notifier.delete_port_call
         dvs_mock.assert_not_called()
 
@@ -7511,7 +7511,7 @@ class TestPortBindingDvs(ApicAimTestCase):
         self.assertIsNotNone(port_key)
         self.assertEqual(port_key, BOOKED_PORT_VALUE)
         self._verify_dvs_notifier('update_postcommit_port_call', p1, 'h1')
-        self._delete('ports', newp1['port']['id'])
+        self._delete('ports', newp1['port']['id'], as_admin=True)
         self._verify_dvs_notifier('delete_port_call', p1, 'h1')
         self.driver.dvs_notifier.reset_mock()
         p2 = self._make_port(self.fmt, net['network']['id'])['port']
@@ -7525,7 +7525,7 @@ class TestPortBindingDvs(ApicAimTestCase):
         self.assertIsNone(port_key)
         dvs_mock = self.driver.dvs_notifier.update_postcommit_port_call
         dvs_mock.assert_not_called()
-        self._delete('ports', newp2['port']['id'])
+        self._delete('ports', newp2['port']['id'], as_admin=True)
         dvs_mock = self.driver.dvs_notifier.delete_port_call
         dvs_mock.assert_not_called()
 
@@ -11214,7 +11214,7 @@ class TestExternalConnectivityBase(object):
             self.assertEqual('ACTIVE', fip['status'])
             fip = self._show('floatingips', fip['id'])['floatingip']
             self.assertEqual('ACTIVE', fip['status'])
-            self._delete('ports', p['id'])
+            self._delete('ports', p['id'], as_admin=True)
             fip = self._show('floatingips', fip['id'])['floatingip']
             self.assertEqual('DOWN', fip['status'])
 
@@ -12136,7 +12136,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 self._validate()
 
                 # delete port
-                self._delete('ports', p1['port']['id'])
+                self._delete('ports', p1['port']['id'], as_admin=True)
                 self._check_no_dynamic_segment(net1['id'])
                 epg = self.aim_mgr.get(aim_ctx, epg)
                 self._validate()
@@ -12228,7 +12228,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                     self.assertEqual(bgp_peer.asn, '2')
                     bgp_peers.append(bgp_peer)
 
-                self._delete('ports', p1['port']['id'])
+                self._delete('ports', p1['port']['id'], as_admin=True)
                 self._check_no_dynamic_segment(net1['id'])
 
                 for l3out_if in l3out_ifs:
@@ -12307,7 +12307,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                 bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
                 self.assertEqual(bgp_peer2.asn, '6')
 
-                self._delete('ports', p2['port']['id'])
+                self._delete('ports', p2['port']['id'], as_admin=True)
                 self._check_no_dynamic_segment(net2['id'])
 
     def _test_multiple_ports_on_host(self, is_svi=False, bgp_enabled=False):
@@ -12449,7 +12449,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                                 bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
                                 self.assertEqual(bgp_peer.asn, '2')
 
-                    self._delete('ports', p2['port']['id'])
+                    self._delete('ports', p2['port']['id'], as_admin=True)
                     self._check_binding(p1['port']['id'])
                     if not is_svi:
                         epg = self.aim_mgr.get(aim_ctx, epg)
@@ -12482,7 +12482,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                                 bgp_peer = self.aim_mgr.get(aim_ctx, bgp_peer)
                                 self.assertEqual(bgp_peer.asn, '2')
 
-                self._delete('ports', p1['port']['id'])
+                self._delete('ports', p1['port']['id'], as_admin=True)
                 self._check_no_dynamic_segment(net1['id'])
                 if not is_svi:
                     epg = self.aim_mgr.get(aim_ctx, epg)
@@ -12722,7 +12722,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                     bgp_peer2 = self.aim_mgr.get(aim_ctx, bgp_peer2)
                     self.assertEqual(bgp_peer2.asn, '6')
 
-        self._delete('ports', p2['port']['id'])
+        self._delete('ports', p2['port']['id'], as_admin=True)
         self._check_no_dynamic_segment(net2['id'])
         if not is_svi:
             epg2 = self.aim_mgr.get(aim_ctx, epg2)
@@ -13045,7 +13045,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                     self.assertEqual(bgp_peer.asn, '4')
                     bgp_peer2s.append(bgp_peer)
 
-        self._delete('ports', p2['port']['id'])
+        self._delete('ports', p2['port']['id'], as_admin=True)
         self._check_no_dynamic_segment(net2['id'])
 
         if not is_svi:
@@ -13121,7 +13121,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                     bgp_peer1b = self.aim_mgr.get(aim_ctx, bgp_peer1b)
                     self.assertEqual(bgp_peer1b.asn, '3')
 
-        self._delete('ports', p1['port']['id'])
+        self._delete('ports', p1['port']['id'], as_admin=True)
         self._check_no_dynamic_segment(net1['id'])
 
         if not is_svi:
@@ -13302,7 +13302,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                         self.assertEqual(bgp_peer.asn, '5')
                         bgp_peer1bs.append(bgp_peer)
 
-            self._delete('ports', p2['port']['id'])
+            self._delete('ports', p2['port']['id'], as_admin=True)
             if not is_svi:
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 static_path = self.aim_mgr.get(aim_ctx,
@@ -13339,7 +13339,7 @@ class TestPortVlanNetwork(ApicAimTestCase):
                         bgp_peer1a = self.aim_mgr.get(aim_ctx, bgp_peer1a)
                         self.assertEqual(bgp_peer1a.asn, '5')
 
-            self._delete('ports', p1['port']['id'])
+            self._delete('ports', p1['port']['id'], as_admin=True)
             self._check_no_dynamic_segment(net1['id'])
 
             if not is_svi:
@@ -13713,7 +13713,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                                                 with_type=False)))
                 self._validate()
                 # delete port
-                self._delete('ports', p1['port']['id'])
+                self._delete('ports', p1['port']['id'], as_admin=True)
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm1', 'OpenStack'),
                                       ('vm2', 'OpenStack')]),
@@ -13744,7 +13744,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                                                 with_type=False)))
                 self._validate()
                 # delete port
-                self._delete('ports', p2['port']['id'])
+                self._delete('ports', p2['port']['id'], as_admin=True)
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm1', 'OpenStack'),
                                       ('vm2', 'OpenStack')]),
@@ -14267,7 +14267,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                                      set(self._doms(epg1.physical_domains,
                                                     with_type=False)))
                 # delete 1st port
-                self._delete('ports', p1['port']['id'])
+                self._delete('ports', p1['port']['id'], as_admin=True)
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm2', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
@@ -14275,7 +14275,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
                 # delete the last port
-                self._delete('ports', p1a['port']['id'])
+                self._delete('ports', p1a['port']['id'], as_admin=True)
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([]),
                                  set(self._doms(epg1.vmm_domains)))
@@ -14295,7 +14295,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 # delete the wildcard port -- the domain should still
                 # be associated, since we aren't identifying all of the
                 # host-specific mappings
-                self._delete('ports', p3['port']['id'])
+                self._delete('ports', p3['port']['id'], as_admin=True)
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm3', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
@@ -14331,7 +14331,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                                                     with_type=False)))
 
                 # delete 1st port
-                self._delete('ports', p2['port']['id'])
+                self._delete('ports', p2['port']['id'], as_admin=True)
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm3', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
@@ -14339,7 +14339,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                                  set(self._doms(epg1.physical_domains,
                                                 with_type=False)))
                 # delete the last port
-                self._delete('ports', p2a['port']['id'])
+                self._delete('ports', p2a['port']['id'], as_admin=True)
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm3', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
@@ -14359,7 +14359,7 @@ class TestPortOnPhysicalNode(TestPortVlanNetwork):
                 # delete the wildcard port -- the domain should still
                 # be associated, since we aren't identifying all of the
                 # host-specific mappings
-                self._delete('ports', p3['port']['id'])
+                self._delete('ports', p3['port']['id'], as_admin=True)
                 epg1 = self.aim_mgr.get(aim_ctx, epg1)
                 self.assertEqual(set([('vm3', 'OpenStack')]),
                                  set(self._doms(epg1.vmm_domains)))
@@ -14956,13 +14956,13 @@ class TestPortOnPhysicalNodeSingleDriver(TestPortOnPhysicalNode):
                                           physical_domain, vlan_p2,
                                           delete=True)
 
-        self._delete('ports', p2['id'])
+        self._delete('ports', p2['id'], as_admin=True)
         self._check_no_dynamic_segment(net2['id'])
         validate_static_path_and_doms(aim_ctx, is_svi, net1, kv_dict_1,
                                       physical_domain, vlan_p1)
         validate_static_path_and_doms(aim_ctx, is_svi, net2, kv_dict_2,
                                       physical_domain, vlan_p2, delete=True)
-        self._delete('ports', p1['id'])
+        self._delete('ports', p1['id'], as_admin=True)
         self._check_no_dynamic_segment(net1['id'])
         validate_static_path_and_doms(aim_ctx, is_svi, net1, kv_dict_1,
                                       physical_domain, vlan_p1, delete=True)

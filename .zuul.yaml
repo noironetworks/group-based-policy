@@ -36,39 +36,32 @@
     check:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
-        - openstack-tox-py310:
-            nodeset: ubuntu-jammy
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - openstack-tox-py312:
             nodeset: ubuntu-noble
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - openstack-tox-py313:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - openstack-tox-py314:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - openstack-tox-cover:
-            nodeset: ubuntu-jammy
             timeout: 6000
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - group-based-policy-dsvm-functional:
             voting: false
         - group-based-policy-dsvm-aim:
@@ -76,30 +69,24 @@
     gate:
       jobs:
         - openstack-tox-pep8:
-            nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
-        - openstack-tox-py310:
-            nodeset: ubuntu-jammy
-            required-projects:
-              - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - openstack-tox-py311:
             nodeset: ubuntu-jammy
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - openstack-tox-py312:
             nodeset: ubuntu-noble
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - openstack-tox-py313:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
         - openstack-tox-py314:
             required-projects:
               - name: openstack/requirements
-                override-checkout: stable/2026.1
+                override-checkout: stable/2026.2
