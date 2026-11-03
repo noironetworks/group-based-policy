@@ -161,7 +161,7 @@ class OwnedResourcesOperations(object):
     # by creating a resource to DB class name mapping.
 
     def _mark_port_owned(self, session, port_id):
-        with session.begin(subtransactions=True):
+        with session.begin():
             owned = OwnedPort(port_id=port_id)
             session.add(owned)
 
@@ -172,7 +172,7 @@ class OwnedResourcesOperations(object):
                     first() is not None)
 
     def _mark_subnet_owned(self, session, subnet_id):
-        with session.begin(subtransactions=True):
+        with session.begin():
             owned = OwnedSubnet(subnet_id=subnet_id)
             session.add(owned)
 
@@ -183,7 +183,7 @@ class OwnedResourcesOperations(object):
                     first() is not None)
 
     def _mark_network_owned(self, session, network_id):
-        with session.begin(subtransactions=True):
+        with session.begin():
             owned = OwnedNetwork(network_id=network_id)
             session.add(owned)
 
@@ -194,7 +194,7 @@ class OwnedResourcesOperations(object):
                     first() is not None)
 
     def _mark_router_owned(self, session, router_id):
-        with session.begin(subtransactions=True):
+        with session.begin():
             owned = OwnedRouter(router_id=router_id)
             session.add(owned)
 
@@ -205,7 +205,7 @@ class OwnedResourcesOperations(object):
                     first() is not None)
 
     def _mark_address_scope_owned(self, session, address_scope_id):
-        with session.begin(subtransactions=True):
+        with session.begin():
             owned = OwnedAddressScope(address_scope_id=address_scope_id)
             session.add(owned)
 
@@ -216,7 +216,7 @@ class OwnedResourcesOperations(object):
                     first() is not None)
 
     def _mark_subnetpool_owned(self, session, subnetpool_id):
-        with session.begin(subtransactions=True):
+        with session.begin():
             owned = OwnedSubnetpool(subnetpool_id=subnetpool_id)
             session.add(owned)
 
@@ -626,10 +626,8 @@ class ImplicitResourceOperations(local_api.LocalAPI,
                     attrs.update(subnet_specifics)
                     subnet = self._create_subnet(context._plugin_context,
                                                  attrs)
-                    with db_api.CONTEXT_WRITER.using(context._plugin_context):
-                        self._mark_subnet_owned(
-                            context._plugin_context.session,
-                            subnet['id'])
+                    self._mark_subnet_owned(
+                        context._plugin_context.session, subnet['id'])
                     LOG.debug("Allocated subnet %(sub)s from subnetpool: "
                               "%(sp)s.", {'sub': subnet['id'],
                                           'sp': pool['id']})
