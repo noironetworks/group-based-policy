@@ -5682,7 +5682,8 @@ class TestNeutronPortOperation(AIMBaseTestCase):
                         arg_list=('allowed_address_pairs',),
                         device_owner='compute:',
                         fixed_ips=[{'subnet_id': t2sub1['id']},
-                                   {'subnet_id': t2sub2['id']}],
+                                   {'subnet_id': t2sub2['id'],
+                                    'ip_address': '1.2.3.10'}],
                         allowed_address_pairs=allow_addr_active_aap,
                         as_admin=True)
 
