@@ -2393,50 +2393,49 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
             num_address_families=len(list(self.ip_dict.keys())))
 
         ptg_name = ptg['name']
-        with self.db_session.begin():
-            aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-                self._neutron_context.session, ptg_id, ptg_name,
-                context=self._neutron_context)
-            aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
-            aim_app_profile_name = self.mech_driver.ap_name
-            aim_app_profiles = self.aim_mgr.find(
-                self._aim_context, aim_resource.ApplicationProfile,
-                tenant_name=aim_tenant_name, name=aim_app_profile_name)
-            self.assertEqual(1, len(aim_app_profiles))
-            req = self.new_show_request('networks', l2p['network_id'],
-                                        fmt=self.fmt)
-            net = self.deserialize(self.fmt,
-                                req.get_response(self.api))['network']
-            bd = self.aim_mgr.get(
-                self._aim_context, aim_resource.BridgeDomain.from_dn(
-                    net[DN][BD]))
-            aim_epgs = self.aim_mgr.find(
-                self._aim_context, aim_resource.EndpointGroup,
-                name=aim_epg_name)
-            self.assertEqual(1, len(aim_epgs))
-            self.assertEqual(aim_epg_name, aim_epgs[0].name)
-            self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
-            self.assertEqual(bd.name, aim_epgs[0].bd_name)
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg_id, ptg_name,
+            context=self._neutron_context)
+        aim_tenant_name = self.name_mapper.project(None, self._tenant_id)
+        aim_app_profile_name = self.mech_driver.ap_name
+        aim_app_profiles = self.aim_mgr.find(
+            self._aim_context, aim_resource.ApplicationProfile,
+            tenant_name=aim_tenant_name, name=aim_app_profile_name)
+        self.assertEqual(1, len(aim_app_profiles))
+        req = self.new_show_request('networks', l2p['network_id'],
+                                    fmt=self.fmt)
+        net = self.deserialize(self.fmt,
+                            req.get_response(self.api))['network']
+        bd = self.aim_mgr.get(
+            self._aim_context, aim_resource.BridgeDomain.from_dn(
+                net[DN][BD]))
+        aim_epgs = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup,
+            name=aim_epg_name)
+        self.assertEqual(1, len(aim_epgs))
+        self.assertEqual(aim_epg_name, aim_epgs[0].name)
+        self.assertEqual(aim_tenant_name, aim_epgs[0].tenant_name)
+        self.assertEqual(bd.name, aim_epgs[0].bd_name)
 
-            self.assertEqual(aim_epgs[0].dn,
-                            ptg[DN][EPG])
-            self._test_aim_resource_status(aim_epgs[0], ptg)
-            self.assertEqual(aim_epgs[0].dn, ptg_show[DN][EPG])
+        self.assertEqual(aim_epgs[0].dn,
+                        ptg[DN][EPG])
+        self._test_aim_resource_status(aim_epgs[0], ptg)
+        self.assertEqual(aim_epgs[0].dn, ptg_show[DN][EPG])
 
-            new_name = 'new name'
-            new_prs_lists = self._get_provided_consumed_prs_lists()
-            self.update_policy_target_group(
-                ptg_id, expected_res_status=200, name=new_name,
-                provided_policy_rule_sets={new_prs_lists['provided']['id']:
-                                        'scope'},
-                consumed_policy_rule_sets={new_prs_lists['consumed']['id']:
-                                        'scope'})['policy_target_group']
-            aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
-                self._neutron_context.session, ptg_id, new_name,
-                context=self._neutron_context)
-            aim_epgs = self.aim_mgr.find(
-                self._aim_context, aim_resource.EndpointGroup,
-                name=aim_epg_name)
+        new_name = 'new name'
+        new_prs_lists = self._get_provided_consumed_prs_lists()
+        self.update_policy_target_group(
+            ptg_id, expected_res_status=200, name=new_name,
+            provided_policy_rule_sets={new_prs_lists['provided']['id']:
+                                    'scope'},
+            consumed_policy_rule_sets={new_prs_lists['consumed']['id']:
+                                    'scope'})['policy_target_group']
+        aim_epg_name = self.driver.apic_epg_name_for_policy_target_group(
+            self._neutron_context.session, ptg_id, new_name,
+            context=self._neutron_context)
+        aim_epgs = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup,
+            name=aim_epg_name)
         self.assertEqual(1, len(aim_epgs))
         self.assertEqual(aim_epg_name, aim_epgs[0].name)
         self._validate_contracts(ptg, aim_epgs[0], new_prs_lists, l2p)
@@ -2452,11 +2451,9 @@ class TestPolicyTargetGroupIpv4(AIMBaseTestCase):
         # Explicitly created L2P should not be deleted
         self.show_l2_policy(ptg['l2_policy_id'], expected_res_status=200)
 
-        # TODO(pulkit): replace with AIM reader context once API supports it.
-        with self.db_session.begin():
-            aim_epgs = self.aim_mgr.find(
-                self._aim_context, aim_resource.EndpointGroup,
-                name=aim_epg_name)
+        aim_epgs = self.aim_mgr.find(
+            self._aim_context, aim_resource.EndpointGroup,
+            name=aim_epg_name)
         self.assertEqual(0, len(aim_epgs))
 
     def _create_explicit_subnetpools(self):
