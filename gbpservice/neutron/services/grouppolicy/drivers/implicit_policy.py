@@ -171,7 +171,7 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
         context.set_l2_policy_id(context.current['l2_policy_id'])
 
     def _mark_l2_policy_owned(self, session, l2p_id):
-        with session.begin(subtransactions=True):
+        with session.begin():
             owned = OwnedL2Policy(l2_policy_id=l2p_id)
             session.add(owned)
 
@@ -182,7 +182,7 @@ class ImplicitPolicyBase(api.PolicyDriver, local_api.LocalAPI):
                     first() is not None)
 
     def _mark_l3_policy_owned(self, session, l3p_id):
-        with session.begin(subtransactions=True):
+        with session.begin():
             owned = OwnedL3Policy(l3_policy_id=l3p_id)
             session.add(owned)
 
